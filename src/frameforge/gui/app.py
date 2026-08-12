@@ -20,6 +20,12 @@ from frameforge.queue.worker import SequentialWorker
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
+# GUI timer: idle is slower so window-drag is not fighting a 1 Hz geometry pass.
+TICK_IDLE_MS = 2500
+TICK_ACTIVE_MS = 400
+TICK_TRAY_MS = 2000
+FULL_REFRESH_EVERY_ACTIVE = 5
+
 
 class FrameForgeApp(ctk.CTk):
     def __init__(
@@ -255,9 +261,9 @@ class FrameForgeApp(ctk.CTk):
 
         self._tick_after_id: str | int | None = None
         self._progress_ticks = 0
-        self._full_refresh_every = 4
+        self._full_refresh_every = FULL_REFRESH_EVERY_ACTIVE
         self.refresh_queue()
-        self._tick_after_id = self.after(1000, self._tick)
+        self._tick_after_id = self.after(TICK_IDLE_MS, self._tick)
 
     def marshal_ui(self, fn) -> None:
         """Run *fn* on the Tk thread (tray callbacks must not touch CTk directly)."""
@@ -1280,6 +1286,29 @@ class FrameForgeApp(ctk.CTk):
         except Exception:  # noqa: BLE001
             pass
 
+    def _window_withdrawn(self) -> bool:
+        try:
+            return str(self.state()) == "withdrawn"
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _next_tick_ms(self) -> int:
+        if self._window_withdrawn():
+            return TICK_TRAY_MS
+        if self._has_live_progress():
+            return TICK_ACTIVE_MS
+        return TICK_IDLE_MS
+
+    def _cancel_tick(self) -> None:
+        aid = self._tick_after_id
+        self._tick_after_id = None
+        if aid is None:
+            return
+        try:
+            self.after_cancel(aid)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _has_live_progress(self) -> bool:
         return bool(self.worker.is_armed)
 
@@ -1291,14 +1320,15 @@ class FrameForgeApp(ctk.CTk):
                 return
         except Exception:  # noqa: BLE001
             return
-        if self._has_live_progress():
-            self._progress_ticks += 1
-            self.refresh_progress()
-            if self._progress_ticks >= self._full_refresh_every:
+        if not self._window_withdrawn():
+            if self._has_live_progress():
+                self._progress_ticks += 1
+                self.refresh_progress()
+                if self._progress_ticks >= self._full_refresh_every:
+                    self.refresh_queue(side_tabs=False)
+                    self._progress_ticks = 0
+            else:
                 self.refresh_queue(side_tabs=False)
-                self._progress_ticks = 0
-        else:
-            self.refresh_queue(side_tabs=False)
         self._poll_resources()
         if self.worker.wait_to_quit:
             from frameforge.gui.exit_policy import QUIT_NOW, classify_exit
@@ -1306,9 +1336,10 @@ class FrameForgeApp(ctk.CTk):
             if classify_exit(self.repo, self.worker) == QUIT_NOW:
                 self._finish_quit()
                 return
-        self._tick_after_id = self.after(1000, self._tick)
+        self._tick_after_id = self.after(self._next_tick_ms(), self._tick)
 
     def shutdown(self) -> None:
+        self._cancel_tick()
         try:
             self.tray.stop(timeout=3)
         except Exception:  # noqa: BLE001
