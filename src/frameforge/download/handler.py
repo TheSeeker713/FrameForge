@@ -10,7 +10,7 @@ from frameforge.db.repository import Job, JobRepository
 from frameforge.download.ytdlp import YtDlpDownloader
 from frameforge.paths import ensure_output_tree
 from frameforge.queue.process_registry import ProcessRegistry
-from frameforge.util.process_tree import DownloadCancelled
+from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 
 def _cookiefile_for_url(url: str) -> Path | None:
@@ -31,6 +31,10 @@ def make_download_handler(
         job = repo.get(job.id)
         if job.status == "cancelled":
             return
+        if job.status == "paused":
+            raise DownloadPaused("paused")
+
+        repo.merge_options(job.id, {"download_output_dir": str(dl.output_dir)})
 
         archived = repo.archive_lookup(job.url)
         if archived is not None:
@@ -50,6 +54,10 @@ def make_download_handler(
                 if process_registry is not None:
                     process_registry.kill(job.id)
                 raise DownloadCancelled("cancelled")
+            if current.status == "paused":
+                if process_registry is not None:
+                    process_registry.kill(job.id)
+                raise DownloadPaused("paused")
             meta = meta or {}
             repo.update_progress(
                 job.id,
@@ -73,6 +81,8 @@ def make_download_handler(
         # If cancelled mid-flight after process death, do not mark success
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")
+        if repo.get(job.id).status == "paused":
+            raise DownloadPaused("paused")
         repo.set_title(job.id, result.title)
         repo.set_paths(job.id, download_path=str(result.path), output_path=str(result.path))
         repo.add_archive(

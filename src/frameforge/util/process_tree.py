@@ -13,6 +13,10 @@ class DownloadCancelled(RuntimeError):
     """Raised when a download/upscale subprocess was terminated by cancel."""
 
 
+class DownloadPaused(RuntimeError):
+    """Raised when a download/upscale subprocess was stopped by pause (partials kept)."""
+
+
 def popen_creationflags() -> int:
     """Flags so the child is a killable process-group root on Windows."""
     if sys.platform != "win32":

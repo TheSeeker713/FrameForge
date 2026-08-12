@@ -15,11 +15,13 @@ class ProcessRegistry:
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _job_pid: dict[int, int] = field(default_factory=dict)
     _killed_jobs: set[int] = field(default_factory=set)
+    _paused_jobs: set[int] = field(default_factory=set)
 
     def register(self, job_id: int, pid: int) -> None:
         with self._lock:
             self._job_pid[int(job_id)] = int(pid)
             self._killed_jobs.discard(int(job_id))
+            self._paused_jobs.discard(int(job_id))
 
     def unregister(self, job_id: int) -> None:
         with self._lock:
@@ -32,6 +34,14 @@ class ProcessRegistry:
     def was_killed(self, job_id: int) -> bool:
         with self._lock:
             return int(job_id) in self._killed_jobs
+
+    def mark_paused(self, job_id: int) -> None:
+        with self._lock:
+            self._paused_jobs.add(int(job_id))
+
+    def was_paused(self, job_id: int) -> bool:
+        with self._lock:
+            return int(job_id) in self._paused_jobs
 
     def kill(self, job_id: int) -> bool:
         """Kill process tree for job if registered. Returns True if a kill was attempted."""

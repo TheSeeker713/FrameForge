@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from frameforge.paths import archive_dir, downloads_dir, ensure_output_tree
-from frameforge.util.process_tree import DownloadCancelled, popen_creationflags
+from frameforge.util.process_tree import DownloadCancelled, DownloadPaused, popen_creationflags
 
 if TYPE_CHECKING:
     from frameforge.queue.process_registry import ProcessRegistry
@@ -418,6 +418,8 @@ class YtDlpDownloader:
             assert proc.stdout is not None
             for raw in iter_subprocess_text_chunks(proc.stdout):
                 line = raw.rstrip("\n\r")
+                if process_registry.was_paused(job_id):
+                    raise DownloadPaused("paused")
                 if process_registry.was_killed(job_id):
                     raise DownloadCancelled("cancelled")
                 parsed = parse_cli_progress_line(line)
@@ -438,11 +440,13 @@ class YtDlpDownloader:
                     if "ETA" not in line and "at " not in line and "%" not in line:
                         printed.append(line)
             rc = proc.wait(timeout=30)
+            if process_registry.was_paused(job_id):
+                raise DownloadPaused("paused")
             if process_registry.was_killed(job_id):
                 raise DownloadCancelled("cancelled")
             if rc != 0:
                 raise RuntimeError(f"yt-dlp exited with code {rc}")
-        except DownloadCancelled:
+        except (DownloadCancelled, DownloadPaused):
             if proc.poll() is None:
                 process_registry.kill(job_id)
                 try:

@@ -417,9 +417,10 @@ class JobRepository:
             raise ValueError(
                 f"Job {job_id} status is '{job.status}' (need downloading/upscaling to pause)"
             )
-        opts = job.options()
-        opts["paused"] = True
-        self.merge_options(job_id, opts)
+        self.merge_options(
+            job_id,
+            {"paused": True, "paused_from": job.status},
+        )
         return self.update_status(job_id, PAUSED_STATUS)
 
     def resume_paused(self, job_id: int) -> Job:

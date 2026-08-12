@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from frameforge.queue.process_registry import ProcessRegistry
-from frameforge.util.process_tree import DownloadCancelled, popen_creationflags
+from frameforge.util.process_tree import DownloadCancelled, DownloadPaused, popen_creationflags
 
 
 def run_cmd(
@@ -40,6 +40,8 @@ def run_cmd(
     process_registry.register(job_id, proc.pid)
     try:
         stdout, stderr = proc.communicate()
+        if process_registry.was_paused(job_id):
+            raise DownloadPaused("paused")
         if process_registry.was_killed(job_id):
             raise DownloadCancelled("cancelled")
         if proc.returncode != 0:

@@ -10,7 +10,7 @@ from frameforge.paths import upscaled_dir
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.upscale.guards import assert_upscale_allowed
 from frameforge.upscale.pipeline import UpscalePipeline
-from frameforge.util.process_tree import DownloadCancelled
+from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 
 def make_upscale_handler(
@@ -35,10 +35,14 @@ def make_upscale_handler(
                 if process_registry is not None:
                     process_registry.kill(job.id)
                 raise DownloadCancelled("cancelled")
+            if repo.get(job.id).status == "paused":
+                if process_registry is not None:
+                    process_registry.kill(job.id)
+                raise DownloadPaused("paused")
             repo.update_progress(job.id, pct)
 
         def should_stop() -> bool:
-            return repo.get(job.id).status == "cancelled"
+            return repo.get(job.id).status in ("cancelled", "paused")
 
         result = pipe.run(
             src_path,
@@ -51,6 +55,8 @@ def make_upscale_handler(
         )
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")
+        if repo.get(job.id).status == "paused":
+            raise DownloadPaused("paused")
         repo.set_paths(job.id, output_path=str(result.output_path))
         repo.update_progress(job.id, 100.0)
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.queue.process_registry import ProcessRegistry
-from frameforge.util.process_tree import DownloadCancelled
+from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 
 JobHandler = Callable[[Job, JobRepository], None]
@@ -51,6 +51,32 @@ class SequentialWorker:
         job = self.repo.cancel(job_id)
         self.processes.kill(job_id)
         return job
+
+    def pause_job(self, job_id: int) -> Job:
+        """Hard-stop the active process tree, mark paused, keep partials, go idle."""
+        from frameforge.download.partials import collect_partial_artifacts
+
+        job = self.repo.get(job_id)
+        if job.status == "paused":
+            self.disarm()
+            return job
+        opts = job.options()
+        out_dir = opts.get("download_output_dir")
+        if out_dir:
+            parts = collect_partial_artifacts(out_dir)
+            patch: dict = {
+                "partial_paths": parts,
+                "download_output_dir": str(out_dir),
+            }
+            self.repo.merge_options(job_id, patch)
+            part_files = [p for p in parts if str(p).lower().endswith(".part")]
+            if part_files and not job.download_path:
+                self.repo.set_paths(job_id, download_path=part_files[0])
+        self.processes.mark_paused(job_id)
+        paused = self.repo.pause(job_id)
+        self.processes.kill(job_id)
+        self.disarm()
+        return paused
 
     @property
     def is_armed(self) -> bool:
@@ -215,9 +241,23 @@ class SequentialWorker:
             return False
         return self._run_download(job)
 
+    def _preserve_paused(self, job_id: int, exc: BaseException) -> bool:
+        """If job was paused (or pause exception), keep paused — never failed/cancelled."""
+        current = self.repo.get(job_id)
+        if current.status == "paused" or isinstance(exc, DownloadPaused):
+            if current.status != "paused":
+                try:
+                    self.repo.pause(job_id)
+                except ValueError:
+                    self.repo.update_status(job_id, "paused")
+            return True
+        return False
+
     def _preserve_cancelled(self, job_id: int, exc: BaseException) -> bool:
         """If job was cancelled (or cancel exception), keep cancelled — never failed."""
         current = self.repo.get(job_id)
+        if current.status == "paused" or isinstance(exc, DownloadPaused):
+            return False
         if current.status == "cancelled" or isinstance(exc, DownloadCancelled):
             if current.status != "cancelled":
                 self.repo.cancel(job_id)
@@ -232,7 +272,7 @@ class SequentialWorker:
         try:
             self.download_handler(job, self.repo)
             job = self.repo.get(job.id)
-            if job.status == "cancelled":
+            if job.status in ("cancelled", "paused"):
                 return True
             if job.upscale:
                 self.repo.update_status(job.id, "download_completed", progress=100.0)
@@ -241,6 +281,9 @@ class SequentialWorker:
             self.events.append(WorkerEvent(job.id, "download_end", time.time()))
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._preserve_paused(job.id, exc):
+                self.events.append(WorkerEvent(job.id, "download_pause", time.time()))
+                return True
             if self._preserve_cancelled(job.id, exc):
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
                 self.events.append(WorkerEvent(job.id, "download_cancel", time.time()))
@@ -261,11 +304,14 @@ class SequentialWorker:
                 raise RuntimeError("Upscale requested but no upscale_handler configured")
             self.upscale_handler(job, self.repo)
             job = self.repo.get(job.id)
-            if job.status != "cancelled":
+            if job.status not in ("cancelled", "paused"):
                 self.repo.update_status(job.id, "completed", progress=100.0)
             self.events.append(WorkerEvent(job.id, "upscale_end", time.time()))
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._preserve_paused(job.id, exc):
+                self.events.append(WorkerEvent(job.id, "upscale_pause", time.time()))
+                return True
             if self._preserve_cancelled(job.id, exc):
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
                 self.events.append(WorkerEvent(job.id, "upscale_cancel", time.time()))
