@@ -56,27 +56,37 @@ class SequentialWorker:
         """Hard-stop the active process tree, mark paused, keep partials, go idle."""
         from frameforge.download.partials import collect_partial_artifacts
 
+        self.disarm()
         job = self.repo.get(job_id)
         if job.status == "paused":
-            self.disarm()
             return job
-        opts = job.options()
-        out_dir = opts.get("download_output_dir")
-        if out_dir:
-            parts = collect_partial_artifacts(out_dir)
-            patch: dict = {
-                "partial_paths": parts,
-                "download_output_dir": str(out_dir),
-            }
-            self.repo.merge_options(job_id, patch)
-            part_files = [p for p in parts if str(p).lower().endswith(".part")]
-            if part_files and not job.download_path:
-                self.repo.set_paths(job_id, download_path=part_files[0])
         self.processes.mark_paused(job_id)
         paused = self.repo.pause(job_id)
         self.processes.kill(job_id)
-        self.disarm()
-        return paused
+        opts = paused.options()
+        out_dir = opts.get("download_output_dir")
+        if out_dir:
+            parts = collect_partial_artifacts(out_dir)
+            self.repo.merge_options(
+                job_id,
+                {"partial_paths": parts, "download_output_dir": str(out_dir)},
+            )
+            part_files = [p for p in parts if str(p).lower().endswith(".part")]
+            if part_files and not paused.download_path:
+                self.repo.set_paths(job_id, download_path=part_files[0])
+        return self.repo.get(job_id)
+
+    def resume_job(self, job_id: int) -> Job:
+        """Resume a paused job with continue semantics. Sequential: one active stage."""
+        job = self.repo.resume_paused(job_id)
+        if job.status == "download_completed":
+            with self._lock:
+                self._only_ids = set()
+                self._armed.set()
+            self.start(armed=True)
+            return job
+        self.request_download_ids([job.id])
+        return self.repo.get(job.id)
 
     @property
     def is_armed(self) -> bool:
@@ -242,16 +252,25 @@ class SequentialWorker:
         return self._run_download(job)
 
     def _preserve_paused(self, job_id: int, exc: BaseException) -> bool:
-        """If job was paused (or pause exception), keep paused — never failed/cancelled."""
+        """If job was paused (or pause exception), keep paused — never failed/cancelled.
+
+        If the user already resumed (status is pending / download_completed), do not
+        re-apply paused — just swallow the in-flight pause exception.
+        """
         current = self.repo.get(job_id)
-        if current.status == "paused" or isinstance(exc, DownloadPaused):
-            if current.status != "paused":
-                try:
-                    self.repo.pause(job_id)
-                except ValueError:
-                    self.repo.update_status(job_id, "paused")
+        if current.status == "paused":
             return True
-        return False
+        if not isinstance(exc, DownloadPaused):
+            return False
+        if current.status in ("pending", "download_completed", "completed"):
+            return True
+        if current.status in ("downloading", "upscaling"):
+            try:
+                self.repo.pause(job_id)
+            except ValueError:
+                pass
+            return True
+        return True
 
     def _preserve_cancelled(self, job_id: int, exc: BaseException) -> bool:
         """If job was cancelled (or cancel exception), keep cancelled — never failed."""
@@ -272,7 +291,7 @@ class SequentialWorker:
         try:
             self.download_handler(job, self.repo)
             job = self.repo.get(job.id)
-            if job.status in ("cancelled", "paused"):
+            if job.status in ("cancelled", "paused", "pending"):
                 return True
             if job.upscale:
                 self.repo.update_status(job.id, "download_completed", progress=100.0)

@@ -34,6 +34,10 @@ def make_download_handler(
         if job.status == "paused":
             raise DownloadPaused("paused")
 
+        out_dir = job.options().get("download_output_dir")
+        if out_dir:
+            dl.output_dir = Path(out_dir)
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
         repo.merge_options(job.id, {"download_output_dir": str(dl.output_dir)})
 
         archived = repo.archive_lookup(job.url)

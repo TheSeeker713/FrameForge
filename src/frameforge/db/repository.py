@@ -424,11 +424,25 @@ class JobRepository:
         return self.update_status(job_id, PAUSED_STATUS)
 
     def resume_paused(self, job_id: int) -> Job:
-        """Return a paused job to pending so it can be claimed (continue/resume)."""
+        """Return a paused job to a claimable stage (download pending or upscale chain)."""
         job = self.get(job_id)
         if job.status != PAUSED_STATUS:
             raise ValueError(f"Job {job_id} status is '{job.status}' (need paused to resume)")
-        self.merge_options(job_id, {"paused": False})
+        from_stage = job.options().get("paused_from") or "downloading"
+        self.merge_options(job_id, {"paused": False, "continue_download": True})
+        if from_stage == "upscaling":
+            now = utc_now()
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'download_completed', upscale = 1, error = NULL,
+                    finished_at = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, job_id),
+            )
+            self.conn.commit()
+            return self.get(job_id)
         return self.update_status(job_id, "pending", error=None)
 
     def claim_next_pending(self, job_ids: list[int] | None = None) -> Job | None:

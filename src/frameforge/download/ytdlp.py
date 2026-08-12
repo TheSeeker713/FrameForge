@@ -288,7 +288,18 @@ class YtDlpDownloader:
         if self.use_aria2c:
             opts["external_downloader"] = {"default": "aria2c"}
             opts["external_downloader_args"] = {
-                "aria2c": ["-x", "8", "-s", "8", "-k", "1M", "--file-allocation=none"]
+                "aria2c": [
+                    "-x",
+                    "8",
+                    "-s",
+                    "8",
+                    "-k",
+                    "1M",
+                    "--file-allocation=none",
+                    "-c",
+                    "--allow-overwrite=true",
+                    "--auto-file-renaming=false",
+                ]
             }
         return opts
 
@@ -348,6 +359,7 @@ class YtDlpDownloader:
             "-m",
             "yt_dlp",
             "--newline",
+            "--continue",
             "--progress",
             "--no-colors",
             "--no-playlist",
@@ -383,7 +395,7 @@ class YtDlpDownloader:
                     "--downloader",
                     "aria2c",
                     "--downloader-args",
-                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none --summary-interval=1 --enable-color=false",
+                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none --summary-interval=1 --enable-color=false -c --allow-overwrite=true --auto-file-renaming=false",
                 ]
             )
         cmd.append(url)
