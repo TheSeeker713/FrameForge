@@ -6,7 +6,16 @@ import os
 from pathlib import Path
 
 APP_DIR_NAME = "FrameForge"
-SUBDIRS = ("downloads", "upscaled", "temp", "models", "archive", "cookies", "thumbnails")
+SUBDIRS = (
+    "downloads",
+    "upscaled",
+    "converted",
+    "temp",
+    "models",
+    "archive",
+    "cookies",
+    "thumbnails",
+)
 
 
 def user_downloads() -> Path:
@@ -23,6 +32,10 @@ def downloads_dir() -> Path:
 
 def upscaled_dir() -> Path:
     return frameforge_root() / "upscaled"
+
+
+def converted_dir() -> Path:
+    return frameforge_root() / "converted"
 
 
 def temp_dir() -> Path:
