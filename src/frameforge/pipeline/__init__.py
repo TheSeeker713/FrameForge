@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from frameforge.convert.handler import make_convert_handler
 from frameforge.db.repository import JobRepository
 from frameforge.download.handler import make_download_handler
 from frameforge.download.ytdlp import YtDlpDownloader
@@ -34,6 +35,7 @@ def build_worker(
     worker.upscale_handler = make_upscale_handler(
         upscale_pipeline, process_registry=worker.processes
     )
+    worker.convert_handler = make_convert_handler(process_registry=worker.processes)
     return worker
 
 

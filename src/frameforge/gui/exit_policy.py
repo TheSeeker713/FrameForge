@@ -28,9 +28,9 @@ OUTCOME_WAIT = "wait"
 
 
 def list_active_work(repo: Any) -> list[Any]:
-    """Jobs currently in downloading or upscaling (at most one in FrameForge)."""
+    """Jobs currently in downloading, upscaling, or converting (at most one)."""
     jobs: list[Any] = []
-    for status in ("downloading", "upscaling"):
+    for status in ("downloading", "upscaling", "converting"):
         jobs.extend(list(repo.list_jobs(status)))
     return jobs
 

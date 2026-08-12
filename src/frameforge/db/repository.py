@@ -13,7 +13,9 @@ from frameforge.db.connection import connect
 from frameforge.db.migrate import migrate
 
 ACTIVE_DOWNLOAD_STATUSES = ("downloading",)
-INTERRUPTIBLE_STATUSES = ("downloading", "upscaling")
+ACTIVE_STAGE_STATUSES = ("downloading", "upscaling", "converting")
+INTERRUPTIBLE_STATUSES = ACTIVE_STAGE_STATUSES
+CONVERT_PENDING_STATUS = "convert_pending"
 TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 PAUSED_STATUS = "paused"
 HOLDING_STATUSES = (PAUSED_STATUS,)
@@ -252,7 +254,7 @@ class JobRepository:
         job = self.get(job_id)
         started = job.started_at
         finished = job.finished_at
-        if status in ("downloading", "upscaling") and not started:
+        if status in ACTIVE_STAGE_STATUSES and not started:
             started = now
         if status in ("completed", "failed", "cancelled"):
             finished = now
@@ -448,6 +450,37 @@ class JobRepository:
         self.conn.commit()
         return self.get(job_id)
 
+    def queue_for_convert(self, job_id: int) -> Job:
+        """Queue a completed job with local media for sequential MP3 conversion."""
+        from pathlib import Path
+
+        job = self.get(job_id)
+        if job.status == CONVERT_PENDING_STATUS:
+            return job
+        if job.status != "completed":
+            raise ValueError(
+                f"Job {job_id} status is '{job.status}' (need completed to convert)"
+            )
+        src = job.output_path or job.download_path
+        if not src or not Path(src).is_file():
+            raise ValueError(f"Job {job_id} has no valid local media path for convert")
+        now = utc_now()
+        self.merge_options(job_id, {"convert_requested": True})
+        self.conn.execute(
+            """
+            UPDATE jobs
+            SET status = ?,
+                progress = 0,
+                error = NULL,
+                finished_at = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (CONVERT_PENDING_STATUS, now, job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
+
     def cancel(self, job_id: int) -> Job:
         return self.update_status(job_id, "cancelled", progress=0)
 
@@ -458,7 +491,7 @@ class JobRepository:
             return job
         if job.status not in INTERRUPTIBLE_STATUSES:
             raise ValueError(
-                f"Job {job_id} status is '{job.status}' (need downloading/upscaling to pause)"
+                f"Job {job_id} status is '{job.status}' (need downloading/upscaling/converting to pause)"
             )
         self.merge_options(
             job_id,
@@ -486,6 +519,8 @@ class JobRepository:
             )
             self.conn.commit()
             return self.get(job_id)
+        if from_stage == "converting":
+            return self.update_status(job_id, CONVERT_PENDING_STATUS, error=None)
         return self.update_status(job_id, "pending", error=None)
 
     def claim_next_pending(self, job_ids: list[int] | None = None) -> Job | None:
@@ -506,7 +541,7 @@ class JobRepository:
                 return None
             # Also block if another stage is actively running under single-worker design
             busy = self.conn.execute(
-                "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling')"
+                "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
             ).fetchone()
             if int(busy["c"]) > 0:
                 self.conn.execute("ROLLBACK")
@@ -550,32 +585,81 @@ class JobRepository:
             raise
         return self.get(int(row["id"]))
 
-    def recover_interrupted(self) -> list[int]:
-        """Reset interrupted downloading/upscaling jobs to pending for retry.
+    def claim_next_convert(self) -> Job | None:
+        """Atomically claim the next convert_pending job. Blocks if any stage is active."""
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            busy = self.conn.execute(
+                "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
+            ).fetchone()
+            if int(busy["c"]) > 0:
+                self.conn.execute("ROLLBACK")
+                return None
+            row = self.conn.execute(
+                """
+                SELECT id FROM jobs
+                WHERE status = ?
+                ORDER BY priority DESC, id ASC
+                LIMIT 1
+                """,
+                (CONVERT_PENDING_STATUS,),
+            ).fetchone()
+            if not row:
+                self.conn.execute("ROLLBACK")
+                return None
+            now = utc_now()
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'converting', progress = 0, updated_at = ?,
+                    started_at = COALESCE(started_at, ?), error = NULL
+                WHERE id = ?
+                """,
+                (now, now, row["id"]),
+            )
+            self.conn.execute("COMMIT")
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+        return self.get(int(row["id"]))
 
-        Startup / process-restart policy (unchanged): active stages become
-        ``pending`` with error ``Recovered after interrupted run`` so the user
-        can start them again. In-process handler exceptions are failed by the
-        worker instead (they are not treated as a crash restart).
+    def recover_interrupted(self) -> list[int]:
+        """Reset interrupted active stages after a process restart.
+
+        downloading/upscaling → pending. converting → convert_pending (keep convert intent).
         """
+        conv_rows = self.conn.execute(
+            "SELECT id FROM jobs WHERE status = 'converting'"
+        ).fetchall()
+        conv_ids = [int(r["id"]) for r in conv_rows]
         rows = self.conn.execute(
             "SELECT id FROM jobs WHERE status IN ('downloading', 'upscaling')"
         ).fetchall()
         ids = [int(r["id"]) for r in rows]
-        if not ids:
-            return []
         now = utc_now()
-        self.conn.execute(
-            """
-            UPDATE jobs
-            SET status = 'pending', error = 'Recovered after interrupted run',
-                progress = 0, updated_at = ?
-            WHERE status IN ('downloading', 'upscaling')
-            """,
-            (now,),
-        )
-        self.conn.commit()
-        return ids
+        if conv_ids:
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error = 'Recovered after interrupted run',
+                    progress = 0, updated_at = ?
+                WHERE status = 'converting'
+                """,
+                (CONVERT_PENDING_STATUS, now),
+            )
+        if ids:
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'pending', error = 'Recovered after interrupted run',
+                    progress = 0, updated_at = ?
+                WHERE status IN ('downloading', 'upscaling')
+                """,
+                (now,),
+            )
+        if conv_ids or ids:
+            self.conn.commit()
+        return ids + conv_ids
 
     def url_in_queue(self, url: str) -> bool:
         row = self.conn.execute(

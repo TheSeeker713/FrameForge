@@ -17,18 +17,27 @@ def can_upscale(job: Any) -> bool:
     return bool(src) and Path(src).is_file()
 
 
+def can_convert(job: Any) -> bool:
+    if getattr(job, "status", None) != "completed":
+        return False
+    src = getattr(job, "output_path", None) or getattr(job, "download_path", None)
+    return bool(src) and Path(src).is_file()
+
+
 def can_cancel(job: Any) -> bool:
     return getattr(job, "status", None) in {
         "pending",
         "downloading",
         "upscaling",
+        "converting",
+        "convert_pending",
         "download_completed",
         "paused",
     }
 
 
 def can_pause(job: Any) -> bool:
-    return getattr(job, "status", None) in {"downloading", "upscaling"}
+    return getattr(job, "status", None) in {"downloading", "upscaling", "converting"}
 
 
 def can_resume(job: Any) -> bool:

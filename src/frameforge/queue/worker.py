@@ -34,6 +34,7 @@ class SequentialWorker:
     repo: JobRepository
     download_handler: JobHandler
     upscale_handler: JobHandler | None = None
+    convert_handler: JobHandler | None = None
     poll_interval: float = 0.05
     _stop: threading.Event = field(default_factory=threading.Event)
     _armed: threading.Event = field(default_factory=threading.Event)
@@ -82,6 +83,12 @@ class SequentialWorker:
         """Resume a paused job with continue semantics. Sequential: one active stage."""
         job = self.repo.resume_paused(job_id)
         if job.status == "download_completed":
+            with self._lock:
+                self._only_ids = set()
+                self._armed.set()
+            self.start(armed=True)
+            return job
+        if job.status == "convert_pending":
             with self._lock:
                 self._only_ids = set()
                 self._armed.set()
@@ -183,6 +190,27 @@ class SequentialWorker:
             self.start(armed=True)
         return queued
 
+    def request_convert_ids(self, job_ids: Iterable[int], *, start_loop: bool = True) -> list[int]:
+        """Queue completed jobs for MP3 convert and arm the worker (no new downloads)."""
+        queued: list[int] = []
+        errors: list[str] = []
+        for jid in job_ids:
+            try:
+                self.repo.queue_for_convert(int(jid))
+                queued.append(int(jid))
+            except ValueError as exc:
+                errors.append(str(exc))
+        if not queued:
+            raise ValueError(
+                "; ".join(errors) if errors else "No eligible completed jobs to convert"
+            )
+        with self._lock:
+            self._only_ids = set()
+            self._armed.set()
+        if start_loop:
+            self.start(armed=True)
+        return queued
+
     def run_until_idle(self, timeout: float = 120.0) -> None:
         """Process pending jobs in this thread until queue idle or timeout.
 
@@ -196,11 +224,14 @@ class SequentialWorker:
         while time.time() < deadline:
             if not self._process_one():
                 pending = self.repo.count_by_status("pending")
-                busy = self.repo.count_by_status("downloading") + self.repo.count_by_status(
-                    "upscaling"
+                busy = (
+                    self.repo.count_by_status("downloading")
+                    + self.repo.count_by_status("upscaling")
+                    + self.repo.count_by_status("converting")
                 )
                 download_completed = self.repo.count_by_status("download_completed")
-                if pending == 0 and busy == 0 and download_completed == 0:
+                convert_pending = self.repo.count_by_status("convert_pending")
+                if pending == 0 and busy == 0 and download_completed == 0 and convert_pending == 0:
                     self.disarm()
                     return
             time.sleep(self.poll_interval)
@@ -217,11 +248,14 @@ class SequentialWorker:
                 if not worked:
                     # Disarm when no eligible pending and nothing busy / chained
                     pending = self._eligible_pending_count()
-                    busy = self.repo.count_by_status("downloading") + self.repo.count_by_status(
-                        "upscaling"
+                    busy = (
+                        self.repo.count_by_status("downloading")
+                        + self.repo.count_by_status("upscaling")
+                        + self.repo.count_by_status("converting")
                     )
                     chained = self.repo.count_by_status("download_completed")
-                    if pending == 0 and busy == 0 and chained == 0:
+                    convert_pending = self.repo.count_by_status("convert_pending")
+                    if pending == 0 and busy == 0 and chained == 0 and convert_pending == 0:
                         self.disarm()
                     time.sleep(self.poll_interval)
             except Exception as exc:  # noqa: BLE001
@@ -232,7 +266,7 @@ class SequentialWorker:
     def _fail_stuck_active_stages(self, reason: str) -> None:
         from frameforge.errors import annotate_job_error
 
-        for status in ("downloading", "upscaling"):
+        for status in ("downloading", "upscaling", "converting"):
             for job in list(self.repo.list_jobs(status)):
                 annotate_job_error(self.repo, job.id, reason, url=job.url)
 
@@ -252,6 +286,10 @@ class SequentialWorker:
     def _process_one(self) -> bool:
         if not self._armed.is_set():
             return False
+
+        claimed_convert = self.repo.claim_next_convert()
+        if claimed_convert:
+            return self._run_convert(claimed_convert)
 
         # Prefer continuing a job that finished download and needs upscale
         for job in self.repo.list_jobs("download_completed"):
@@ -276,9 +314,9 @@ class SequentialWorker:
             return True
         if not isinstance(exc, DownloadPaused):
             return False
-        if current.status in ("pending", "download_completed", "completed"):
+        if current.status in ("pending", "download_completed", "completed", "convert_pending"):
             return True
-        if current.status in ("downloading", "upscaling"):
+        if current.status in ("downloading", "upscaling", "converting"):
             try:
                 self.repo.pause(job_id)
             except ValueError:
@@ -353,6 +391,33 @@ class SequentialWorker:
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self.events.append(WorkerEvent(job.id, "upscale_fail", time.time()))
+            return True
+        finally:
+            self.processes.unregister(job.id)
+
+    def _run_convert(self, job: Job) -> bool:
+        self.events.append(WorkerEvent(job.id, "convert_start", time.time()))
+        try:
+            if not self.convert_handler:
+                raise RuntimeError("Convert requested but no convert_handler configured")
+            self.convert_handler(job, self.repo)
+            job = self.repo.get(job.id)
+            if job.status not in ("cancelled", "paused"):
+                self.repo.update_status(job.id, "completed", progress=100.0)
+            self.events.append(WorkerEvent(job.id, "convert_end", time.time()))
+            return True
+        except Exception as exc:  # noqa: BLE001
+            if self._preserve_paused(job.id, exc):
+                self.events.append(WorkerEvent(job.id, "convert_pause", time.time()))
+                return True
+            if self._preserve_cancelled(job.id, exc):
+                self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
+                self.events.append(WorkerEvent(job.id, "convert_cancel", time.time()))
+                return True
+            from frameforge.errors import annotate_job_error
+
+            annotate_job_error(self.repo, job.id, str(exc), url=job.url)
+            self.events.append(WorkerEvent(job.id, "convert_fail", time.time()))
             return True
         finally:
             self.processes.unregister(job.id)
