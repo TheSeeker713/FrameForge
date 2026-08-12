@@ -470,20 +470,33 @@ class FrameForgeApp(ctk.CTk):
                 prefill = None
         self.authenticate_site(prefill=prefill)
 
+    def import_cookies_from_browser_for_site(
+        self,
+        url_or_domain: str,
+        *,
+        browser: str = "firefox",
+    ):
+        from frameforge.download.browser_import import import_cookies_from_browser
+
+        runner = getattr(self, "_browser_cookie_runner", None)
+        return import_cookies_from_browser(
+            url_or_domain,
+            browser=browser,
+            runner=runner,
+        )
+
     def authenticate_site(self, prefill: str | None = None) -> None:
         from frameforge.download import cookies as cookie_mod
 
         win = ctk.CTkToplevel(self)
         win.title("Authenticate site")
-        win.geometry("560x380")
+        win.geometry("560x460")
         ctk.CTkLabel(
             win,
             text=(
                 "Authenticate this site (one user-triggered path — no auto-open loops)\n\n"
-                "1) Enter the site URL or domain (e.g. youtube.com)\n"
-                "2) Open browser → log in and/or accept bot/age gates\n"
-                "3) Export a Netscape cookies.txt (browser extension, e.g. Get cookies.txt LOCALLY)\n"
-                "4) Import that file — stored as Downloads\\FrameForge\\cookies\\<domain>.txt\n\n"
+                "Preferred: Import from browser (Firefox first). Chromium may fail while the\n"
+                "browser is open (App-Bound Encryption) — then use Open browser + cookies.txt.\n\n"
                 "If cookies already exist for the domain, Open browser is skipped (smart skip). "
                 "Import again to replace stale cookies, then retry the failed job."
             ),
@@ -537,6 +550,41 @@ class FrameForgeApp(ctk.CTk):
                 messagebox.showerror("FrameForge", str(exc))
                 return
             status.configure(text=f"Saved cookies to {dest}")
+
+        def do_import_browser() -> None:
+            raw = entry.get().strip()
+            if not raw:
+                messagebox.showerror("FrameForge", "Enter domain/URL first")
+                return
+            browser = (browser_var.get() or "firefox").strip().lower()
+            result = self.import_cookies_from_browser_for_site(raw, browser=browser)
+            if result.ok:
+                status.configure(text=result.message)
+            else:
+                messagebox.showerror("FrameForge", result.message)
+                status.configure(
+                    text="Browser import failed — use Open browser + Import cookies.txt."
+                )
+
+        from frameforge.download.browser_import import BROWSER_PREFERENCE
+
+        browser_row = ctk.CTkFrame(win, fg_color="transparent")
+        browser_row.pack(fill="x", padx=16, pady=(8, 0))
+        ctk.CTkLabel(browser_row, text="Browser").pack(side="left", padx=(0, 8))
+        browser_var = tk.StringVar(value="firefox")
+        self._auth_browser_menu = ctk.CTkOptionMenu(
+            browser_row,
+            values=list(BROWSER_PREFERENCE),
+            variable=browser_var,
+            width=140,
+        )
+        self._auth_browser_menu.pack(side="left")
+        self._auth_import_browser_btn = ctk.CTkButton(
+            browser_row,
+            text="Import from browser",
+            command=do_import_browser,
+        )
+        self._auth_import_browser_btn.pack(side="left", padx=(8, 0))
 
         btn_row = ctk.CTkFrame(win, fg_color="transparent")
         btn_row.pack(fill="x", padx=16, pady=12)
