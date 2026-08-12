@@ -197,12 +197,62 @@ class FrameForgeApp(ctk.CTk):
 
         self.bind("<Control-v>", self._paste_focus)
         self.bind("<Control-Return>", lambda e: self.add_url())
+        self.bind("<Control-q>", lambda e: self.request_quit())
+        self.protocol("WM_DELETE_WINDOW", self.request_quit)
+        self._build_menubar()
+        self._shutting_down = False
 
         if start_worker:
             self.worker.request_download_all()
 
         self.refresh_queue()
         self.after(1000, self._tick)
+
+    def _build_menubar(self) -> None:
+        menubar = tk.Menu(self)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Quit", command=self.request_quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+        self.configure(menu=menubar)
+
+    def request_quit(self) -> None:
+        """Window X, File→Quit, Ctrl+Q, and tray Quit all use this policy."""
+        from frameforge.gui.exit_policy import (
+            NEEDS_CHOICE,
+            OUTCOME_EXIT,
+            QUIT_NOW,
+            WAIT_IN_PROGRESS,
+            apply_quit_choice,
+            ask_quit_while_busy,
+            classify_exit,
+        )
+
+        if self._shutting_down:
+            return
+        kind = classify_exit(self.repo, self.worker)
+        if kind == WAIT_IN_PROGRESS:
+            return
+        if kind == QUIT_NOW:
+            self._finish_quit()
+            return
+        assert kind == NEEDS_CHOICE
+        chooser = getattr(self, "_ask_quit_choice", None)
+        choice = chooser() if chooser else ask_quit_while_busy(self)
+        if not choice:
+            return
+        outcome = apply_quit_choice(self.worker, choice)
+        if outcome == OUTCOME_EXIT:
+            self._finish_quit()
+
+    def _finish_quit(self) -> None:
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        self.shutdown()
+        try:
+            self.destroy()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_selection_changed(self, ids: set[int]) -> None:
         self._on_queue_selection_changed(ids)
@@ -736,12 +786,26 @@ class FrameForgeApp(ctk.CTk):
         self._update_error_panel()
 
     def _tick(self) -> None:
+        if self._shutting_down:
+            return
         self.refresh_queue()
+        if self.worker.wait_to_quit:
+            from frameforge.gui.exit_policy import QUIT_NOW, classify_exit
+
+            if classify_exit(self.repo, self.worker) == QUIT_NOW:
+                self._finish_quit()
+                return
         self.after(1000, self._tick)
 
     def shutdown(self) -> None:
-        self.worker.stop(timeout=5)
-        self.repo.close()
+        try:
+            self.worker.stop(timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.repo.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def create_app(**kwargs: Any) -> FrameForgeApp:

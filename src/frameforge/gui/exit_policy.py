@@ -79,3 +79,57 @@ def apply_quit_choice(worker: Any, choice: str) -> str:
     else:
         worker.disarm()
     return OUTCOME_WAIT
+
+
+QUIT_DIALOG_TITLE = "Work in progress"
+QUIT_OPTION_CANCEL = "Cancel download and quit"
+QUIT_OPTION_PAUSE = "Pause download and quit"
+QUIT_OPTION_WAIT = "Wait for download to complete, then quit"
+
+
+def ask_quit_while_busy(parent: Any, *, wait: bool = True) -> str | None:
+    """Show the three-option quit dialog. Returns a CHOICE_* or None (stay)."""
+    import customtkinter as ctk
+
+    result: list[str | None] = [None]
+    win = ctk.CTkToplevel(parent)
+    win.title(QUIT_DIALOG_TITLE)
+    win.geometry("420x220")
+    win.resizable(False, False)
+    try:
+        win.transient(parent)
+    except Exception:  # noqa: BLE001
+        pass
+    ctk.CTkLabel(
+        win,
+        text="A download or upscale is still running.\nChoose how to quit:",
+        justify="left",
+    ).pack(anchor="w", padx=16, pady=(16, 12))
+
+    def choose(choice: str) -> None:
+        result[0] = choice
+        win.destroy()
+
+    ctk.CTkButton(
+        win,
+        text=QUIT_OPTION_CANCEL,
+        command=lambda: choose(CHOICE_CANCEL_AND_QUIT),
+    ).pack(fill="x", padx=16, pady=4)
+    ctk.CTkButton(
+        win,
+        text=QUIT_OPTION_PAUSE,
+        command=lambda: choose(CHOICE_PAUSE_AND_QUIT),
+    ).pack(fill="x", padx=16, pady=4)
+    ctk.CTkButton(
+        win,
+        text=QUIT_OPTION_WAIT,
+        command=lambda: choose(CHOICE_WAIT_THEN_QUIT),
+    ).pack(fill="x", padx=16, pady=4)
+    win.protocol("WM_DELETE_WINDOW", win.destroy)
+    if wait:
+        try:
+            win.grab_set()
+        except Exception:  # noqa: BLE001
+            pass
+        parent.wait_window(win)
+    return result[0]
