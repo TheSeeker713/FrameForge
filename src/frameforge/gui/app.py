@@ -25,6 +25,8 @@ ctk.set_default_color_theme("dark-blue")
 TICK_IDLE_MS = 2500
 TICK_ACTIVE_MS = 400
 TICK_TRAY_MS = 2000
+TICK_LIGHT_IDLE_MS = 4000
+TICK_LIGHT_ACTIVE_MS = 1000
 FULL_REFRESH_EVERY_ACTIVE = 5
 ERROR_PANEL_MAX_CHARS = 8000
 SETTINGS_RELOAD_S = 10.0
@@ -258,6 +260,7 @@ class FrameForgeApp(ctk.CTk):
             pause_resume_label=self._tray_pause_resume_label,
             icon_factory=tray_icon_factory,
         )
+        self._apply_light_ui()
 
         if recover_on_launch:
             self.worker.prepare_idle_launch()
@@ -275,6 +278,17 @@ class FrameForgeApp(ctk.CTk):
         from frameforge.gui.marshal import schedule_on_ui
 
         schedule_on_ui(self, fn)
+
+    def _ui_light_mode(self) -> bool:
+        return bool(getattr(self, "_light_ui", False))
+
+    def _apply_light_ui(self) -> None:
+        self._light_ui = self.repo.get_setting("ui_light_mode", "0") == "1"
+        show = not self._light_ui
+        if hasattr(self, "queue_list"):
+            self.queue_list._show_thumbs = show
+        if hasattr(self, "history_list"):
+            self.history_list._show_thumbs = show
 
     def _close_to_tray_enabled(self) -> bool:
         return self.repo.get_setting("close_to_tray", "0") == "1"
@@ -773,7 +787,7 @@ class FrameForgeApp(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         win.title("Settings")
-        win.geometry("480x520")
+        win.geometry("480x580")
         ctk.CTkLabel(win, text="Format preference").pack(anchor="w", padx=16, pady=(16, 4))
         fmt = ctk.CTkEntry(win)
         fmt.insert(0, self._default_format())
@@ -788,6 +802,12 @@ class FrameForgeApp(ctk.CTk):
             text="Close to system tray (window X hides; Quit still asks if work is running)",
             variable=tray_var,
         ).pack(anchor="w", padx=16, pady=8)
+        light_var = tk.BooleanVar(value=self._ui_light_mode())
+        ctk.CTkCheckBox(
+            win,
+            text="Light UI (no live thumbs, slower refresh — for weak machines)",
+            variable=light_var,
+        ).pack(anchor="w", padx=16, pady=(0, 8))
 
         mon = settings_from_repo(self.repo)
         ctk.CTkLabel(win, text="Upscale resource monitor").pack(anchor="w", padx=16, pady=(8, 4))
@@ -818,6 +838,8 @@ class FrameForgeApp(ctk.CTk):
             self.repo.set_setting("format_preference", fmt.get().strip() or "best")
             self.repo.set_setting("upscale_after_download", "1" if upscale_var.get() else "0")
             self.repo.set_setting("close_to_tray", "1" if tray_var.get() else "0")
+            self.repo.set_setting("ui_light_mode", "1" if light_var.get() else "0")
+            self._apply_light_ui()
             try:
                 ram_pct = float(ram_ent.get().strip() or mon.ram_warning_pct)
             except ValueError:
@@ -1205,12 +1227,13 @@ class FrameForgeApp(ctk.CTk):
         self.queue_list.update_jobs(jobs)
         if side_tabs:
             self.refresh_history()
-            self.refresh_thumbnails()
+            if not self._ui_light_mode():
+                self.refresh_thumbnails()
         else:
             tab = self._active_tab_name()
             if tab == "History":
                 self.refresh_history()
-            elif tab == "Thumbnails":
+            elif tab == "Thumbnails" and not self._ui_light_mode():
                 self.refresh_thumbnails()
 
         downloading = 0
@@ -1309,9 +1332,10 @@ class FrameForgeApp(ctk.CTk):
     def _next_tick_ms(self) -> int:
         if self._window_withdrawn():
             return TICK_TRAY_MS
+        light = self._ui_light_mode()
         if self._has_live_progress():
-            return TICK_ACTIVE_MS
-        return TICK_IDLE_MS
+            return TICK_LIGHT_ACTIVE_MS if light else TICK_ACTIVE_MS
+        return TICK_LIGHT_IDLE_MS if light else TICK_IDLE_MS
 
     def _cancel_tick(self) -> None:
         aid = self._tick_after_id
