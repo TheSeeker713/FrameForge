@@ -166,21 +166,10 @@ class FrameForgeApp(ctk.CTk):
 
     @staticmethod
     def format_error_panel_text(job: Any | None) -> str:
-        """Plain text for the error panel: full error, plus auth hint when applicable."""
-        if job is None:
-            return ""
-        err = getattr(job, "error", None)
-        if not err:
-            return ""
-        text = str(err)
-        from frameforge.download.auth_hints import auth_action_hint, job_needs_auth
+        """Category + message + suggested next action (auth, retry, lower-res, …)."""
+        from frameforge.errors import format_error_panel
 
-        if job_needs_auth(job):
-            opts = job.options() if hasattr(job, "options") else {}
-            hint = opts.get("auth_hint") or auth_action_hint(getattr(job, "url", None))
-            if hint and hint not in text:
-                text = f"{text}\n\n{hint}"
-        return text
+        return format_error_panel(job)
 
     def _update_error_panel(self) -> None:
         ids = self._selected_ids

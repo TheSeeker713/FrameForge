@@ -61,6 +61,51 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
     return UNKNOWN
 
 
+def suggested_action(category: str, *, auth_hint: str | None = None) -> str | None:
+    if category == AUTH_REQUIRED:
+        return auth_hint or (
+            "Next: Authenticate this site / Import cookies, then Retry failed."
+        )
+    if category == NETWORK:
+        return "Next: check the network connection, then Retry failed."
+    if category == FFMPEG:
+        return "Next: confirm FFmpeg is on PATH (`python -m frameforge --check-env`), then retry."
+    if category == BLOCKED_4K:
+        return "Next: select a lower-resolution source (≤1080p). 4K/≥2160p cannot be upscaled."
+    if category == CANCELLED:
+        return "Next: Retry failed or Download selected if you still want this item."
+    if category == UNKNOWN:
+        return "Next: Retry failed, or inspect the message above."
+    return None
+
+
+def format_error_panel(job: Any | None) -> str:
+    """Category + human message + suggested next action for the GUI error panel."""
+    if job is None:
+        return ""
+    err = getattr(job, "error", None)
+    status = getattr(job, "status", None)
+    opts = job.options() if hasattr(job, "options") else {}
+    cat = opts.get("error_category")
+    if not cat:
+        cat = classify_error(err, status=status) if (err or status == "cancelled") else None
+    if not err and status != "cancelled":
+        return ""
+    lines: list[str] = []
+    if cat:
+        lines.append(f"Category: {cat}")
+    if err:
+        lines.append(str(err))
+    elif status == "cancelled":
+        lines.append("Cancelled by user.")
+    hint = opts.get("auth_hint") if cat == AUTH_REQUIRED else None
+    action = suggested_action(cat or UNKNOWN, auth_hint=hint)
+    if action and action not in "\n".join(lines):
+        lines.append("")
+        lines.append(action)
+    return "\n".join(lines)
+
+
 def annotate_job_error(
     repo: Any,
     job_id: int,
