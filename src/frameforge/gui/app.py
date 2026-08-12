@@ -189,6 +189,10 @@ class FrameForgeApp(ctk.CTk):
         self.pause_btn.pack(side="left", padx=(0, 8))
         self.resume_btn = ctk.CTkButton(controls, text="Resume", command=self.resume_selected)
         self.resume_btn.pack(side="left", padx=(0, 8))
+        self.set_format_btn = ctk.CTkButton(
+            controls, text="Set format…", command=self.set_format_selected
+        )
+        self.set_format_btn.pack(side="left", padx=(0, 8))
         self.retry_btn = ctk.CTkButton(controls, text="Retry failed", command=self.retry_failed)
         self.retry_btn.pack(side="left", padx=(0, 8))
         self.prio_up_btn = ctk.CTkButton(
@@ -699,6 +703,44 @@ class FrameForgeApp(ctk.CTk):
             return
         self.worker.request_download_all()
         self.refresh_queue()
+
+    def set_format_selected(self) -> None:
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select one or more jobs first")
+            return
+        self._open_format_picker(ids)
+
+    def apply_format_to_jobs(self, job_ids: list[int], preference: str) -> None:
+        from frameforge.download.formats import FORMAT_PRESETS
+
+        value = FORMAT_PRESETS.get(preference, preference)
+        for jid in job_ids:
+            self.repo.set_format_preference(int(jid), value)
+        self.refresh_queue()
+
+    def _open_format_picker(self, job_ids: list[int]) -> None:
+        from frameforge.download.formats import PRESET_LABELS, label_for_preference
+
+        win = ctk.CTkToplevel(self)
+        win.title("Set format")
+        win.geometry("360x180")
+        current = "Best"
+        try:
+            current = label_for_preference(self.repo.get(job_ids[0]).format_preference)
+        except Exception:  # noqa: BLE001
+            pass
+        ctk.CTkLabel(win, text="Format for selected job(s)").pack(anchor="w", padx=16, pady=(16, 8))
+        var = tk.StringVar(value=current if current in PRESET_LABELS else "Best")
+        menu = ctk.CTkOptionMenu(win, values=list(PRESET_LABELS), variable=var)
+        menu.pack(fill="x", padx=16)
+
+        def save() -> None:
+            self.apply_format_to_jobs(job_ids, var.get())
+            win.destroy()
+
+        ctk.CTkButton(win, text="Apply", command=save).pack(pady=16)
+        self._format_picker = win
 
     def upscale_selected(self) -> None:
         from frameforge.gui.actions import can_upscale

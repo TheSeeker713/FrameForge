@@ -155,9 +155,15 @@ class QueueList(ctk.CTkScrollableFrame):
         ts = ""
         if self._show_timestamps:
             ts = f"  {job.finished_at or job.updated_at or ''}"
+        fmt = ""
+        pref = job.format_preference or "best"
+        if pref not in ("best", "", None):
+            from frameforge.download.formats import label_for_preference
+
+            fmt = f"  [{label_for_preference(pref)}]"
         return (
             f"#{job.id}  [{job.status}]  {job.progress:.1f}%  "
-            f"prio={job.priority}{site}{res}  {title}{err}{ts}"
+            f"prio={job.priority}{site}{res}{fmt}  {title}{err}{ts}"
         )
 
     def _badge_text(self, job: Job) -> str:
