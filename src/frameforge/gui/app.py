@@ -311,6 +311,9 @@ class FrameForgeApp(ctk.CTk):
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Keyboard shortcuts", command=self.open_shortcuts_help)
+        menubar.add_cascade(label="Help", menu=help_menu)
         self.configure(menu=menubar)
 
     def _install_shortcuts(self) -> None:
@@ -345,8 +348,23 @@ class FrameForgeApp(ctk.CTk):
         self._on_tab_changed()
 
     def open_shortcuts_help(self) -> None:
-        """Placeholder until the Help dialog is added; still a real command target."""
+        from frameforge.gui.shortcuts import ShortcutRegistry
+
         self._shortcuts_help_opened = True
+        registry = getattr(self, "shortcuts", None) or ShortcutRegistry()
+        win = ctk.CTkToplevel(self)
+        win.title("Keyboard shortcuts")
+        win.geometry("520x480")
+        ctk.CTkLabel(win, text="Keyboard shortcuts", font=ctk.CTkFont(size=18, weight="bold")).pack(
+            anchor="w", padx=16, pady=(16, 8)
+        )
+        box = ctk.CTkTextbox(win, wrap="word")
+        box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        lines = registry.help_lines()
+        box.insert("1.0", "\n".join(lines))
+        box.configure(state="disabled")
+        self._shortcuts_help_win = win
+        self._shortcuts_help_text = "\n".join(lines)
 
     def request_quit(self) -> None:
         """Window X, File→Quit, Ctrl+Q, and tray Quit all use this policy."""
@@ -801,7 +819,10 @@ class FrameForgeApp(ctk.CTk):
             self.resource_monitor.settings = updated
             win.destroy()
 
-        ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
+        ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=(8, 4))
+        ctk.CTkButton(win, text="Keyboard shortcuts…", command=self.open_shortcuts_help).pack(
+            padx=16, pady=(0, 12)
+        )
         self._settings_win = win
 
     def download_selected(self) -> None:
