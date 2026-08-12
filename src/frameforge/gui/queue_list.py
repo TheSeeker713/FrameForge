@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import customtkinter as ctk
+from PIL import Image
 
 from frameforge.db.repository import Job
 
@@ -14,6 +16,7 @@ from frameforge.db.repository import Job
 _RECOMMENDED_FG = ("#d8f5d0", "#1f3d2a")
 _NORMAL_FG = ("gray90", "gray20")
 _BLOCKED_FG = ("#f5d0d0", "#3d1f1f")
+_THUMB_SIZE = (48, 36)
 
 
 class QueueList(ctk.CTkScrollableFrame):
@@ -34,6 +37,8 @@ class QueueList(ctk.CTkScrollableFrame):
         self._order: list[int] = []
         self._recommended_ids: set[int] = set()
         self._show_timestamps = bool(show_timestamps)
+        self._thumb_cache: dict[str, Any] = {}
+        self._placeholder_thumb = self._make_placeholder()
 
     @property
     def selected_ids(self) -> set[int]:
@@ -88,11 +93,54 @@ class QueueList(ctk.CTkScrollableFrame):
             command=lambda jid=job.id: self._toggle(jid),
         )
         chk.pack(side="left", padx=(6, 4), pady=4)
+        thumb = ctk.CTkLabel(frame, text="", width=_THUMB_SIZE[0], height=_THUMB_SIZE[1])
+        thumb.pack(side="left", padx=(0, 6), pady=4)
         badge = ctk.CTkLabel(frame, text="", width=110, anchor="w")
         badge.pack(side="left", padx=(0, 4))
         label = ctk.CTkLabel(frame, anchor="w", justify="left")
         label.pack(side="left", fill="x", expand=True, padx=4, pady=4)
-        return {"frame": frame, "var": var, "label": label, "chk": chk, "badge": badge}
+        return {
+            "frame": frame,
+            "var": var,
+            "label": label,
+            "chk": chk,
+            "badge": badge,
+            "thumb": thumb,
+            "thumb_path": None,
+        }
+
+    def _make_placeholder(self) -> Any:
+        img = Image.new("RGB", _THUMB_SIZE, color=(48, 48, 52))
+        return ctk.CTkImage(light_image=img, dark_image=img, size=_THUMB_SIZE)
+
+    def _thumb_image(self, path: str | None) -> Any:
+        if not path:
+            return self._placeholder_thumb
+        cached = self._thumb_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            img = Image.open(path)
+            img = img.convert("RGB")
+            img.thumbnail(_THUMB_SIZE)
+            canvas = Image.new("RGB", _THUMB_SIZE, color=(48, 48, 52))
+            x = (_THUMB_SIZE[0] - img.size[0]) // 2
+            y = (_THUMB_SIZE[1] - img.size[1]) // 2
+            canvas.paste(img, (x, y))
+            ctk_img = ctk.CTkImage(light_image=canvas, dark_image=canvas, size=_THUMB_SIZE)
+            self._thumb_cache[path] = ctk_img
+            return ctk_img
+        except Exception:  # noqa: BLE001
+            return self._placeholder_thumb
+
+    def _apply_thumb(self, row: dict[str, Any], job: Job) -> None:
+        path = job.thumbnail_path
+        if path and not Path(path).is_file():
+            path = None
+        if row.get("thumb_path") == path:
+            return
+        row["thumb"].configure(image=self._thumb_image(path))
+        row["thumb_path"] = path
 
     def _format(self, job: Job) -> str:
         title = (job.title or job.url or "")[:52]
@@ -139,6 +187,7 @@ class QueueList(ctk.CTkScrollableFrame):
             row["badge"].configure(text=self._badge_text(job))
             row["frame"].configure(fg_color=self._row_colors(job))
             row["var"].set(job.id in self._selected)
+            self._apply_thumb(row, job)
             row["frame"].pack_forget()
 
         for job_id in new_ids:
