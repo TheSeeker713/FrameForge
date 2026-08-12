@@ -93,6 +93,29 @@ class Job:
         path = self.options().get("thumbnail_path")
         return str(path) if path else None
 
+    @property
+    def playlist_id(self) -> str | None:
+        pid = self.options().get("playlist_id")
+        return str(pid) if pid else None
+
+    @property
+    def playlist_index(self) -> int | None:
+        idx = self.options().get("playlist_index")
+        if idx is None:
+            return None
+        try:
+            return int(idx)
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def playlist_badge(self) -> str:
+        if not self.playlist_id and self.playlist_index is None:
+            return ""
+        if self.playlist_index is not None:
+            return f"PL {self.playlist_index}"
+        return "PL"
+
 
 class JobRepository:
     def __init__(self, db_path: str | Path):
@@ -156,6 +179,17 @@ class JobRepository:
             rows = self.conn.execute(
                 "SELECT * FROM jobs ORDER BY priority DESC, id ASC"
             ).fetchall()
+        return [Job.from_row(r) for r in rows]
+
+    def list_jobs_for_playlist(self, playlist_id: str) -> list[Job]:
+        rows = self.conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE json_extract(options_json, '$.playlist_id') = ?
+            ORDER BY CAST(json_extract(options_json, '$.playlist_index') AS INTEGER) ASC, id ASC
+            """,
+            (playlist_id,),
+        ).fetchall()
         return [Job.from_row(r) for r in rows]
 
     def list_history(
