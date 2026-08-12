@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Pause / resume downloads (hard-stop, keep partials, yt-dlp continue)
+- Quit while busy: cancel, pause, or wait-for-current (exactly three options)
+- Optional close-to-system-tray (default off); tray Show / Pause-Resume / Quit
+- Import cookies from browser (Firefox first; Chromium fallback; manual Netscape still available)
+
 ## 0.3.0
 
 - Original 11 items **100% PASS** (live subprocess speed/ETA; failure-driven auth hints)

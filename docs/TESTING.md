@@ -40,6 +40,11 @@ python -m pytest -q
 - **Suite:** `python -m pytest -q` → **116 passed / 0 failed**
 - Starting point for pause/resume, quit policy, tray, and browser cookie import.
 
+## v0.4.0 Prompt 1 complete
+
+- **Suite:** `python -m pytest -q` → **157 passed / 1 skipped / 0 failed**
+- Skip: live sample clip can finish before the pause/cancel sampling window (not a quarantine).
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue

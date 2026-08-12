@@ -2,7 +2,7 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.3.0 (original 11 at 100%)
+## Status: v0.4.0 (Prompt 1 core reliability)
 
 All phases 0–5 implemented. Run `.\scripts\verify_final.ps1` for the full gate.
 
