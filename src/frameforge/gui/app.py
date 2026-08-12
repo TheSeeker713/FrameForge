@@ -1171,6 +1171,9 @@ class FrameForgeApp(ctk.CTk):
                 return
             reading = self.resource_sampler.sample()
             self.resource_monitor.ingest(reading)
+            from frameforge.monitor.policy import maybe_auto_pause_upscale
+
+            maybe_auto_pause_upscale(self.worker, self.resource_monitor)
             self._apply_resource_banner()
         except Exception:  # noqa: BLE001
             pass

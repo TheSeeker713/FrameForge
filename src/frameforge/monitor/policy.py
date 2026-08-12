@@ -105,3 +105,21 @@ class ResourceMonitor:
             self.state.critical = False
             self.state.reason = None
         return self.state
+
+
+def maybe_auto_pause_upscale(worker: object, monitor: ResourceMonitor) -> bool:
+    """Pause the active upscale when auto-pause is on and RAM pressure is critical."""
+    if not monitor.settings.auto_pause or not monitor.state.critical:
+        return False
+    repo = getattr(worker, "repo", None)
+    if repo is None:
+        return False
+    pause_job = getattr(worker, "pause_job", None)
+    for job in list(repo.list_jobs("upscaling")):
+        if pause_job is not None:
+            pause_job(job.id)
+        else:
+            repo.pause(job.id)
+        repo.merge_options(job.id, {"pause_reason": PAUSE_REASON})
+        return True
+    return False
