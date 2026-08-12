@@ -1,0 +1,15 @@
+---
+description: Global FrameForge agent constraints — phases, sequential downloads, paths, commit cadence
+alwaysApply: true
+---
+
+# FrameForge global rules
+
+- Follow Phases → Steps in `docs/PHASES.md`. Never jump ahead.
+- After every step: real tests to 100%, then commit and push `main` to TheSeeker713/FrameForge.
+- Prefer simplicity. No Electron. CustomTkinter GUI.
+- All user media under `%USERPROFILE%\Downloads\FrameForge\`.
+- **Sequential downloads only** — never more than one active download job.
+- SQLite WAL queue for persistence; prove with on-disk DB + restart tests.
+- Preserve original audio on upscales; keep metadata when possible.
+- Do not pollute C: with models/temp; use FrameForge output root.

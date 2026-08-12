@@ -1,0 +1,12 @@
+---
+description: Windows AMD hardware — DirectML preference and fallbacks
+alwaysApply: true
+---
+
+# Windows / AMD hardware rules
+
+- Target: Ryzen 7 6800H + Radeon 680M.
+- Prefer onnxruntime-directml / DirectML for inference.
+- Always keep a clean CPU fallback path.
+- Keep tile sizes conservative on iGPU VRAM.
+- Document versions and providers in `docs/DEPENDENCIES.md` / `docs/HARDWARE.md`.

@@ -1,0 +1,13 @@
+---
+description: Python packaging — src layout and venv discipline
+globs: pyproject.toml,src/**/*.py,requirements*.txt
+alwaysApply: false
+---
+
+# Python packaging rules
+
+- Use `src/frameforge` layout with `pyproject.toml`.
+- Always develop inside `.venv` (Python 3.12).
+- Prefer stdlib `sqlite3` over heavy ORMs.
+- Keep dependencies minimal and pinned/documented after install.
+- Entry point: `python -m frameforge`.

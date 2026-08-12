@@ -1,0 +1,14 @@
+---
+description: ONNX Real-ESRGAN upscaling — tiling, DirectML, audio remux
+globs: src/frameforge/upscale/**/*.py
+alwaysApply: false
+---
+
+# Upscaling / ONNX rules
+
+- Prefer `DmlExecutionProvider`; fall back to CPU.
+- Models live under `%USERPROFILE%\Downloads\FrameForge\models\`.
+- Use tiling; expose progress callbacks.
+- Support stop/resume via frame checkpoints.
+- Re-encode/remux preserving **original audio**; keep metadata when possible.
+- Temp frames under `%USERPROFILE%\Downloads\FrameForge\temp\`.

@@ -1,0 +1,13 @@
+---
+description: Safety — secrets, disk hygiene, non-destructive git
+alwaysApply: true
+---
+
+# Safety rules
+
+- Never commit secrets, cookies, credentials, or `.env` files.
+- Never force-push `main` unless the user explicitly demands it.
+- Do not use destructive git (`reset --hard`, etc.) unless explicitly requested.
+- Do not write large models/temp media into the git tree.
+- Prefer FrameForge output root for all heavy assets.
+- Do not scrape or download copyrighted content in tests; use public CC/PD clips.

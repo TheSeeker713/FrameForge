@@ -1,0 +1,14 @@
+---
+description: yt-dlp and FFmpeg download engine rules — sequential only
+globs: src/frameforge/download/**/*.py
+alwaysApply: false
+---
+
+# yt-dlp / FFmpeg rules
+
+- Highest practical quality: best video + best audio merge via FFmpeg.
+- Use aria2c as external downloader for fragments of the **current** job only.
+- Resume / continue enabled.
+- Write into `%USERPROFILE%\Downloads\FrameForge\downloads\`.
+- **Never** start a second video download while one is active.
+- Preserve metadata when possible; never discard audio intentionally.

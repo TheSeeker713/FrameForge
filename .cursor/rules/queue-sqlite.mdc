@@ -1,0 +1,14 @@
+---
+description: SQLite WAL queue, schema, single worker, crash recovery
+globs: src/frameforge/db/**/*.py,src/frameforge/queue/**/*.py
+alwaysApply: false
+---
+
+# Queue / SQLite rules
+
+- Database at `%USERPROFILE%\Downloads\FrameForge\frameforge.db` with `PRAGMA journal_mode=WAL`.
+- Jobs table tracks: id, url, title, status, priority, progress, error, paths, format_preference, upscale, timestamps, options_json.
+- Statuses: pending, downloading, download_completed, upscaling, completed, failed, cancelled.
+- Single worker claims next highest-priority pending job atomically.
+- Never allow two rows in `downloading` simultaneously.
+- On startup: reset interrupted downloading/upscaling → pending for retry.

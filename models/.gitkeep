@@ -1,0 +1,3 @@
+# Real-ESRGAN ONNX models are stored under:
+# %USERPROFILE%\Downloads\FrameForge\models\
+# Do not commit large model weights to this repository.

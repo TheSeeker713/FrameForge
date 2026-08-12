@@ -1,0 +1,14 @@
+---
+description: Testing discipline — 100% real tests, no faking
+alwaysApply: true
+---
+
+# Testing rules
+
+- Demand **100%** pass on the relevant suite before advancing.
+- Forbidden: faking, mocking, or tricking tests to force a pass.
+- Use real yt-dlp/ffmpeg/onnx/sqlite behavior for claims about those systems.
+- Persistence tests: real on-disk SQLite files and process restart.
+- Sequential invariant tests from Phase 1 onward.
+- Public domain / Creative Commons short clips only for network downloads.
+- Document fixture URLs in `docs/TESTING.md`.

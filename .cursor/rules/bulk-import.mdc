@@ -1,0 +1,14 @@
+---
+description: TXT/MD bulk URL import — regex, preview, dedupe
+globs: src/frameforge/download/**/*import*.py,src/frameforge/download/bulk*.py
+alwaysApply: false
+---
+
+# Bulk import rules
+
+- Accept `.txt` and `.md` files.
+- Extract every valid http/https URL with a robust regex.
+- Ignore markdown formatting noise, `#` comments, and empty lines.
+- Support: one URL per line, `Title | URL`, URL with trailing comment.
+- Dedupe against existing queue URLs and download archive.
+- Always preview counts and require confirmation before enqueue.

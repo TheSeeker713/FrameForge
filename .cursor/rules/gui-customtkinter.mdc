@@ -1,0 +1,14 @@
+---
+description: CustomTkinter GUI — minimal dark UI, sequential visibility
+globs: src/frameforge/gui/**/*.py
+alwaysApply: false
+---
+
+# GUI rules
+
+- CustomTkinter, dark mode default, minimal but powerful.
+- URL paste + bulk import button; queue with live progress.
+- Clear visual indication that only one download runs at a time.
+- Cancel, retry, priority controls wired to SQLite repository.
+- Settings: format preset and upscale-after-download.
+- Keyboard-friendly; avoid dashboard clutter and card-heavy chrome.

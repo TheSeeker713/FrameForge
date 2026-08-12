@@ -1,0 +1,7 @@
+https://samplelib.com/lib/preview/mp4/sample-5s.mp4
+# comment should be ignored
+Title Example | https://samplelib.com/lib/preview/mp4/sample-10s.mp4
+https://example.com/dup.mp4 trailing comment here
+[Markdown Clip](https://example.com/md-clip.mp4)
+https://example.com/dup.mp4
+not a url

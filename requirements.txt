@@ -1,0 +1,6 @@
+yt-dlp
+onnxruntime-directml
+customtkinter
+Pillow
+numpy
+opencv-python-headless
