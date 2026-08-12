@@ -11,7 +11,7 @@ import pytest
 from frameforge.convert.handler import make_convert_handler
 from frameforge.db.repository import Job, JobRepository
 from frameforge.gui.actions import can_convert
-from frameforge.paths import converted_dir, ensure_output_tree
+from frameforge.paths import converted_dir_for_site, ensure_output_tree
 from frameforge.queue.worker import SequentialWorker
 
 
@@ -125,7 +125,7 @@ def test_sequential_convert_after_download_no_overlap(tmp_path: Path):
     convert_path = Path(loaded.options()["convert_path"])
     assert convert_path.is_file()
     assert convert_path.stat().st_size > 0
-    assert convert_path.parent == converted_dir() or convert_path.parent.name == "converted"
+    assert convert_path.parent == converted_dir_for_site("example.com")
 
     kinds = [w[0] for w in windows]
     assert "download" in kinds

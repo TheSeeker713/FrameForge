@@ -19,7 +19,7 @@ from frameforge.monitor.policy import (
     maybe_auto_pause_upscale,
 )
 from frameforge.monitor.sampler import ResourceReading
-from frameforge.paths import converted_dir, ensure_output_tree
+from frameforge.paths import converted_dir_for_site, ensure_output_tree
 from frameforge.queue.worker import SequentialWorker
 
 
@@ -97,7 +97,7 @@ def test_completed_job_converts_under_converted(tmp_path: Path):
     out = Path(loaded.options()["convert_path"])
     assert out.is_file()
     assert out.stat().st_size > 0
-    assert out.parent == converted_dir()
+    assert out.parent == converted_dir_for_site("example.com")
     worker.stop(timeout=2)
     repo.close()
 

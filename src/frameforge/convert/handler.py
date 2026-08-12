@@ -7,7 +7,8 @@ from pathlib import Path
 
 from frameforge.convert.mp3 import convert_to_mp3
 from frameforge.db.repository import Job, JobRepository
-from frameforge.paths import converted_dir
+from frameforge.paths import converted_dir_for_site
+from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
@@ -19,6 +20,12 @@ def local_media_path(job: Job) -> Path | None:
     return None
 
 
+def convert_output_path_for_job(job: Job, src: Path) -> Path:
+    dest = converted_dir_for_site(site_key_from_job(job))
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest / f"job{job.id}_{src.stem}.mp3"
+
+
 def make_convert_handler(
     *,
     process_registry: ProcessRegistry | None = None,
@@ -28,7 +35,7 @@ def make_convert_handler(
         src = local_media_path(job)
         if src is None:
             raise FileNotFoundError(f"ffmpeg: input not found for job {job.id}")
-        out = converted_dir() / f"job{job.id}_{src.stem}.mp3"
+        out = convert_output_path_for_job(job, src)
 
         def progress_cb(pct: float) -> None:
             current = repo.get(job.id)
