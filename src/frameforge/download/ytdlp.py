@@ -19,6 +19,33 @@ if TYPE_CHECKING:
 ProgressCb = Callable[[float, dict[str, Any]], None]
 
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+# yt-dlp: "at  512.00KiB/s"  aria2c: "DL:1.1MiB" / "DL:512KiB/s" / "SPD:512KiB/s"
+_SPEED_RE = re.compile(
+    r"(?:at\s+|DL:\s*|SPD:\s*)(\d+(?:\.\d+)?)\s*([KMGT]?i?B)(?:\s*/\s*s)?",
+    re.IGNORECASE,
+)
+# yt-dlp: "ETA 00:19" / "ETA 1:05:00"  aria2c: "ETA:18s" / "ETA:1m18s"
+_ETA_CLOCK_RE = re.compile(
+    r"ETA[:\s]+(\d+):(\d{2})(?::(\d{2}))?",
+    re.IGNORECASE,
+)
+_ETA_HMS_RE = re.compile(
+    r"ETA[:\s]+(?:(\d+)\s*h)?(?:(\d+)\s*m)?(?:(\d+)\s*s)\b",
+    re.IGNORECASE,
+)
+
+_UNIT_TO_BPS = {
+    "B": 1.0,
+    "KB": 1000.0,
+    "MB": 1_000_000.0,
+    "GB": 1_000_000_000.0,
+    "TB": 1_000_000_000_000.0,
+    "KIB": 1024.0,
+    "MIB": 1024.0**2,
+    "GIB": 1024.0**3,
+    "TIB": 1024.0**4,
+}
 
 
 def _format_speed(bps: float | None) -> str:
@@ -42,6 +69,110 @@ def _format_eta(seconds: float | None) -> str:
     if h:
         return f"{h:d}:{m:02d}:{s:02d}"
     return f"{m:d}:{s:02d}"
+
+
+def _speed_to_bps(value: float, unit: str) -> float:
+    key = unit.strip().upper()
+    return value * _UNIT_TO_BPS.get(key, 1.0)
+
+
+def _eta_seconds_from_line(line: str) -> float | None:
+    if re.search(r"ETA[:\s]+unknown\b", line, re.IGNORECASE):
+        return None
+    clock = _ETA_CLOCK_RE.search(line)
+    if clock:
+        if clock.group(3) is not None:
+            return float(
+                int(clock.group(1)) * 3600
+                + int(clock.group(2)) * 60
+                + int(clock.group(3))
+            )
+        return float(int(clock.group(1)) * 60 + int(clock.group(2)))
+    hms = _ETA_HMS_RE.search(line)
+    if hms and any(hms.group(i) for i in (1, 2, 3)):
+        hours = int(hms.group(1) or 0)
+        minutes = int(hms.group(2) or 0)
+        seconds = int(hms.group(3) or 0)
+        return float(hours * 3600 + minutes * 60 + seconds)
+    return None
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def iter_progress_lines(text: str) -> list[str]:
+    """Split mixed CR/LF process output into individual progress-capable lines."""
+    return [p for p in re.split(r"[\r\n]+", text) if p.strip()]
+
+
+def iter_subprocess_text_chunks(stream: Any) -> Any:
+    """Yield decoded lines from a binary stdout stream, splitting on CR and LF."""
+    buf = b""
+    while True:
+        chunk = stream.read(256)
+        if not chunk:
+            if buf.strip():
+                yield buf.decode("utf-8", errors="replace")
+            break
+        buf += chunk if isinstance(chunk, (bytes, bytearray)) else chunk.encode("utf-8")
+        while True:
+            idx_n = buf.find(b"\n")
+            idx_r = buf.find(b"\r")
+            if idx_n < 0 and idx_r < 0:
+                break
+            if idx_n < 0:
+                idx = idx_r
+            elif idx_r < 0:
+                idx = idx_n
+            else:
+                idx = min(idx_n, idx_r)
+            line, buf = buf[:idx], buf[idx + 1 :]
+            if line.endswith(b"\r"):
+                line = line[:-1]
+            text = line.decode("utf-8", errors="replace")
+            if text.strip():
+                yield text
+
+
+def parse_cli_progress_line(line: str) -> dict[str, Any] | None:
+    """Parse a yt-dlp or aria2c stdout progress line into hook-compatible meta.
+
+    Returns None when the line is not a progress update (no usable percent).
+    """
+    line = _strip_ansi(line or "")
+    if not line or "%" not in line:
+        return None
+    pct_m = _PCT_RE.search(line)
+    if not pct_m:
+        return None
+    lower = line.lower()
+    looks_progress = (
+        "[download]" in lower
+        or "eta" in lower
+        or "dl:" in lower
+        or "spd:" in lower
+        or "size:" in lower
+        or "/s" in lower
+    )
+    if not looks_progress:
+        return None
+
+    percent = max(0.0, min(100.0, float(pct_m.group(1))))
+    speed_bps: float | None = None
+    speed_m = _SPEED_RE.search(line)
+    if speed_m:
+        speed_bps = _speed_to_bps(float(speed_m.group(1)), speed_m.group(2))
+        if speed_bps <= 0:
+            speed_bps = None
+    eta_seconds = _eta_seconds_from_line(line)
+    return {
+        "percent": percent,
+        "speed_bps": speed_bps,
+        "eta_seconds": eta_seconds,
+        "speed_str": _format_speed(speed_bps),
+        "eta_str": _format_eta(eta_seconds),
+    }
 
 
 @dataclass
@@ -217,6 +348,7 @@ class YtDlpDownloader:
             "-m",
             "yt_dlp",
             "--newline",
+            "--progress",
             "--no-colors",
             "--no-playlist",
             "-f",
@@ -251,7 +383,7 @@ class YtDlpDownloader:
                     "--downloader",
                     "aria2c",
                     "--downloader-args",
-                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none",
+                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none --summary-interval=1 --enable-color=false",
                 ]
             )
         cmd.append(url)
@@ -272,9 +404,7 @@ class YtDlpDownloader:
         kwargs: dict[str, Any] = {
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT,
-            "text": True,
-            "encoding": "utf-8",
-            "errors": "replace",
+            "bufsize": 0,
             "creationflags": creationflags,
         }
         if sys.platform != "win32":
@@ -286,24 +416,23 @@ class YtDlpDownloader:
         printed: list[str] = []
         try:
             assert proc.stdout is not None
-            for raw in proc.stdout:
+            for raw in iter_subprocess_text_chunks(proc.stdout):
                 line = raw.rstrip("\n\r")
                 if process_registry.was_killed(job_id):
                     raise DownloadCancelled("cancelled")
-                lower = line.lower()
-                if progress_cb and "%" in line and "download" in lower:
-                    m = _PCT_RE.search(line)
-                    if m:
-                        pct = max(0.0, min(100.0, float(m.group(1))))
-                        progress_cb(
-                            pct,
-                            {
-                                "speed_bps": None,
-                                "eta_seconds": None,
-                                "speed_str": "—",
-                                "eta_str": "—",
-                            },
-                        )
+                parsed = parse_cli_progress_line(line)
+                if progress_cb and parsed is not None:
+                    speed_str = parsed["speed_str"]
+                    eta_str = parsed["eta_str"]
+                    progress_cb(
+                        parsed["percent"],
+                        {
+                            "speed_bps": parsed["speed_bps"],
+                            "eta_seconds": parsed["eta_seconds"],
+                            "speed_str": speed_str if speed_str != "—" else None,
+                            "eta_str": eta_str if eta_str != "—" else None,
+                        },
+                    )
                 # yt-dlp --print lines have no [download] prefix typically
                 if line and not line.startswith("[") and line not in printed:
                     if "ETA" not in line and "at " not in line and "%" not in line:
