@@ -94,6 +94,10 @@ class FrameForgeApp(ctk.CTk):
             controls, text="Upscale selected (2×)", command=self.upscale_selected
         )
         self.upscale_selected_btn.pack(side="left", padx=(0, 8))
+        self.select_recommended_btn = ctk.CTkButton(
+            controls, text="Select recommended", command=self.select_recommended
+        )
+        self.select_recommended_btn.pack(side="left", padx=(0, 8))
         self.stop_btn = ctk.CTkButton(controls, text="Stop after current", command=self.stop_worker)
         self.stop_btn.pack(side="left", padx=(0, 8))
         self.cancel_btn = ctk.CTkButton(controls, text="Cancel selected", command=self.cancel_selected)
@@ -293,6 +297,16 @@ class FrameForgeApp(ctk.CTk):
             f"Queued {len(queued)} job(s) for 2× upscale (runs one at a time).",
         )
         self.refresh_queue()
+
+    def select_recommended(self) -> None:
+        """Multi-select all completed jobs currently recommended for 2× upscale."""
+        self.refresh_queue()
+        ids = self.queue_list.recommended_ids
+        if not ids:
+            messagebox.showinfo("FrameForge", "No ≤720p completed jobs recommended right now")
+            return
+        self.queue_list.set_selected(ids)
+        self._selected_ids = set(ids)
 
     def stop_worker(self) -> None:
         self.worker.disarm()
