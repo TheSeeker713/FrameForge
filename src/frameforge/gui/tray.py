@@ -56,12 +56,9 @@ class TrayService:
     def marshal(self, fn: Callable[[], None] | None) -> None:
         if fn is None:
             return
-        widget = self.widget
-        after = getattr(widget, "after", None) if widget is not None else None
-        if callable(after):
-            after(0, fn)
-            return
-        fn()
+        from frameforge.gui.marshal import schedule_on_ui
+
+        schedule_on_ui(self.widget, fn)
 
     def _menu(self) -> Any:
         import pystray

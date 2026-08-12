@@ -267,10 +267,9 @@ class FrameForgeApp(ctk.CTk):
 
     def marshal_ui(self, fn) -> None:
         """Run *fn* on the Tk thread (tray callbacks must not touch CTk directly)."""
-        try:
-            self.after(0, fn)
-        except Exception:  # noqa: BLE001
-            fn()
+        from frameforge.gui.marshal import schedule_on_ui
+
+        schedule_on_ui(self, fn)
 
     def _close_to_tray_enabled(self) -> bool:
         return self.repo.get_setting("close_to_tray", "0") == "1"
