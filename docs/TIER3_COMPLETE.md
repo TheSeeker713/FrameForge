@@ -10,7 +10,7 @@
 | T3.1 | `01040ee` | Store source width/height on completed downloads |
 | T3.2 | `cbf6496` | Highlight ≤720p completed jobs as `RECOMMENDED 2×` |
 | T3.3 | `a206a1a` | **Select recommended** + upscale wiring; 4K still blocked |
-| Doc | *(this commit)* | Tier 3 completion summary |
+| Doc | `42376b60caf1b429287c9e05e77f071fbd56a165` | Tier 3 completion summary |
 
 ## How resolution is stored
 
