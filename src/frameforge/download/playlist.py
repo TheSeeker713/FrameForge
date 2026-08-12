@@ -155,3 +155,37 @@ def extract_playlist(
     else:
         info = ytdlp_flat_extract(url, cap=cap, cookiefile=cookiefile)
     return parse_flat_listing(url, info, cap=cap)
+
+
+def enqueue_selected(
+    repo: Any,
+    listing: PlaylistListing,
+    selected_indexes: set[int] | list[int] | tuple[int, ...],
+    *,
+    format_preference: str = "best",
+    upscale: bool = False,
+) -> list[Any]:
+    """Enqueue chosen playlist entries as pending jobs. Does not start downloads."""
+    wanted = {int(i) for i in selected_indexes}
+    jobs: list[Any] = []
+    for entry in listing.entries:
+        if entry.index not in wanted:
+            continue
+        if not entry.url:
+            continue
+        opts = {
+            "playlist_id": listing.playlist_id,
+            "playlist_title": listing.title,
+            "playlist_index": entry.index,
+            "playlist_url": listing.url,
+        }
+        jobs.append(
+            repo.enqueue(
+                entry.url,
+                title=entry.title,
+                format_preference=format_preference,
+                upscale=upscale,
+                options=opts,
+            )
+        )
+    return jobs

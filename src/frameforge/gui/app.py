@@ -431,10 +431,27 @@ class FrameForgeApp(ctk.CTk):
         if not url.lower().startswith(("http://", "https://")):
             messagebox.showerror("FrameForge", "Enter a valid http(s) URL")
             return
+        from frameforge.download.playlist import extract_playlist, looks_like_playlist_url
+
+        extract_fn = getattr(self, "_playlist_extract_fn", None)
+        listing = None
+        if extract_fn is not None or looks_like_playlist_url(url):
+            try:
+                listing = extract_playlist(url, extract_fn=extract_fn)
+            except Exception:  # noqa: BLE001
+                listing = None
+        if listing and listing.entries:
+            self.url_entry.delete(0, "end")
+            self._open_playlist_picker(listing)
+            return
+        self._enqueue_single_url(url)
+        self.url_entry.delete(0, "end")
+        self.refresh_queue()
+
+    def _enqueue_single_url(self, url: str) -> None:
         from frameforge.download.metadata import probe_listing_bundle
         from frameforge.download.thumbnails import cache_job_thumbnail
 
-        # Lightweight probe — never blocks enqueue on failure
         title, extractor, thumb_url = probe_listing_bundle(url)
         job = self.repo.enqueue(
             url,
@@ -444,8 +461,27 @@ class FrameForgeApp(ctk.CTk):
             upscale=self._default_upscale(),
         )
         cache_job_thumbnail(self.repo, job.id, thumbnail_url=thumb_url)
-        self.url_entry.delete(0, "end")
-        self.refresh_queue()
+
+    def _open_playlist_picker(self, listing) -> None:
+        from frameforge.gui.playlist_picker import PlaylistPicker
+
+        def on_confirm(indexes: set[int]) -> None:
+            self.enqueue_playlist_selection(listing, indexes)
+            self.refresh_queue()
+
+        picker = PlaylistPicker(self, listing, on_confirm=on_confirm)
+        self._playlist_picker = picker
+
+    def enqueue_playlist_selection(self, listing, indexes: set[int] | list[int]) -> list:
+        from frameforge.download.playlist import enqueue_selected
+
+        return enqueue_selected(
+            self.repo,
+            listing,
+            indexes,
+            format_preference=self._default_format(),
+            upscale=self._default_upscale(),
+        )
 
     def import_file(self) -> None:
         path = filedialog.askopenfilename(
