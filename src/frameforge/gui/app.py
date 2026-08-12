@@ -612,7 +612,12 @@ class FrameForgeApp(ctk.CTk):
     def import_file(self) -> None:
         path = filedialog.askopenfilename(
             title="Import URL list",
-            filetypes=[("Text/Markdown", "*.txt *.md"), ("All", "*.*")],
+            filetypes=[
+                ("Markdown", "*.md"),
+                ("Text", "*.txt"),
+                ("Text / Markdown", "*.txt *.md"),
+                ("All files", "*.*"),
+            ],
         )
         if not path:
             return

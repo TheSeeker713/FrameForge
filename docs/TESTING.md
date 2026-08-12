@@ -64,6 +64,12 @@ See [SITE_FOLDERS.md](SITE_FOLDERS.md). New downloads use `FrameForge\<site_key>
 
 - **Suite:** `python -m pytest -q` → **212 passed / 0 failed**
 
+## Bulk TXT/MD import
+
+Parser: `frameforge.download.bulk_import`. Accepts `.txt` / `.md` (UTF-8 or UTF-16). Extracts every `http(s)://` URL (YouTube watch, `/shorts/`, youtu.be, query strings, markdown `[text](url)`, inline). Preview dialog shows New URLs vs duplicates; confirm only enqueues **pending** (does not start downloads).
+
+Fixtures: `tests/fixtures/youtube_bulk.md`, `tests/fixtures/youtube_md_links.md`, `tests/fixtures/bulk_urls.txt`.
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue

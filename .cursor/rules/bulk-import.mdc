@@ -7,8 +7,8 @@ alwaysApply: false
 # Bulk import rules
 
 - Accept `.txt` and `.md` files.
-- Extract every valid http/https URL with a robust regex.
-- Ignore markdown formatting noise, `#` comments, and empty lines.
-- Support: one URL per line, `Title | URL`, URL with trailing comment.
+- Extract every valid http/https URL with a robust regex (`findall`, not one-per-line `search`).
+- Ignore empty lines. `#` comments without a URL are ignored; lines like `# https://…` still yield the URL.
+- Support: bare URLs (watch, /shorts/, youtu.be, query strings), markdown `[text](url)`, `Title | URL`, inline URLs, UTF-8 and UTF-16 files.
 - Dedupe against existing queue URLs and download archive.
-- Always preview counts and require confirmation before enqueue.
+- Always preview counts and require confirmation before enqueue. Never auto-start.

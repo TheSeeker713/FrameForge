@@ -1,4 +1,21 @@
-"""Bulk TXT/MD URL importer."""
+"""Bulk TXT/MD URL importer.
+
+Extracts http(s) video URLs from text and markdown lists, then previews
+and enqueues them as **pending** (never auto-starts downloads).
+
+Parser notes
+------------
+Previously: one URL per line via ``URL_RE.search``, markdown ``[text](url)``,
+and ``Title | URL``. Lines starting with ``#`` were skipped entirely (so
+``# https://youtube.com/watch?v=…`` yielded nothing). Files were read as
+UTF-8 only, so UTF-16 Notepad “Unicode” lists decoded to NUL-padded text
+and matched **zero** URLs.
+
+Now: find **all** ``https?://`` matches per line (and markdown link groups),
+strip trailing punctuation, keep unique order, decode UTF-8/UTF-16, and
+still honor ``Title | URL`` plus ``[text](url)`` titles. Known hosts
+without a scheme (youtube.com, youtu.be, x.com) get ``https://`` prepended.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +25,18 @@ from pathlib import Path
 
 from frameforge.db.repository import JobRepository
 
-URL_RE = re.compile(r"https?://[^\s<>\[\]()\"']+", re.IGNORECASE)
-MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)", re.IGNORECASE)
+# Trailing ) ] are excluded so markdown ](url) and (url) wrappers do not swallow
+# the closer. Query strings (?v= & si=) are included.
+URL_RE = re.compile(r"https?://[^\s<>\"'\]\)]+", re.IGNORECASE)
+MD_LINK_RE = re.compile(r"\[([^\]]*)\]\(\s*(https?://[^)\s]+)\s*\)", re.IGNORECASE)
+BARE_HOST_RE = re.compile(
+    r"(?:^|[\s<(\[])("
+    r"(?:www\.)?(?:youtube\.com|youtu\.be|x\.com|twitter\.com)"
+    r"/[^\s<>\"'\]\)]+"
+    r")",
+    re.IGNORECASE,
+)
+_TRAIL_PUNCT = ".,;:)]>\"'"
 
 
 @dataclass
@@ -29,69 +56,109 @@ class ImportPreview:
         return len(self.items)
 
 
+def _decode_bytes(data: bytes) -> str:
+    if not data:
+        return ""
+    if data.startswith(b"\xff\xfe"):
+        return data.decode("utf-16-le", errors="ignore")
+    if data.startswith(b"\xfe\xff"):
+        return data.decode("utf-16-be", errors="ignore")
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig", errors="ignore")
+    sample = data[:200]
+    if sample.count(b"\x00") >= max(4, len(sample) // 4):
+        return data.decode("utf-16-le", errors="ignore")
+    return data.decode("utf-8", errors="ignore").replace("\x00", "")
+
+
 def _clean_url(raw: str) -> str:
-    url = raw.strip().rstrip(".,);]")
-    # Strip trailing markdown punctuation
-    while url and url[-1] in ".,);]>\"'":
+    url = (raw or "").strip().replace("\x00", "").strip("<>")
+    url = url.replace("&amp;", "&")
+    while url and url[-1] in _TRAIL_PUNCT:
         url = url[:-1]
-    return url
+    return url.strip()
+
+
+def _ensure_scheme(url: str) -> str | None:
+    if not url:
+        return None
+    lowered = url.lower()
+    if lowered.startswith(("http://", "https://")):
+        return url
+    if lowered.startswith(
+        (
+            "www.youtube.com/",
+            "youtube.com/",
+            "youtu.be/",
+            "www.youtu.be/",
+            "x.com/",
+            "www.x.com/",
+            "twitter.com/",
+            "www.twitter.com/",
+        )
+    ):
+        return "https://" + url
+    return None
 
 
 def parse_lines(text: str) -> list[ImportItem]:
+    """Extract unique http(s) URLs in document order."""
     items: list[ImportItem] = []
     seen: set[str] = set()
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        # HTML/markdown comment leftovers
-        if line.startswith("<!--"):
-            continue
 
-        title: str | None = None
-        url: str | None = None
-
-        md = MD_LINK_RE.search(line)
-        if md:
-            title = md.group(1).strip() or None
-            url = _clean_url(md.group(2))
-        elif "|" in line:
-            left, right = line.split("|", 1)
-            left, right = left.strip(), right.strip()
-            # Title | URL  or  URL | comment
-            if right.lower().startswith("http"):
-                title = left or None
-                url = _clean_url(right.split()[0])
-            elif left.lower().startswith("http"):
-                url = _clean_url(left.split()[0])
-            else:
-                found = URL_RE.search(line)
-                if found:
-                    url = _clean_url(found.group(0))
-        else:
-            # URL with optional trailing comment
-            found = URL_RE.search(line)
-            if found:
-                url = _clean_url(found.group(0))
-                before = line[: found.start()].strip(" -:\t")
-                after = line[found.end() :].strip()
-                if before and not before.lower().startswith("http"):
-                    title = before
-                elif after.startswith("#"):
-                    pass
-
+    def add(raw: str, title: str | None = None) -> None:
+        url = _ensure_scheme(_clean_url(raw))
         if not url or not url.lower().startswith(("http://", "https://")):
-            continue
+            return
         if url in seen:
-            continue
+            if title:
+                for item in items:
+                    if item.url == url and not item.title:
+                        item.title = title
+                        break
+            return
         seen.add(url)
         items.append(ImportItem(url=url, title=title))
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        pipe_title: str | None = None
+        if "|" in line:
+            left, right = line.split("|", 1)
+            left, right = left.strip(), right.strip()
+            if right.lower().startswith(("http://", "https://", "www.", "youtube.", "youtu.be")):
+                if left and not left.lower().startswith("http"):
+                    pipe_title = left
+
+        for md in MD_LINK_RE.finditer(line):
+            add(md.group(2), md.group(1).strip() or None)
+
+        for found in URL_RE.finditer(line):
+            before = line[: found.start()].strip(" \t-:*#")
+            title = pipe_title
+            if (
+                title is None
+                and before
+                and not before.lower().startswith("http")
+                and "://" not in before
+                and "[" not in before
+                and not before.startswith("|")
+            ):
+                title = before
+            add(found.group(0), title)
+
+        for found in BARE_HOST_RE.finditer(line):
+            add(found.group(1), pipe_title)
+
     return items
 
 
 def parse_file(path: str | Path) -> list[ImportItem]:
-    text = Path(path).read_text(encoding="utf-8", errors="ignore")
-    return parse_lines(text)
+    data = Path(path).read_bytes()
+    return parse_lines(_decode_bytes(data))
 
 
 def preview_import(path: str | Path, repo: JobRepository) -> ImportPreview:
