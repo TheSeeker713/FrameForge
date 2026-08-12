@@ -19,14 +19,16 @@
 
 ```
 %USERPROFILE%\Downloads\FrameForge\
-  downloads/     # completed downloads
-  upscaled/      # upscaled outputs
-  converted/     # MP3 converts
+  youtube/       # new downloads for youtube (per-site; other sites similar)
+  x.com/
+  upscaled/<site_key>/
+  converted/<site_key>/
+  downloads/     # legacy flat downloads (not used for new jobs)
   temp/          # frames and intermediate files
   models/        # Real-ESRGAN ONNX weights
   archive/       # yt-dlp download archive artifacts
-  cookies/       # Netscape cookie files
-  thumbnails/    # job thumbnails
+  cookies/       # Netscape cookie files (global)
+  thumbnails/    # job thumbnails (global)
   frameforge.db  # SQLite WAL database
 ```
 

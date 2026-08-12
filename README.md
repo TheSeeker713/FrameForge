@@ -35,6 +35,7 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - **Convert selected → MP3** (ffmpeg VBR `-q:a 2`, sequential worker stage)
 - **Upscale resource monitor** (psutil CPU/RAM warnings; optional auto-pause)
 - **Keyboard shortcuts** with Help manual (F1)
+- **Per-site folders** for new downloads (`FrameForge\<site>\`), upscales, and MP3 converts
 
 ## Setup
 
@@ -58,9 +59,9 @@ python -m frameforge --gui
 
 ## Output layout
 
-`%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `converted/`, `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
+`%USERPROFILE%\Downloads\FrameForge\` → per-site download folders (`youtube/`, `x.com/`, …), `upscaled/<site>/`, `converted/<site>/`, plus global `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
 
-See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/V0.4_COMPLETE.md](docs/V0.4_COMPLETE.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
+See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [docs/V0.4_COMPLETE.md](docs/V0.4_COMPLETE.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 
 ## License
 

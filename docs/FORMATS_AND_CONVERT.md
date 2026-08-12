@@ -26,7 +26,7 @@ FFmpeg default (VBR):
 ffmpeg -i input -vn -c:a libmp3lame -q:a 2 output.mp3
 ```
 
-`-q:a 2` is ~190 kbps VBR. Output lands in `%USERPROFILE%\Downloads\FrameForge\converted\` (`job{id}_{stem}.mp3`).
+`-q:a 2` is ~190 kbps VBR. Output lands in `%USERPROFILE%\Downloads\FrameForge\converted\<site_key>\` (`job{id}_{stem}.mp3`). See [SITE_FOLDERS.md](SITE_FOLDERS.md).
 
 Conversion is a worker stage (`convert_pending` → `converting` → `completed`) and counts as the single active media stage: it never runs in parallel with download or upscale. The ffmpeg PID is registered for hard cancel / quit policy.
 

@@ -58,6 +58,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **192 passed / 0 skipped / 0 failed**
 - See [V0.4_COMPLETE.md](V0.4_COMPLETE.md).
 
+## Site folders
+
+See [SITE_FOLDERS.md](SITE_FOLDERS.md). New downloads use `FrameForge\<site_key>\`; cookies/DB/thumbnails stay global.
+
+- **Suite:** `python -m pytest -q` → **212 passed / 0 failed**
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
