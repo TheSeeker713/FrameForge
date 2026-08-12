@@ -35,6 +35,7 @@ def normalize_domain(host_or_url: str) -> str:
 
 def cookie_filename(domain: str) -> str:
     safe = re.sub(r"[^a-z0-9._-]+", "_", normalize_domain(domain))
+    safe = safe.strip("._-") or "site"
     return f"{safe}.txt"
 
 
@@ -47,9 +48,33 @@ def cookie_path_for_url(url: str) -> Path:
     return cookie_path_for_domain(normalize_domain(url))
 
 
+def _is_cookie_data_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if stripped.lower().startswith("#httponly_"):
+        stripped = stripped.split("_", 1)[-1]
+    elif stripped.startswith("#"):
+        return False
+    return len(stripped.split("\t")) >= 6
+
+
+def is_netscape_cookie_text(text: str) -> bool:
+    """True when text looks like a non-empty Netscape cookies.txt with at least one cookie."""
+    if not text or not str(text).strip():
+        return False
+    return any(_is_cookie_data_line(line) for line in str(text).splitlines())
+
+
 def has_cookies(domain_or_url: str) -> bool:
     path = cookie_path_for_url(domain_or_url) if "://" in domain_or_url else cookie_path_for_domain(domain_or_url)
-    return path.is_file() and path.stat().st_size > 0
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return is_netscape_cookie_text(text)
 
 
 def should_skip_auth_prompt(domain_or_url: str) -> bool:
@@ -77,16 +102,22 @@ def ensure_cookie_stub(domain: str) -> Path:
 
 
 def import_netscape_cookies(domain: str, source: Path) -> Path:
-    """Copy a Netscape cookies.txt into the FrameForge cookies folder for domain."""
+    """Copy a Netscape cookies.txt into the FrameForge cookies folder for domain.
+
+    Rejects empty or non-Netscape files. Existing domain files are replaced
+    (import-to-replace) after validation.
+    """
     source = Path(source)
     if not source.is_file():
         raise FileNotFoundError(source)
     text = source.read_text(encoding="utf-8", errors="ignore")
+    if not is_netscape_cookie_text(text):
+        raise ValueError(
+            "Not a valid Netscape cookies.txt (empty or no cookie rows). "
+            "Export cookies with a browser extension, then import again."
+        )
     dest = cookie_path_for_domain(domain)
-    if not text.lstrip().startswith("#") and "\t" not in text:
-        # Still accept; yt-dlp will validate
-        pass
-    dest.write_text(text if text.strip() else NETSCAPE_HEADER, encoding="utf-8")
+    dest.write_text(text, encoding="utf-8")
     mark_session_prompted(domain)
     return dest
 
@@ -109,8 +140,8 @@ def open_site_for_login(url_or_domain: str) -> str:
 
 
 def resolve_cookiefile_for_url(url: str) -> Path | None:
-    """Return cookiefile path for yt-dlp if present and non-empty."""
+    """Return cookiefile path for yt-dlp if present and Netscape-valid."""
     path = cookie_path_for_url(url)
-    if path.is_file() and path.stat().st_size > 0:
+    if has_cookies(url):
         return path
     return None

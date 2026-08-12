@@ -279,15 +279,17 @@ class FrameForgeApp(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         win.title("Authenticate site")
-        win.geometry("520x320")
+        win.geometry("560x380")
         ctk.CTkLabel(
             win,
             text=(
-                "1) Enter a site URL or domain\n"
-                "2) Open browser and log in / accept gates\n"
-                "3) Export Netscape cookies.txt (browser extension)\n"
-                "4) Import that file here\n\n"
-                "If cookies already exist for the domain, re-auth is skipped unless you import again."
+                "Authenticate this site (one user-triggered path — no auto-open loops)\n\n"
+                "1) Enter the site URL or domain (e.g. youtube.com)\n"
+                "2) Open browser → log in and/or accept bot/age gates\n"
+                "3) Export a Netscape cookies.txt (browser extension, e.g. Get cookies.txt LOCALLY)\n"
+                "4) Import that file — stored as Downloads\\FrameForge\\cookies\\<domain>.txt\n\n"
+                "If cookies already exist for the domain, Open browser is skipped (smart skip). "
+                "Import again to replace stale cookies, then retry the failed job."
             ),
             justify="left",
         ).pack(anchor="w", padx=16, pady=(16, 8))
@@ -333,7 +335,11 @@ class FrameForgeApp(ctk.CTk):
             )
             if not path:
                 return
-            dest = cookie_mod.import_netscape_cookies(domain, Path(path))
+            try:
+                dest = cookie_mod.import_netscape_cookies(domain, Path(path))
+            except ValueError as exc:
+                messagebox.showerror("FrameForge", str(exc))
+                return
             status.configure(text=f"Saved cookies to {dest}")
 
         btn_row = ctk.CTkFrame(win, fg_color="transparent")
