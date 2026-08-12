@@ -25,9 +25,13 @@ def test_gui_shell_queue_settings_and_bulk(tmp_path: Path):
     try:
         app.update_idletasks()
         assert app.title() == "FrameForge"
-        assert "one at a time" in app.seq_banner.cget("text").lower()
+        banner = app.seq_banner.cget("text")
+        assert "press Download" in banner or "one at a time" in banner.lower()
         assert app.url_entry is not None
         assert app.import_btn is not None
+        assert app.download_selected_btn is not None
+        assert app.download_all_btn is not None
+        assert app.worker.is_armed is False
 
         assert app._default_format() == "bv*+ba/b"
         assert app._default_upscale() is True
@@ -40,11 +44,13 @@ def test_gui_shell_queue_settings_and_bulk(tmp_path: Path):
         assert "gui-job" in text
         assert str(ids[0]) in text
         assert str(ids[1]) in text
+        assert all(repo.get(i).status == "pending" for i in ids)
 
         repo.cancel(job.id)
         app.refresh_queue()
         assert "cancelled" in app.queue_box.get("1.0", "end")
         assert repo.count_by_status("downloading") <= 1
+        assert app.worker.is_armed is False
     finally:
         app.destroy()
         repo.close()

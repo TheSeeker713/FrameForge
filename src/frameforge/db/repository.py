@@ -206,11 +206,14 @@ class JobRepository:
     def cancel(self, job_id: int) -> Job:
         return self.update_status(job_id, "cancelled", progress=0)
 
-    def claim_next_pending(self) -> Job | None:
+    def claim_next_pending(self, job_ids: list[int] | None = None) -> Job | None:
         """Atomically claim the highest-priority pending job for download stage.
 
         Enforces sequential invariant: refuse if any job is already downloading.
+        If job_ids is provided, only those IDs are eligible.
         """
+        if job_ids is not None and len(job_ids) == 0:
+            return None
         try:
             self.conn.execute("BEGIN IMMEDIATE")
             active = self.conn.execute(
@@ -226,14 +229,26 @@ class JobRepository:
             if int(busy["c"]) > 0:
                 self.conn.execute("ROLLBACK")
                 return None
-            row = self.conn.execute(
-                """
-                SELECT id FROM jobs
-                WHERE status = 'pending'
-                ORDER BY priority DESC, id ASC
-                LIMIT 1
-                """
-            ).fetchone()
+            if job_ids is None:
+                row = self.conn.execute(
+                    """
+                    SELECT id FROM jobs
+                    WHERE status = 'pending'
+                    ORDER BY priority DESC, id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+            else:
+                placeholders = ",".join("?" * len(job_ids))
+                row = self.conn.execute(
+                    f"""
+                    SELECT id FROM jobs
+                    WHERE status = 'pending' AND id IN ({placeholders})
+                    ORDER BY priority DESC, id ASC
+                    LIMIT 1
+                    """,
+                    tuple(job_ids),
+                ).fetchone()
             if not row:
                 self.conn.execute("ROLLBACK")
                 return None
@@ -252,7 +267,6 @@ class JobRepository:
             self.conn.execute("ROLLBACK")
             raise
         return self.get(int(row["id"]))
-
     def recover_interrupted(self) -> list[int]:
         """Reset interrupted downloading/upscaling jobs to pending for retry."""
         rows = self.conn.execute(
