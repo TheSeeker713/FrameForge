@@ -27,9 +27,14 @@ class FrameForgeApp(ctk.CTk):
         repo: JobRepository | None = None,
         *,
         start_worker: bool = False,
+        recover_on_launch: bool = False,
         tray_icon_factory: Any | None = None,
     ):
-        """GUI defaults to idle worker (start_worker=False). Downloads start only on demand."""
+        """GUI defaults to idle worker (start_worker=False). Downloads start only on demand.
+
+        Production ``create_app()`` sets recover_on_launch=True so crashed active
+        stages become pending without arming the worker.
+        """
         super().__init__()
         ensure_output_tree()
         self.title("FrameForge")
@@ -243,6 +248,8 @@ class FrameForgeApp(ctk.CTk):
             icon_factory=tray_icon_factory,
         )
 
+        if recover_on_launch:
+            self.worker.prepare_idle_launch()
         if start_worker:
             self.worker.request_download_all()
 
@@ -1263,4 +1270,7 @@ class FrameForgeApp(ctk.CTk):
 
 
 def create_app(**kwargs: Any) -> FrameForgeApp:
+    """Production GUI entry: recover interrupted jobs, never auto-start downloads."""
+    kwargs.setdefault("recover_on_launch", True)
+    kwargs.setdefault("start_worker", False)
     return FrameForgeApp(**kwargs)

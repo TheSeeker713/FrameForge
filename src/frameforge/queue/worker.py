@@ -48,6 +48,11 @@ class SequentialWorker:
     def recover(self) -> list[int]:
         return self.repo.recover_interrupted()
 
+    def prepare_idle_launch(self) -> list[int]:
+        """Reset crashed active stages to pending. Never arm or start the loop."""
+        self.disarm()
+        return self.recover()
+
     def cancel_job(self, job_id: int) -> Job:
         """Mark job cancelled and kill any active yt-dlp/aria2c/ffmpeg tree."""
         self.clear_wait_to_quit()
