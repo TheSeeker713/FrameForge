@@ -40,6 +40,9 @@ class QueueList(ctk.CTkScrollableFrame):
         self._show_timestamps = bool(show_timestamps)
         self._thumb_cache: dict[str, Any] = {}
         self._placeholder_thumb = self._make_placeholder()
+        self._geometry_rebuilds = 0
+        self._last_notified_sel: set[int] | None = None
+        self._show_thumbs = True
 
     @property
     def selected_ids(self) -> set[int]:
@@ -110,6 +113,9 @@ class QueueList(ctk.CTkScrollableFrame):
             "badge": badge,
             "thumb": thumb,
             "thumb_path": None,
+            "text": None,
+            "badge_text": None,
+            "fg": None,
         }
 
     def _make_placeholder(self) -> Any:
@@ -137,13 +143,47 @@ class QueueList(ctk.CTkScrollableFrame):
             return self._placeholder_thumb
 
     def _apply_thumb(self, row: dict[str, Any], job: Job) -> None:
+        if not self._show_thumbs:
+            if row.get("thumb_path") is not False:
+                row["thumb"].configure(image=self._placeholder_thumb)
+                row["thumb_path"] = False
+            return
         path = job.thumbnail_path
+        if row.get("thumb_path") == path:
+            return
         if path and not Path(path).is_file():
             path = None
         if row.get("thumb_path") == path:
             return
         row["thumb"].configure(image=self._thumb_image(path))
         row["thumb_path"] = path
+
+    def _sync_row(self, row: dict[str, Any], job: Job, *, thumbs: bool = True) -> None:
+        text = self._format(job)
+        if row.get("text") != text:
+            row["label"].configure(text=text)
+            row["text"] = text
+        badge = self._badge_text(job)
+        if row.get("badge_text") != badge:
+            row["badge"].configure(text=badge)
+            row["badge_text"] = badge
+        colors = self._row_colors(job)
+        if row.get("fg") != colors:
+            row["frame"].configure(fg_color=colors)
+            row["fg"] = colors
+        wanted = job.id in self._selected
+        if bool(row["var"].get()) != wanted:
+            row["var"].set(wanted)
+        if thumbs:
+            self._apply_thumb(row, job)
+
+    def update_one_job(self, job: Job) -> bool:
+        """Update a single existing row in place. Does not pack/repack geometry."""
+        row = self._rows.get(job.id)
+        if row is None:
+            return False
+        self._sync_row(row, job, thumbs=False)
+        return True
 
     def _format(self, job: Job) -> str:
         title = (job.title or job.url or "")[:52]
@@ -180,35 +220,39 @@ class QueueList(ctk.CTkScrollableFrame):
         return ""
 
     def update_jobs(self, jobs: list[Job]) -> None:
-        """Refresh rows without resetting scroll or wiping selection unexpectedly."""
-        frac = self.scroll_fraction()
+        """Refresh rows; skip pack/repack when the id order is unchanged."""
         new_ids = [j.id for j in jobs]
         new_set = set(new_ids)
         self._recommended_ids = {
             j.id for j in jobs if j.upscale_recommended and j.status == "completed"
         }
 
+        removed = False
         for job_id in list(self._rows):
             if job_id not in new_set:
                 self._rows[job_id]["frame"].destroy()
                 del self._rows[job_id]
                 self._selected.discard(job_id)
+                removed = True
 
+        created = False
         for job in jobs:
             if job.id not in self._rows:
                 self._rows[job.id] = self._make_row(job)
-            row = self._rows[job.id]
-            row["label"].configure(text=self._format(job))
-            row["badge"].configure(text=self._badge_text(job))
-            row["frame"].configure(fg_color=self._row_colors(job))
-            row["var"].set(job.id in self._selected)
-            self._apply_thumb(row, job)
-            row["frame"].pack_forget()
+                created = True
+            self._sync_row(self._rows[job.id], job)
 
-        for job_id in new_ids:
-            self._rows[job_id]["frame"].pack(fill="x", padx=2, pady=2)
-
+        order_changed = new_ids != self._order or created or removed
+        if order_changed:
+            frac = self.scroll_fraction()
+            self._geometry_rebuilds += 1
+            for job in jobs:
+                self._rows[job.id]["frame"].pack_forget()
+            for job_id in new_ids:
+                self._rows[job_id]["frame"].pack(fill="x", padx=2, pady=2)
+            self.after(1, lambda: self.restore_scroll(frac))
         self._order = new_ids
-        self.after(1, lambda: self.restore_scroll(frac))
-        if self.on_selection_changed:
-            self.on_selection_changed(self.selected_ids)
+        sel = self.selected_ids
+        if self.on_selection_changed and sel != self._last_notified_sel:
+            self._last_notified_sel = set(sel)
+            self.on_selection_changed(sel)

@@ -9,7 +9,7 @@ from typing import Any
 
 import customtkinter as ctk
 
-from frameforge.db.repository import JobRepository
+from frameforge.db.repository import Job, JobRepository
 from frameforge.download.bulk_import import confirm_add, preview_import
 from frameforge.gui.queue_list import QueueList
 from frameforge.paths import db_path, ensure_output_tree
@@ -253,8 +253,11 @@ class FrameForgeApp(ctk.CTk):
         if start_worker:
             self.worker.request_download_all()
 
+        self._tick_after_id: str | int | None = None
+        self._progress_ticks = 0
+        self._full_refresh_every = 4
         self.refresh_queue()
-        self.after(1000, self._tick)
+        self._tick_after_id = self.after(1000, self._tick)
 
     def marshal_ui(self, fn) -> None:
         """Run *fn* on the Tk thread (tray callbacks must not touch CTk directly)."""
@@ -1130,29 +1133,19 @@ class FrameForgeApp(ctk.CTk):
         except RevealError as exc:
             messagebox.showerror("FrameForge", str(exc))
 
-    def refresh_queue(self) -> None:
-        jobs = self.repo.list_jobs()
-        self.queue_list.update_jobs(jobs)
-        self.refresh_history()
-        self.refresh_thumbnails()
+    def _find_active_job(self) -> Job | None:
+        for status in ("downloading", "upscaling", "converting"):
+            found = self.repo.list_jobs(status)
+            if found:
+                return found[0]
+        return None
 
-        downloading = 0
-        upscaling = 0
-        converting = 0
-        active = None
-        for job in jobs:
-            if job.status == "downloading":
-                downloading += 1
-                active = job
-            elif job.status == "upscaling":
-                upscaling += 1
-                if active is None:
-                    active = job
-            elif job.status == "converting":
-                converting += 1
-                if active is None:
-                    active = job
-
+    def _apply_progress_widgets(
+        self,
+        active: Job | None,
+        *,
+        paused: Job | None = None,
+    ) -> None:
         if active and active.status == "downloading":
             self.progress_bar.set(max(0.0, min(1.0, active.progress / 100.0)))
             opts = active.options()
@@ -1171,19 +1164,65 @@ class FrameForgeApp(ctk.CTk):
             self.progress_label.configure(
                 text=f"Converting #{active.id} → MP3 — {active.progress:.1f}%"
             )
+        elif paused is not None and not self.worker.is_armed:
+            self.progress_bar.set(max(0.0, min(1.0, paused.progress / 100.0)))
+            self.progress_label.configure(
+                text=f"Paused #{paused.id} — {paused.progress:.1f}% (Resume to continue)"
+            )
+        elif not self.worker.is_armed:
+            self.progress_bar.set(0)
+            self.progress_label.configure(text="Idle — 0% | — | ETA —")
         else:
-            paused_jobs = [j for j in jobs if j.status == "paused"]
-            if paused_jobs and not self.worker.is_armed:
-                p = paused_jobs[0]
-                self.progress_bar.set(max(0.0, min(1.0, p.progress / 100.0)))
-                self.progress_label.configure(
-                    text=f"Paused #{p.id} — {p.progress:.1f}% (Resume to continue)"
-                )
-            elif not self.worker.is_armed:
-                self.progress_bar.set(0)
-                self.progress_label.configure(text="Idle — 0% | — | ETA —")
-            else:
-                self.progress_label.configure(text="Worker armed — waiting for next job…")
+            self.progress_label.configure(text="Worker armed — waiting for next job…")
+
+    def refresh_progress(self) -> None:
+        """Update progress bar and the active queue row only — no full rebuild."""
+        active = self._find_active_job()
+        paused = None
+        if active is None and not self.worker.is_armed:
+            paused_jobs = self.repo.list_jobs("paused")
+            paused = paused_jobs[0] if paused_jobs else None
+        self._apply_progress_widgets(active, paused=paused)
+        target = active or paused
+        if target is not None:
+            self.queue_list.update_one_job(target)
+
+    def refresh_queue(self, *, side_tabs: bool = True) -> None:
+        jobs = self.repo.list_jobs()
+        self.queue_list.update_jobs(jobs)
+        if side_tabs:
+            self.refresh_history()
+            self.refresh_thumbnails()
+        else:
+            tab = self._active_tab_name()
+            if tab == "History":
+                self.refresh_history()
+            elif tab == "Thumbnails":
+                self.refresh_thumbnails()
+
+        downloading = 0
+        upscaling = 0
+        converting = 0
+        active = None
+        paused_jobs: list[Job] = []
+        for job in jobs:
+            if job.status == "downloading":
+                downloading += 1
+                active = job
+            elif job.status == "upscaling":
+                upscaling += 1
+                if active is None:
+                    active = job
+            elif job.status == "converting":
+                converting += 1
+                if active is None:
+                    active = job
+            elif job.status == "paused":
+                paused_jobs.append(job)
+
+        self._apply_progress_widgets(
+            active, paused=paused_jobs[0] if paused_jobs else None
+        )
 
         if downloading > 1 or upscaling > 1 or converting > 1 or (
             downloading + upscaling + converting
@@ -1194,7 +1233,7 @@ class FrameForgeApp(ctk.CTk):
                 text="Worker running — one download, upscale, or convert at a time (sequential)"
             )
         else:
-            paused_n = sum(1 for j in jobs if j.status == "paused")
+            paused_n = len(paused_jobs)
             if paused_n:
                 self.seq_banner.configure(
                     text=(
@@ -1241,10 +1280,25 @@ class FrameForgeApp(ctk.CTk):
         except Exception:  # noqa: BLE001
             pass
 
+    def _has_live_progress(self) -> bool:
+        return bool(self.worker.is_armed)
+
     def _tick(self) -> None:
         if self._shutting_down:
             return
-        self.refresh_queue()
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        if self._has_live_progress():
+            self._progress_ticks += 1
+            self.refresh_progress()
+            if self._progress_ticks >= self._full_refresh_every:
+                self.refresh_queue(side_tabs=False)
+                self._progress_ticks = 0
+        else:
+            self.refresh_queue(side_tabs=False)
         self._poll_resources()
         if self.worker.wait_to_quit:
             from frameforge.gui.exit_policy import QUIT_NOW, classify_exit
@@ -1252,7 +1306,7 @@ class FrameForgeApp(ctk.CTk):
             if classify_exit(self.repo, self.worker) == QUIT_NOW:
                 self._finish_quit()
                 return
-        self.after(1000, self._tick)
+        self._tick_after_id = self.after(1000, self._tick)
 
     def shutdown(self) -> None:
         try:
