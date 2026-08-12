@@ -32,6 +32,7 @@ def test_gui_shell_queue_settings_and_bulk(tmp_path: Path):
         assert app.download_selected_btn is not None
         assert app.download_all_btn is not None
         assert app.worker.is_armed is False
+        assert app.queue_list is not None
 
         assert app._default_format() == "bv*+ba/b"
         assert app._default_upscale() is True
@@ -39,16 +40,16 @@ def test_gui_shell_queue_settings_and_bulk(tmp_path: Path):
         assert app._default_upscale() is False
 
         app.refresh_queue()
-        text = app.queue_box.get("1.0", "end")
-        assert str(job.id) in text
-        assert "gui-job" in text
-        assert str(ids[0]) in text
-        assert str(ids[1]) in text
+        assert job.id in app.queue_list._rows
+        assert ids[0] in app.queue_list._rows
+        assert ids[1] in app.queue_list._rows
         assert all(repo.get(i).status == "pending" for i in ids)
 
-        repo.cancel(job.id)
+        app.queue_list.set_selected({job.id})
+        app._selected_ids = {job.id}
+        app.cancel_selected()
         app.refresh_queue()
-        assert "cancelled" in app.queue_box.get("1.0", "end")
+        assert repo.get(job.id).status == "cancelled"
         assert repo.count_by_status("downloading") <= 1
         assert app.worker.is_armed is False
     finally:

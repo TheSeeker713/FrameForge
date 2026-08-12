@@ -10,6 +10,7 @@ import customtkinter as ctk
 
 from frameforge.db.repository import JobRepository
 from frameforge.download.bulk_import import confirm_add, preview_import
+from frameforge.gui.queue_list import QueueList
 from frameforge.paths import db_path, ensure_output_tree
 from frameforge.pipeline import build_worker
 from frameforge.queue.worker import SequentialWorker
@@ -69,9 +70,14 @@ class FrameForgeApp(ctk.CTk):
         )
         self.settings_btn.grid(row=0, column=4)
 
-        # Temporary textbox queue — replaced in T1.3 with selectable rows
-        self.queue_box = ctk.CTkTextbox(self, wrap="none")
-        self.queue_box.grid(row=5, column=0, padx=16, pady=8, sticky="nsew")
+        self.queue_list = QueueList(
+            self,
+            on_selection_changed=self._on_selection_changed,
+            label_text="Queue",
+        )
+        self.queue_list.grid(row=5, column=0, padx=16, pady=8, sticky="nsew")
+        # Back-compat alias for older tests expecting queue_box text
+        self.queue_box = self.queue_list
 
         controls = ctk.CTkFrame(self, fg_color="transparent")
         controls.grid(row=6, column=0, padx=16, pady=(4, 16), sticky="ew")
@@ -108,6 +114,9 @@ class FrameForgeApp(ctk.CTk):
 
         self.refresh_queue()
         self.after(1000, self._tick)
+
+    def _on_selection_changed(self, ids: set[int]) -> None:
+        self._selected_ids = set(ids)
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -155,7 +164,6 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def authenticate_site(self) -> None:
-        """Placeholder until T1.4 cookie module is wired."""
         messagebox.showinfo(
             "FrameForge",
             "Cookie authentication arrives in Tier 1.4. "
@@ -183,15 +191,7 @@ class FrameForgeApp(ctk.CTk):
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
 
     def _selected_job_ids(self) -> list[int]:
-        if self._selected_ids:
-            return sorted(self._selected_ids)
-        try:
-            line = self.queue_box.get("insert linestart", "insert lineend").strip()
-            if not line or line.startswith("id"):
-                return []
-            return [int(line.lstrip("* ").split("|", 1)[0].strip())]
-        except Exception:
-            return []
+        return sorted(self._selected_ids or self.queue_list.selected_ids)
 
     def download_selected(self) -> None:
         ids = self._selected_job_ids()
@@ -239,28 +239,15 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def refresh_queue(self) -> None:
-        lines = ["id | status | progress | priority | title/url"]
+        jobs = self.repo.list_jobs()
+        self.queue_list.update_jobs(jobs)
+
         downloading = 0
         active = None
-        for job in self.repo.list_jobs():
+        for job in jobs:
             if job.status == "downloading":
                 downloading += 1
                 active = job
-            title = job.title or job.url
-            mark = "*" if job.id in self._selected_ids else " "
-            lines.append(
-                f"{mark}{job.id} | {job.status} | {job.progress:.1f}% | {job.priority} | {title}"
-            )
-        try:
-            y = self.queue_box.yview()
-        except Exception:
-            y = (0.0, 1.0)
-        self.queue_box.delete("1.0", "end")
-        self.queue_box.insert("1.0", "\n".join(lines))
-        try:
-            self.queue_box.yview_moveto(y[0])
-        except Exception:
-            pass
 
         if active:
             self.progress_bar.set(max(0.0, min(1.0, active.progress / 100.0)))
