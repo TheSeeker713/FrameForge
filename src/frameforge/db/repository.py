@@ -160,10 +160,50 @@ class JobRepository:
         self.conn.commit()
         return self.get(job_id)
 
-    def update_progress(self, job_id: int, progress: float) -> None:
+    def update_progress(
+        self,
+        job_id: int,
+        progress: float,
+        *,
+        speed_bps: float | None = None,
+        eta_seconds: float | None = None,
+        speed_str: str | None = None,
+        eta_str: str | None = None,
+    ) -> None:
+        job = self.get(job_id)
+        opts = job.options()
+        if speed_bps is not None:
+            opts["speed_bps"] = speed_bps
+        if eta_seconds is not None:
+            opts["eta_seconds"] = eta_seconds
+        if speed_str is not None:
+            opts["speed_str"] = speed_str
+        if eta_str is not None:
+            opts["eta_str"] = eta_str
+        if progress >= 100 or job.status in ("completed", "failed", "cancelled"):
+            opts.pop("speed_bps", None)
+            opts.pop("eta_seconds", None)
+            opts["speed_str"] = "—"
+            opts["eta_str"] = "—"
         self.conn.execute(
-            "UPDATE jobs SET progress = ?, updated_at = ? WHERE id = ?",
-            (progress, utc_now(), job_id),
+            """
+            UPDATE jobs SET progress = ?, options_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (progress, json.dumps(opts) if opts else None, utc_now(), job_id),
+        )
+        self.conn.commit()
+
+    def clear_live_progress(self, job_id: int) -> None:
+        job = self.get(job_id)
+        opts = job.options()
+        opts.pop("speed_bps", None)
+        opts.pop("eta_seconds", None)
+        opts["speed_str"] = "—"
+        opts["eta_str"] = "—"
+        self.conn.execute(
+            "UPDATE jobs SET options_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(opts), utc_now(), job_id),
         )
         self.conn.commit()
 

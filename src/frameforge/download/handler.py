@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.download.ytdlp import YtDlpDownloader
 from frameforge.paths import ensure_output_tree
+
+
+def _cookiefile_for_url(url: str) -> Path | None:
+    try:
+        from frameforge.download.cookies import cookie_path_for_url
+
+        path = cookie_path_for_url(url)
+        return path if path.is_file() else None
+    except Exception:
+        return None
 
 
 def make_download_handler(
@@ -28,16 +41,27 @@ def make_download_handler(
                 repo.set_title(job.id, title)
             repo.set_paths(job.id, download_path=path, output_path=path)
             repo.update_progress(job.id, 100.0)
+            repo.clear_live_progress(job.id)
             return
 
-        def progress_cb(pct: float) -> None:
+        def progress_cb(pct: float, meta: dict[str, Any] | None = None) -> None:
             current = repo.get(job.id)
             if current.status == "cancelled":
                 raise RuntimeError("cancelled")
-            repo.update_progress(job.id, pct)
+            meta = meta or {}
+            repo.update_progress(
+                job.id,
+                pct,
+                speed_bps=meta.get("speed_bps"),
+                eta_seconds=meta.get("eta_seconds"),
+                speed_str=meta.get("speed_str"),
+                eta_str=meta.get("eta_str"),
+            )
 
-        # Refresh format preference from job
         dl.format_preference = job.format_preference or "best"
+        cookie = _cookiefile_for_url(job.url)
+        if cookie is not None:
+            dl.cookiefile = cookie
         result = dl.download(job.url, progress_cb=progress_cb)
         repo.set_title(job.id, result.title)
         repo.set_paths(job.id, download_path=str(result.path), output_path=str(result.path))
@@ -49,5 +73,6 @@ def make_download_handler(
             video_id=str(result.info.get("id")) if result.info.get("id") else None,
         )
         repo.update_progress(job.id, 100.0)
+        repo.clear_live_progress(job.id)
 
     return handler
