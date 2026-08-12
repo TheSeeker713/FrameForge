@@ -417,8 +417,15 @@ class JobRepository:
             self.conn.execute("ROLLBACK")
             raise
         return self.get(int(row["id"]))
+
     def recover_interrupted(self) -> list[int]:
-        """Reset interrupted downloading/upscaling jobs to pending for retry."""
+        """Reset interrupted downloading/upscaling jobs to pending for retry.
+
+        Startup / process-restart policy (unchanged): active stages become
+        ``pending`` with error ``Recovered after interrupted run`` so the user
+        can start them again. In-process handler exceptions are failed by the
+        worker instead (they are not treated as a crash restart).
+        """
         rows = self.conn.execute(
             "SELECT id FROM jobs WHERE status IN ('downloading', 'upscaling')"
         ).fetchall()

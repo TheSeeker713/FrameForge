@@ -162,17 +162,29 @@ class SequentialWorker:
             if not self._armed.is_set():
                 time.sleep(self.poll_interval)
                 continue
-            worked = self._process_one()
-            if not worked:
-                # Disarm when no eligible pending and nothing busy / chained
-                pending = self._eligible_pending_count()
-                busy = self.repo.count_by_status("downloading") + self.repo.count_by_status(
-                    "upscaling"
-                )
-                chained = self.repo.count_by_status("download_completed")
-                if pending == 0 and busy == 0 and chained == 0:
-                    self.disarm()
+            try:
+                worked = self._process_one()
+                if not worked:
+                    # Disarm when no eligible pending and nothing busy / chained
+                    pending = self._eligible_pending_count()
+                    busy = self.repo.count_by_status("downloading") + self.repo.count_by_status(
+                        "upscaling"
+                    )
+                    chained = self.repo.count_by_status("download_completed")
+                    if pending == 0 and busy == 0 and chained == 0:
+                        self.disarm()
+                    time.sleep(self.poll_interval)
+            except Exception as exc:  # noqa: BLE001
+                # Never kill the background loop; fail any stuck active stage.
+                self._fail_stuck_active_stages(f"Worker recovered from internal error: {exc}")
                 time.sleep(self.poll_interval)
+
+    def _fail_stuck_active_stages(self, reason: str) -> None:
+        from frameforge.errors import annotate_job_error
+
+        for status in ("downloading", "upscaling"):
+            for job in list(self.repo.list_jobs(status)):
+                annotate_job_error(self.repo, job.id, reason, url=job.url)
 
     def _eligible_pending_count(self) -> int:
         with self._lock:
