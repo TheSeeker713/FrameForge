@@ -87,8 +87,17 @@ class FrameForgeApp(ctk.CTk):
             detail, text="Job errors / details", anchor="w", text_color="#c8c8c8"
         )
         self.error_panel_label.grid(row=0, column=0, sticky="w")
+        self.auth_from_job_btn = ctk.CTkButton(
+            detail,
+            text="Authenticate this site…",
+            width=180,
+            command=self.authenticate_selected_job,
+            state="disabled",
+        )
+        self.auth_from_job_btn.grid(row=0, column=1, sticky="e")
+        detail.grid_columnconfigure(1, weight=0)
         self.error_panel = ctk.CTkTextbox(detail, height=88, wrap="word")
-        self.error_panel.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.error_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         self.error_panel.configure(state="disabled")
         self._set_error_panel_text("")
 
@@ -157,25 +166,35 @@ class FrameForgeApp(ctk.CTk):
 
     @staticmethod
     def format_error_panel_text(job: Any | None) -> str:
-        """Plain text for the error panel: full error or empty/neutral."""
+        """Plain text for the error panel: full error, plus auth hint when applicable."""
         if job is None:
             return ""
         err = getattr(job, "error", None)
         if not err:
             return ""
-        return str(err)
+        text = str(err)
+        from frameforge.download.auth_hints import auth_action_hint, job_needs_auth
+
+        if job_needs_auth(job):
+            opts = job.options() if hasattr(job, "options") else {}
+            hint = opts.get("auth_hint") or auth_action_hint(getattr(job, "url", None))
+            if hint and hint not in text:
+                text = f"{text}\n\n{hint}"
+        return text
 
     def _update_error_panel(self) -> None:
         ids = self._selected_ids
         if not ids:
             self._set_error_panel_text("")
             self.error_panel_label.configure(text="Job errors / details")
+            self.auth_from_job_btn.configure(state="disabled")
             return
         jid = sorted(ids)[0]
         try:
             job = self.repo.get(jid)
         except Exception:  # noqa: BLE001
             self._set_error_panel_text("")
+            self.auth_from_job_btn.configure(state="disabled")
             return
         text = self.format_error_panel_text(job)
         if text:
@@ -187,6 +206,11 @@ class FrameForgeApp(ctk.CTk):
                 text=f"Job errors / details — #{job.id} [{job.status}] (no errors)"
             )
         self._set_error_panel_text(text)
+        from frameforge.download.auth_hints import job_needs_auth
+
+        self.auth_from_job_btn.configure(
+            state="normal" if job_needs_auth(job) else "disabled"
+        )
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -239,7 +263,18 @@ class FrameForgeApp(ctk.CTk):
         )
         self.refresh_queue()
 
-    def authenticate_site(self) -> None:
+    def authenticate_selected_job(self) -> None:
+        """Open Authenticate site… prefilled from the selected failed job (user-triggered)."""
+        ids = self._selected_job_ids()
+        prefill = None
+        if ids:
+            try:
+                prefill = self.repo.get(ids[0]).url
+            except Exception:  # noqa: BLE001
+                prefill = None
+        self.authenticate_site(prefill=prefill)
+
+    def authenticate_site(self, prefill: str | None = None) -> None:
         from frameforge.download import cookies as cookie_mod
 
         win = ctk.CTkToplevel(self)
@@ -258,6 +293,8 @@ class FrameForgeApp(ctk.CTk):
         ).pack(anchor="w", padx=16, pady=(16, 8))
         entry = ctk.CTkEntry(win, placeholder_text="https://example.com/ or example.com")
         entry.pack(fill="x", padx=16, pady=4)
+        if prefill:
+            entry.insert(0, prefill)
         status = ctk.CTkLabel(win, text="", anchor="w")
         status.pack(fill="x", padx=16, pady=4)
 

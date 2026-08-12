@@ -185,6 +185,18 @@ class JobRepository:
         self.conn.commit()
         return self.get(job_id)
 
+    def merge_options(self, job_id: int, patch: dict[str, Any]) -> Job:
+        """Shallow-merge keys into the job's options_json."""
+        job = self.get(job_id)
+        opts = job.options()
+        opts.update(patch)
+        self.conn.execute(
+            "UPDATE jobs SET options_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(opts), utc_now(), job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
+
     def update_progress(
         self,
         job_id: int,
