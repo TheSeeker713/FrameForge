@@ -780,9 +780,18 @@ class FrameForgeApp(ctk.CTk):
                 text="Worker running — one download or upscale at a time (sequential)"
             )
         else:
-            self.seq_banner.configure(
-                text="Downloads run one at a time — queue only until you press Download"
-            )
+            paused_n = sum(1 for j in jobs if j.status == "paused")
+            if paused_n:
+                self.seq_banner.configure(
+                    text=(
+                        f"{paused_n} paused job(s) — Resume to continue. "
+                        "Downloads run one at a time — queue only until you press Download"
+                    )
+                )
+            else:
+                self.seq_banner.configure(
+                    text="Downloads run one at a time — queue only until you press Download"
+                )
         self._update_error_panel()
 
     def _tick(self) -> None:
