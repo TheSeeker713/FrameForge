@@ -7,12 +7,16 @@ from pathlib import Path
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.paths import upscaled_dir
+from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.upscale.guards import assert_upscale_allowed
 from frameforge.upscale.pipeline import UpscalePipeline
+from frameforge.util.process_tree import DownloadCancelled
 
 
 def make_upscale_handler(
     pipeline: UpscalePipeline | None = None,
+    *,
+    process_registry: ProcessRegistry | None = None,
 ) -> Callable[[Job, JobRepository], None]:
     pipe = pipeline or UpscalePipeline()
 
@@ -28,7 +32,9 @@ def make_upscale_handler(
 
         def progress_cb(pct: float) -> None:
             if repo.get(job.id).status == "cancelled":
-                raise RuntimeError("cancelled")
+                if process_registry is not None:
+                    process_registry.kill(job.id)
+                raise DownloadCancelled("cancelled")
             repo.update_progress(job.id, pct)
 
         def should_stop() -> bool:
@@ -40,7 +46,11 @@ def make_upscale_handler(
             output_path=out,
             progress_cb=progress_cb,
             should_stop=should_stop,
+            job_id=job.id,
+            process_registry=process_registry,
         )
+        if repo.get(job.id).status == "cancelled":
+            raise DownloadCancelled("cancelled")
         repo.set_paths(job.id, output_path=str(result.output_path))
         repo.update_progress(job.id, 100.0)
 

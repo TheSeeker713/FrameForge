@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from frameforge.paths import ensure_output_tree, temp_dir, upscaled_dir
+from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.upscale.ffmpeg_utils import (
     assemble_video,
     detect_fps,
@@ -17,6 +18,7 @@ from frameforge.upscale.ffmpeg_utils import (
 )
 from frameforge.upscale.guards import assert_upscale_allowed
 from frameforge.upscale.onnx_upscaler import OnnxUpscaler
+from frameforge.util.process_tree import DownloadCancelled
 
 
 ProgressCb = Callable[[float], None]
@@ -75,13 +77,19 @@ class UpscalePipeline:
         output_path: Path | None = None,
         progress_cb: ProgressCb | None = None,
         should_stop: Callable[[], bool] | None = None,
+        job_id: int | None = None,
+        process_registry: ProcessRegistry | None = None,
     ) -> UpscaleResult:
         input_video = Path(input_video)
         dirs = self._job_dirs(job_key)
         dirs["base"].mkdir(parents=True, exist_ok=True)
         in_w, in_h = assert_upscale_allowed(input_video)
         frames = extract_frames(
-            input_video, dirs["frames"], max_frames=self.max_frames
+            input_video,
+            dirs["frames"],
+            max_frames=self.max_frames,
+            job_id=job_id,
+            process_registry=process_registry,
         )
         ckpt = self._load_checkpoint(dirs["checkpoint"])
         start = int(ckpt.get("completed_frames", 0))
@@ -100,9 +108,14 @@ class UpscalePipeline:
         )
         self._save_checkpoint(dirs["checkpoint"], completed)
         if should_stop and should_stop() and completed < len(frames):
-            raise RuntimeError(f"upscale stopped at frame {completed}/{len(frames)}")
+            raise DownloadCancelled(f"upscale stopped at frame {completed}/{len(frames)}")
 
-        audio = extract_audio(input_video, dirs["audio"])
+        audio = extract_audio(
+            input_video,
+            dirs["audio"],
+            job_id=job_id,
+            process_registry=process_registry,
+        )
         fps = detect_fps(input_video)
         out = output_path or (upscaled_dir() / f"{input_video.stem}.upscaled.mp4")
         assemble_video(
@@ -111,6 +124,8 @@ class UpscalePipeline:
             fps=fps,
             audio_path=audio,
             metadata_source=input_video,
+            job_id=job_id,
+            process_registry=process_registry,
         )
         if progress_cb:
             progress_cb(100.0)

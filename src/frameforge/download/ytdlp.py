@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import re
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from frameforge.paths import archive_dir, downloads_dir, ensure_output_tree
+from frameforge.util.process_tree import DownloadCancelled, popen_creationflags
+
+if TYPE_CHECKING:
+    from frameforge.queue.process_registry import ProcessRegistry
 
 
 ProgressCb = Callable[[float, dict[str, Any]], None]
+
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 
 def _format_speed(bps: float | None) -> str:
@@ -152,7 +161,32 @@ class YtDlpDownloader:
             }
         return opts
 
-    def download(self, url: str, progress_cb: ProgressCb | None = None) -> DownloadResult:
+    def download(
+        self,
+        url: str,
+        progress_cb: ProgressCb | None = None,
+        *,
+        job_id: int | None = None,
+        process_registry: ProcessRegistry | None = None,
+    ) -> DownloadResult:
+        """Download *url*.
+
+        When *process_registry* and *job_id* are provided, yt-dlp runs as a
+        killable subprocess (hard cancel via process-tree kill). Otherwise the
+        in-process YoutubeDL API is used (direct/unit callers).
+        """
+        if process_registry is not None and job_id is not None:
+            return self._download_subprocess(
+                url,
+                progress_cb,
+                job_id=job_id,
+                process_registry=process_registry,
+            )
+        return self._download_inprocess(url, progress_cb)
+
+    def _download_inprocess(
+        self, url: str, progress_cb: ProgressCb | None = None
+    ) -> DownloadResult:
         from yt_dlp import YoutubeDL
 
         opts = self.build_opts(progress_cb)
@@ -175,6 +209,198 @@ class YtDlpDownloader:
                 raise FileNotFoundError(f"Downloaded file not found for {url}")
             title = str(info.get("title") or path.stem)
             return DownloadResult(path=path, title=title, info=info)
+
+    def _build_cli_cmd(self, url: str) -> list[str]:
+        outtmpl = str(self.output_dir / "%(title).200B [%(id)s].%(ext)s")
+        cmd: list[str] = [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--newline",
+            "--no-colors",
+            "--no-playlist",
+            "-f",
+            self._format_selector(),
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            outtmpl,
+            "--download-archive",
+            str(self.archive_file),
+            "--write-info-json",
+            "--retries",
+            "5",
+            "--fragment-retries",
+            "5",
+            "--print",
+            "after_move:%(filepath)s",
+            "--print",
+            "%(filepath)s",
+            "--print",
+            "%(title)s",
+            "--print",
+            "%(extractor_key)s",
+            "--print",
+            "%(id)s",
+        ]
+        if self.cookiefile and Path(self.cookiefile).is_file():
+            cmd.extend(["--cookies", str(self.cookiefile)])
+        if self.use_aria2c:
+            cmd.extend(
+                [
+                    "--downloader",
+                    "aria2c",
+                    "--downloader-args",
+                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none",
+                ]
+            )
+        cmd.append(url)
+        return cmd
+
+    def _download_subprocess(
+        self,
+        url: str,
+        progress_cb: ProgressCb | None,
+        *,
+        job_id: int,
+        process_registry: ProcessRegistry,
+    ) -> DownloadResult:
+        import subprocess
+
+        cmd = self._build_cli_cmd(url)
+        creationflags = popen_creationflags()
+        kwargs: dict[str, Any] = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "creationflags": creationflags,
+        }
+        if sys.platform != "win32":
+            kwargs["start_new_session"] = True
+            kwargs.pop("creationflags", None)
+
+        proc = subprocess.Popen(cmd, **kwargs)  # noqa: S603
+        process_registry.register(job_id, proc.pid)
+        printed: list[str] = []
+        try:
+            assert proc.stdout is not None
+            for raw in proc.stdout:
+                line = raw.rstrip("\n\r")
+                if process_registry.was_killed(job_id):
+                    raise DownloadCancelled("cancelled")
+                lower = line.lower()
+                if progress_cb and "%" in line and "download" in lower:
+                    m = _PCT_RE.search(line)
+                    if m:
+                        pct = max(0.0, min(100.0, float(m.group(1))))
+                        progress_cb(
+                            pct,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "—",
+                                "eta_str": "—",
+                            },
+                        )
+                # yt-dlp --print lines have no [download] prefix typically
+                if line and not line.startswith("[") and line not in printed:
+                    if "ETA" not in line and "at " not in line and "%" not in line:
+                        printed.append(line)
+            rc = proc.wait(timeout=30)
+            if process_registry.was_killed(job_id):
+                raise DownloadCancelled("cancelled")
+            if rc != 0:
+                raise RuntimeError(f"yt-dlp exited with code {rc}")
+        except DownloadCancelled:
+            if proc.poll() is None:
+                process_registry.kill(job_id)
+                try:
+                    proc.wait(timeout=15)
+                except Exception:  # noqa: BLE001
+                    pass
+            raise
+        finally:
+            if proc.poll() is None:
+                process_registry.kill(job_id)
+                try:
+                    proc.wait(timeout=10)
+                except Exception:  # noqa: BLE001
+                    pass
+            process_registry.unregister(job_id)
+
+        # Resolve output path from --print lines (filepath / after_move) or scan dir
+        path: Path | None = None
+        title = ""
+        extractor = ""
+        video_id = ""
+        for item in printed:
+            p = Path(item)
+            if p.exists() and p.is_file():
+                path = p
+            elif not title and item and not item.startswith("http"):
+                # Heuristic: first non-path print is often title; order is
+                # filepath, title, extractor_key, id — overwrite carefully
+                pass
+        # --print order: after_move filepath, filepath, title, extractor_key, id
+        # Prefer existing file paths from the end of printed list backwards
+        files = [Path(x) for x in printed if Path(x).is_file()]
+        if files:
+            path = files[-1]
+        if len(printed) >= 3:
+            # Find title as the first printed non-file string after a file
+            non_files = [x for x in printed if not Path(x).is_file()]
+            if non_files:
+                title = non_files[0]
+                if len(non_files) >= 2:
+                    extractor = non_files[1]
+                if len(non_files) >= 3:
+                    video_id = non_files[2]
+
+        if path is None or not path.exists():
+            # Fallback: newest media in output_dir modified in last few minutes
+            candidates = sorted(
+                [
+                    p
+                    for p in self.output_dir.glob("*")
+                    if p.suffix.lower() in {".mp4", ".mkv", ".webm", ".m4a"}
+                    and (time.time() - p.stat().st_mtime) < 600
+                ],
+                key=lambda p: p.stat().st_mtime,
+            )
+            if candidates:
+                path = candidates[-1]
+        if path is None or not path.exists():
+            raise FileNotFoundError(f"Downloaded file not found for {url}")
+
+        infojson = path.with_suffix(path.suffix + ".info.json")
+        if not infojson.exists():
+            infojson = path.with_name(path.stem + ".info.json")
+        info: dict[str, Any] = {}
+        if infojson.exists():
+            import json
+
+            try:
+                info = json.loads(infojson.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                info = {}
+        title = str(info.get("title") or title or path.stem)
+        if extractor:
+            info.setdefault("extractor_key", extractor)
+        if video_id:
+            info.setdefault("id", video_id)
+        if progress_cb:
+            progress_cb(
+                100.0,
+                {
+                    "speed_bps": None,
+                    "eta_seconds": 0,
+                    "speed_str": "—",
+                    "eta_str": "00:00",
+                },
+            )
+        return DownloadResult(path=path, title=title, info=info)
 
     def is_in_archive(self, url: str) -> bool:
         if not self.archive_file.exists():

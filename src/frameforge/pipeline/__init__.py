@@ -21,12 +21,20 @@ def build_worker(
     upscale_pipeline: UpscalePipeline | None = None,
 ) -> SequentialWorker:
     ensure_output_tree()
-    return SequentialWorker(
+    # Build worker first so handlers share its ProcessRegistry for hard cancel.
+    worker = SequentialWorker(
         repo,
-        download_handler=make_download_handler(downloader),
-        upscale_handler=make_upscale_handler(upscale_pipeline),
+        download_handler=lambda j, r: None,
+        upscale_handler=None,
         poll_interval=0.05,
     )
+    worker.download_handler = make_download_handler(
+        downloader, process_registry=worker.processes
+    )
+    worker.upscale_handler = make_upscale_handler(
+        upscale_pipeline, process_registry=worker.processes
+    )
+    return worker
 
 
 def aggregate_progress(status: str, stage_progress: float, upscale: bool) -> float:

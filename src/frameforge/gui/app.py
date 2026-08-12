@@ -317,7 +317,7 @@ class FrameForgeApp(ctk.CTk):
         if not ids:
             return
         for job_id in ids:
-            self.repo.cancel(job_id)
+            self.worker.cancel_job(job_id)
         self.refresh_queue()
 
     def retry_failed(self) -> None:

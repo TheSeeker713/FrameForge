@@ -8,6 +8,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from frameforge.db.repository import Job, JobRepository
+from frameforge.queue.process_registry import ProcessRegistry
+from frameforge.util.process_tree import DownloadCancelled
 
 
 JobHandler = Callable[[Job, JobRepository], None]
@@ -39,9 +41,16 @@ class SequentialWorker:
     _only_ids: set[int] | None = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     events: list[WorkerEvent] = field(default_factory=list)
+    processes: ProcessRegistry = field(default_factory=ProcessRegistry)
 
     def recover(self) -> list[int]:
         return self.repo.recover_interrupted()
+
+    def cancel_job(self, job_id: int) -> Job:
+        """Mark job cancelled and kill any active yt-dlp/aria2c/ffmpeg tree."""
+        job = self.repo.cancel(job_id)
+        self.processes.kill(job_id)
+        return job
 
     @property
     def is_armed(self) -> bool:
@@ -189,6 +198,18 @@ class SequentialWorker:
             return False
         return self._run_download(job)
 
+    def _preserve_cancelled(self, job_id: int, exc: BaseException) -> bool:
+        """If job was cancelled (or cancel exception), keep cancelled — never failed."""
+        current = self.repo.get(job_id)
+        if current.status == "cancelled" or isinstance(exc, DownloadCancelled):
+            if current.status != "cancelled":
+                self.repo.cancel(job_id)
+            return True
+        if "cancelled" in str(exc).lower():
+            self.repo.cancel(job_id)
+            return True
+        return False
+
     def _run_download(self, job: Job) -> bool:
         self.events.append(WorkerEvent(job.id, "download_start", time.time()))
         try:
@@ -203,9 +224,14 @@ class SequentialWorker:
             self.events.append(WorkerEvent(job.id, "download_end", time.time()))
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._preserve_cancelled(job.id, exc):
+                self.events.append(WorkerEvent(job.id, "download_cancel", time.time()))
+                return True
             self.repo.update_status(job.id, "failed", error=str(exc))
             self.events.append(WorkerEvent(job.id, "download_fail", time.time()))
             return True
+        finally:
+            self.processes.unregister(job.id)
 
     def _run_upscale(self, job: Job) -> bool:
         self.repo.update_status(job.id, "upscaling", progress=0)
@@ -220,6 +246,11 @@ class SequentialWorker:
             self.events.append(WorkerEvent(job.id, "upscale_end", time.time()))
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._preserve_cancelled(job.id, exc):
+                self.events.append(WorkerEvent(job.id, "upscale_cancel", time.time()))
+                return True
             self.repo.update_status(job.id, "failed", error=str(exc))
             self.events.append(WorkerEvent(job.id, "upscale_fail", time.time()))
             return True
+        finally:
+            self.processes.unregister(job.id)
