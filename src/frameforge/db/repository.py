@@ -15,6 +15,8 @@ from frameforge.db.migrate import migrate
 ACTIVE_DOWNLOAD_STATUSES = ("downloading",)
 INTERRUPTIBLE_STATUSES = ("downloading", "upscaling")
 TERMINAL_STATUSES = ("completed", "failed", "cancelled")
+PAUSED_STATUS = "paused"
+HOLDING_STATUSES = (PAUSED_STATUS,)
 
 
 def utc_now() -> str:
@@ -220,6 +222,8 @@ class JobRepository:
             started = now
         if status in ("completed", "failed", "cancelled"):
             finished = now
+        if status == PAUSED_STATUS:
+            finished = None
         prog = job.progress if progress is None else progress
         self.conn.execute(
             """
@@ -403,6 +407,28 @@ class JobRepository:
 
     def cancel(self, job_id: int) -> Job:
         return self.update_status(job_id, "cancelled", progress=0)
+
+    def pause(self, job_id: int) -> Job:
+        """Mark an active job paused. Keeps progress and paths; does not fail or cancel."""
+        job = self.get(job_id)
+        if job.status == PAUSED_STATUS:
+            return job
+        if job.status not in INTERRUPTIBLE_STATUSES:
+            raise ValueError(
+                f"Job {job_id} status is '{job.status}' (need downloading/upscaling to pause)"
+            )
+        opts = job.options()
+        opts["paused"] = True
+        self.merge_options(job_id, opts)
+        return self.update_status(job_id, PAUSED_STATUS)
+
+    def resume_paused(self, job_id: int) -> Job:
+        """Return a paused job to pending so it can be claimed (continue/resume)."""
+        job = self.get(job_id)
+        if job.status != PAUSED_STATUS:
+            raise ValueError(f"Job {job_id} status is '{job.status}' (need paused to resume)")
+        self.merge_options(job_id, {"paused": False})
+        return self.update_status(job_id, "pending", error=None)
 
     def claim_next_pending(self, job_ids: list[int] | None = None) -> Job | None:
         """Atomically claim the highest-priority pending job for download stage.

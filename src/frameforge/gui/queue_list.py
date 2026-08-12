@@ -16,6 +16,7 @@ from frameforge.db.repository import Job
 _RECOMMENDED_FG = ("#d8f5d0", "#1f3d2a")
 _NORMAL_FG = ("gray90", "gray20")
 _BLOCKED_FG = ("#f5d0d0", "#3d1f1f")
+_PAUSED_FG = ("#f5e6c8", "#3d3420")
 _THUMB_SIZE = (48, 36)
 
 
@@ -76,6 +77,8 @@ class QueueList(ctk.CTkScrollableFrame):
             self.on_selection_changed(self.selected_ids)
 
     def _row_colors(self, job: Job) -> tuple[str, str] | str:
+        if job.status == "paused":
+            return _PAUSED_FG
         if job.upscale_recommended and job.status == "completed":
             return _RECOMMENDED_FG
         if job.upscale_blocked:
@@ -158,6 +161,8 @@ class QueueList(ctk.CTkScrollableFrame):
         )
 
     def _badge_text(self, job: Job) -> str:
+        if job.status == "paused":
+            return "PAUSED"
         if job.upscale_recommended and job.status == "completed":
             return "RECOMMENDED 2×"
         if job.upscale_blocked:

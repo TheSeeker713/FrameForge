@@ -87,6 +87,8 @@ def format_error_panel(job: Any | None) -> str:
     status = getattr(job, "status", None)
     opts = job.options() if hasattr(job, "options") else {}
     cat = opts.get("error_category")
+    if status == "paused":
+        return "Paused. Resume when you want this download to continue."
     if not cat:
         cat = classify_error(err, status=status) if (err or status == "cancelled") else None
     if not err and status != "cancelled":
