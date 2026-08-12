@@ -388,6 +388,15 @@ class JobRepository:
         )
         self.conn.commit()
 
+    def set_format_preference(self, job_id: int, preference: str) -> Job:
+        text = (preference or "best").strip() or "best"
+        self.conn.execute(
+            "UPDATE jobs SET format_preference = ?, updated_at = ? WHERE id = ?",
+            (text, utc_now(), job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
+
     def set_extractor(self, job_id: int, extractor: str | None) -> Job:
         self.conn.execute(
             "UPDATE jobs SET extractor = ?, updated_at = ? WHERE id = ?",
