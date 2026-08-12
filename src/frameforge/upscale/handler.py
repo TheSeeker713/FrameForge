@@ -7,6 +7,7 @@ from pathlib import Path
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.paths import upscaled_dir
+from frameforge.upscale.guards import assert_upscale_allowed
 from frameforge.upscale.pipeline import UpscalePipeline
 
 
@@ -20,7 +21,10 @@ def make_upscale_handler(
         src = job.download_path or job.output_path
         if not src or not Path(src).exists():
             raise FileNotFoundError(f"No download artifact for job {job.id}")
-        out = upscaled_dir() / f"job{job.id}_{Path(src).stem}.upscaled.mp4"
+        src_path = Path(src)
+        # Tier 2.2: refuse 4K / ≥2160p with a clear reason (propagates to failed status)
+        assert_upscale_allowed(src_path)
+        out = upscaled_dir() / f"job{job.id}_{src_path.stem}.upscaled.mp4"
 
         def progress_cb(pct: float) -> None:
             if repo.get(job.id).status == "cancelled":
@@ -31,7 +35,7 @@ def make_upscale_handler(
             return repo.get(job.id).status == "cancelled"
 
         result = pipe.run(
-            Path(src),
+            src_path,
             job_key=f"job_{job.id}",
             output_path=out,
             progress_cb=progress_cb,

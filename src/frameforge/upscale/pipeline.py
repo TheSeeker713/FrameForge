@@ -15,6 +15,7 @@ from frameforge.upscale.ffmpeg_utils import (
     extract_frames,
     video_size,
 )
+from frameforge.upscale.guards import assert_upscale_allowed
 from frameforge.upscale.onnx_upscaler import OnnxUpscaler
 
 
@@ -78,7 +79,7 @@ class UpscalePipeline:
         input_video = Path(input_video)
         dirs = self._job_dirs(job_key)
         dirs["base"].mkdir(parents=True, exist_ok=True)
-        in_w, in_h = video_size(input_video)
+        in_w, in_h = assert_upscale_allowed(input_video)
         frames = extract_frames(
             input_video, dirs["frames"], max_frames=self.max_frames
         )
