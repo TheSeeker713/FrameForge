@@ -30,6 +30,11 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - Optional **close to system tray** (default off)
 - **Import cookies from browser** (Firefox first; Chromium fallback / manual Netscape)
 - Failure-driven **Authenticate this site / Import cookies** hint (no auto-open browser loops)
+- **Playlist picker:** flat expand, select a subset, enqueue pending jobs (no auto-start)
+- **Per-job format** presets (Best, ≤1080p / 720p / 480p, Audio-focused)
+- **Convert selected → MP3** (ffmpeg VBR `-q:a 2`, sequential worker stage)
+- **Upscale resource monitor** (psutil CPU/RAM warnings; optional auto-pause)
+- **Keyboard shortcuts** with Help manual (F1)
 
 ## Setup
 
@@ -53,9 +58,9 @@ python -m frameforge --gui
 
 ## Output layout
 
-`%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
+`%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `converted/`, `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
 
-See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
+See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 
 ## License
 

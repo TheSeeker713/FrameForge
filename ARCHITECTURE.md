@@ -11,6 +11,8 @@
 | `frameforge.download` | yt-dlp wrapper, archive, TXT/MD bulk import (Phase 1) |
 | `frameforge.upscale` | ONNX Real-ESRGAN tiling, stop/resume, audio remux (Phase 2) |
 | `frameforge.pipeline` | Download → optional upscale orchestration (Phase 3) |
+| `frameforge.convert` | ffmpeg MP3 convert stage (v0.4) |
+| `frameforge.monitor` | psutil CPU/RAM sampler + upscale pressure policy (v0.4) |
 | `frameforge.gui` | CustomTkinter dark UI (Phase 4) |
 
 ## Data layout
@@ -19,9 +21,12 @@
 %USERPROFILE%\Downloads\FrameForge\
   downloads/     # completed downloads
   upscaled/      # upscaled outputs
+  converted/     # MP3 converts
   temp/          # frames and intermediate files
   models/        # Real-ESRGAN ONNX weights
   archive/       # yt-dlp download archive artifacts
+  cookies/       # Netscape cookie files
+  thumbnails/    # job thumbnails
   frameforge.db  # SQLite WAL database
 ```
 
@@ -33,4 +38,4 @@
 
 ## Sequential invariant
 
-At most one job may be in `downloading` at any time. The single worker processes one job stage at a time. Aria2c multi-connection applies only to fragments of the current file — never a second video job.
+At most one job may be in an active media stage (`downloading`, `upscaling`, or `converting`) at any time. The single worker processes one job stage at a time. Aria2c multi-connection applies only to fragments of the current file — never a second video job.

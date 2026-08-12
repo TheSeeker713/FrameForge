@@ -51,6 +51,8 @@ python -m pytest -q
 - **Suite:** `python -m pytest -q` → **158 passed / 0 failed**
 - Prompt 1 APIs present: `paused`, exit policy choices, tray service, cookies-from-browser helper.
 
+See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.md), [RESOURCES.md](RESOURCES.md), [SHORTCUTS.md](SHORTCUTS.md). Prompt 1 docs ([PAUSE_RESUME.md](PAUSE_RESUME.md), [TRAY_AND_QUIT.md](TRAY_AND_QUIT.md), [COOKIES.md](COOKIES.md)) remain valid.
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
