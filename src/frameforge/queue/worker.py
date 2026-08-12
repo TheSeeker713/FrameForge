@@ -230,15 +230,12 @@ class SequentialWorker:
             return True
         except Exception as exc:  # noqa: BLE001
             if self._preserve_cancelled(job.id, exc):
+                self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
                 self.events.append(WorkerEvent(job.id, "download_cancel", time.time()))
                 return True
-            from frameforge.download.auth_hints import apply_auth_failure, is_auth_failure
+            from frameforge.errors import annotate_job_error
 
-            msg = str(exc)
-            if is_auth_failure(msg):
-                apply_auth_failure(self.repo, job.id, msg, job.url)
-            else:
-                self.repo.update_status(job.id, "failed", error=msg)
+            annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self.events.append(WorkerEvent(job.id, "download_fail", time.time()))
             return True
         finally:
@@ -258,9 +255,12 @@ class SequentialWorker:
             return True
         except Exception as exc:  # noqa: BLE001
             if self._preserve_cancelled(job.id, exc):
+                self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
                 self.events.append(WorkerEvent(job.id, "upscale_cancel", time.time()))
                 return True
-            self.repo.update_status(job.id, "failed", error=str(exc))
+            from frameforge.errors import annotate_job_error
+
+            annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self.events.append(WorkerEvent(job.id, "upscale_fail", time.time()))
             return True
         finally:

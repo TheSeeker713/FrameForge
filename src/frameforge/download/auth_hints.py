@@ -35,6 +35,15 @@ _AUTH_RE = re.compile(
 )
 
 
+def normalize_domain_safe(url_or_domain: str | None) -> str | None:
+    if not url_or_domain:
+        return None
+    try:
+        return normalize_domain(url_or_domain)
+    except ValueError:
+        return None
+
+
 def is_auth_failure(message: str | None) -> bool:
     """True when a downloader error clearly indicates login / bot / cookie gates."""
     if not message:
@@ -80,20 +89,7 @@ def job_needs_auth(job: Any) -> bool:
 
 def apply_auth_failure(repo: Any, job_id: int, message: str, url: str | None = None) -> Any:
     """Mark job failed with a clear error and structured auth hint in options_json."""
+    from frameforge.errors import annotate_job_error
+
     job = repo.get(job_id)
-    url = url or job.url
-    hint = auth_action_hint(url)
-    domain = ""
-    try:
-        domain = normalize_domain(url) if url else ""
-    except ValueError:
-        domain = ""
-    repo.update_status(job_id, "failed", error=str(message))
-    return repo.merge_options(
-        job_id,
-        {
-            "auth_required": True,
-            "auth_hint": hint,
-            "auth_domain": domain or None,
-        },
-    )
+    return annotate_job_error(repo, job_id, message, status="failed", url=url or job.url)
