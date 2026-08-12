@@ -23,7 +23,9 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - Highest practical quality downloads via yt-dlp + aria2c + FFmpeg merge
 - Persistent job queue with priority, cancel, retry
 - Optional upscale-after-download stage (still sequential)
-- Dark minimal GUI: paste URL, bulk import, live queue, settings
+- Dark minimal GUI: paste URL, bulk import, live queue, **History** and **Thumbnails** tabs, settings
+- Live download **% / speed / ETA** on the killable yt-dlp subprocess path
+- Failure-driven **Authenticate this site / Import cookies** hint (no auto-open browser loops)
 
 ## Setup
 
@@ -47,7 +49,9 @@ python -m frameforge --gui
 
 ## Output layout
 
-`%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `frameforge.db`
+`%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
+
+See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 
 ## License
 
