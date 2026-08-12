@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -26,6 +27,7 @@ TICK_ACTIVE_MS = 400
 TICK_TRAY_MS = 2000
 FULL_REFRESH_EVERY_ACTIVE = 5
 ERROR_PANEL_MAX_CHARS = 8000
+SETTINGS_RELOAD_S = 10.0
 
 
 class FrameForgeApp(ctk.CTk):
@@ -53,6 +55,8 @@ class FrameForgeApp(ctk.CTk):
 
         self.resource_sampler = ResourceSampler()
         self.resource_monitor = ResourceMonitor(settings_from_repo(self.repo))
+        self._settings_reload_at = time.monotonic()
+        self._last_banner_text: str | None = None
         self._selected_ids: set[int] = set()
 
         self.grid_columnconfigure(0, weight=1)
@@ -835,6 +839,7 @@ class FrameForgeApp(ctk.CTk):
             )
             save_settings_to_repo(self.repo, updated)
             self.resource_monitor.settings = updated
+            self._settings_reload_at = 0.0
             win.destroy()
 
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=(8, 4))
@@ -1263,17 +1268,24 @@ class FrameForgeApp(ctk.CTk):
             return
         state = getattr(self, "resource_monitor", None)
         if state is None or not state.state.warning:
-            banner.configure(text="")
+            text = ""
+        else:
+            reason = state.state.reason or "Resource pressure"
+            text = f"Warning: {reason}"
+        if text == self._last_banner_text:
             return
-        reason = state.state.reason or "Resource pressure"
-        banner.configure(text=f"Warning: {reason}")
+        self._last_banner_text = text
+        banner.configure(text=text)
 
     def _poll_resources(self) -> None:
         """Sample CPU/RAM while an upscale is active. Failures are non-fatal."""
         try:
-            from frameforge.monitor.policy import settings_from_repo
+            now = time.monotonic()
+            if now - self._settings_reload_at >= SETTINGS_RELOAD_S:
+                from frameforge.monitor.policy import settings_from_repo
 
-            self.resource_monitor.settings = settings_from_repo(self.repo)
+                self.resource_monitor.settings = settings_from_repo(self.repo)
+                self._settings_reload_at = now
             upscaling = self.repo.count_by_status("upscaling") > 0
             if not upscaling or not self.resource_monitor.settings.enabled:
                 if not self.resource_monitor.state.warning:
