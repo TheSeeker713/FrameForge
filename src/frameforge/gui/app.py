@@ -80,8 +80,20 @@ class FrameForgeApp(ctk.CTk):
         # Back-compat alias for older tests expecting queue_box text
         self.queue_box = self.queue_list
 
+        detail = ctk.CTkFrame(self, fg_color="transparent")
+        detail.grid(row=6, column=0, padx=16, pady=(0, 4), sticky="ew")
+        detail.grid_columnconfigure(0, weight=1)
+        self.error_panel_label = ctk.CTkLabel(
+            detail, text="Job errors / details", anchor="w", text_color="#c8c8c8"
+        )
+        self.error_panel_label.grid(row=0, column=0, sticky="w")
+        self.error_panel = ctk.CTkTextbox(detail, height=88, wrap="word")
+        self.error_panel.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.error_panel.configure(state="disabled")
+        self._set_error_panel_text("")
+
         controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.grid(row=6, column=0, padx=16, pady=(4, 16), sticky="ew")
+        controls.grid(row=7, column=0, padx=16, pady=(4, 16), sticky="ew")
         self.download_selected_btn = ctk.CTkButton(
             controls, text="Download selected", command=self.download_selected
         )
@@ -134,6 +146,47 @@ class FrameForgeApp(ctk.CTk):
 
     def _on_selection_changed(self, ids: set[int]) -> None:
         self._selected_ids = set(ids)
+        self._update_error_panel()
+
+    def _set_error_panel_text(self, text: str) -> None:
+        self.error_panel.configure(state="normal")
+        self.error_panel.delete("1.0", "end")
+        if text:
+            self.error_panel.insert("1.0", text)
+        self.error_panel.configure(state="disabled")
+
+    @staticmethod
+    def format_error_panel_text(job: Any | None) -> str:
+        """Plain text for the error panel: full error or empty/neutral."""
+        if job is None:
+            return ""
+        err = getattr(job, "error", None)
+        if not err:
+            return ""
+        return str(err)
+
+    def _update_error_panel(self) -> None:
+        ids = self._selected_ids
+        if not ids:
+            self._set_error_panel_text("")
+            self.error_panel_label.configure(text="Job errors / details")
+            return
+        jid = sorted(ids)[0]
+        try:
+            job = self.repo.get(jid)
+        except Exception:  # noqa: BLE001
+            self._set_error_panel_text("")
+            return
+        text = self.format_error_panel_text(job)
+        if text:
+            self.error_panel_label.configure(
+                text=f"Job errors / details — #{job.id} [{job.status}]"
+            )
+        else:
+            self.error_panel_label.configure(
+                text=f"Job errors / details — #{job.id} [{job.status}] (no errors)"
+            )
+        self._set_error_panel_text(text)
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -419,6 +472,7 @@ class FrameForgeApp(ctk.CTk):
             self.seq_banner.configure(
                 text="Downloads run one at a time — queue only until you press Download"
             )
+        self._update_error_panel()
 
     def _tick(self) -> None:
         self.refresh_queue()
