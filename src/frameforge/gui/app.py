@@ -116,6 +116,15 @@ class FrameForgeApp(ctk.CTk):
             show_timestamps=True,
         )
         self.history_list.grid(row=1, column=0, sticky="nsew")
+
+        self.tabs.add("Thumbnails")
+        ttab = self.tabs.tab("Thumbnails")
+        ttab.grid_columnconfigure(0, weight=1)
+        ttab.grid_rowconfigure(0, weight=1)
+        self.thumbs_frame = ctk.CTkScrollableFrame(ttab, label_text="Thumbnails")
+        self.thumbs_frame.grid(row=0, column=0, sticky="nsew")
+        self._thumb_tab_widgets: list[Any] = []
+        self._thumb_tab_sig: tuple[str, ...] | None = None
         self.tabs.configure(command=self._on_tab_changed)
 
         detail = ctk.CTkFrame(self, fg_color="transparent")
@@ -211,9 +220,12 @@ class FrameForgeApp(ctk.CTk):
             return "Queue"
 
     def _on_tab_changed(self, *_args: Any) -> None:
-        if self._active_tab_name() == "History":
+        name = self._active_tab_name()
+        if name == "History":
             self.refresh_history()
             self._selected_ids = self.history_list.selected_ids
+        elif name == "Thumbnails":
+            self.refresh_thumbnails()
         else:
             self._selected_ids = self.queue_list.selected_ids
         self._update_error_panel()
@@ -530,6 +542,63 @@ class FrameForgeApp(ctk.CTk):
         jobs = self.repo.list_history(status=status, search=search or None)
         self.history_list.update_jobs(jobs)
 
+    def focus_job(self, job_id: int) -> bool:
+        """Select *job_id* in Queue/History if it still exists. Returns True if found."""
+        try:
+            job = self.repo.get(int(job_id))
+        except KeyError:
+            return False
+        self.queue_list.set_selected({job.id})
+        hist_ids = {j.id for j in self.repo.list_history()}
+        if job.id in hist_ids:
+            self.history_list.set_selected({job.id})
+        self._selected_ids = {job.id}
+        try:
+            self.tabs.set("Queue")
+        except Exception:  # noqa: BLE001
+            pass
+        self._update_error_panel()
+        return True
+
+    def refresh_thumbnails(self) -> None:
+        from frameforge.download.thumbnails import list_thumbnail_jobs
+        from PIL import Image
+
+        jobs = list_thumbnail_jobs(self.repo)
+        sig = tuple(f"{j.id}:{j.thumbnail_path}" for j in jobs)
+        if sig == self._thumb_tab_sig and self._thumb_tab_widgets:
+            return
+        self._thumb_tab_sig = sig
+        for w in self._thumb_tab_widgets:
+            try:
+                w.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+        self._thumb_tab_widgets = []
+        jobs = list_thumbnail_jobs(self.repo)
+        cols = 4
+        for i, job in enumerate(jobs):
+            path = job.thumbnail_path
+            try:
+                img = Image.open(path)
+                img = img.convert("RGB")
+                img.thumbnail((120, 90))
+                ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
+            except Exception:  # noqa: BLE001
+                ctk_img = None
+            btn = ctk.CTkButton(
+                self.thumbs_frame,
+                text=f"#{job.id}",
+                image=ctk_img,
+                compound="top",
+                width=130,
+                height=110,
+                command=lambda jid=job.id: self.focus_job(jid),
+            )
+            r, c = divmod(i, cols)
+            btn.grid(row=r, column=c, padx=6, pady=6, sticky="n")
+            self._thumb_tab_widgets.append(btn)
+
     def bump_priority(self, delta: int) -> None:
         ids = self._selected_job_ids()
         if not ids:
@@ -569,6 +638,7 @@ class FrameForgeApp(ctk.CTk):
         jobs = self.repo.list_jobs()
         self.queue_list.update_jobs(jobs)
         self.refresh_history()
+        self.refresh_thumbnails()
 
         downloading = 0
         upscaling = 0

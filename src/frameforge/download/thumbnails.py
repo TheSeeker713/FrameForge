@@ -77,6 +77,17 @@ def download_thumbnail(url: str, dest: Path, *, timeout: float = _TIMEOUT) -> Pa
         return None
 
 
+def list_thumbnail_jobs(repo: Any, *, limit: int = 48) -> list[Any]:
+    """Recent jobs that have a local thumbnail file, newest first."""
+    found: list[Any] = []
+    for job in repo.list_jobs():
+        path = getattr(job, "thumbnail_path", None)
+        if path and Path(path).is_file():
+            found.append(job)
+    found.sort(key=lambda j: j.updated_at or j.created_at or "", reverse=True)
+    return found[: max(0, int(limit))]
+
+
 def cache_job_thumbnail(
     repo: Any,
     job_id: int,
