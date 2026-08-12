@@ -437,11 +437,13 @@ class FrameForgeApp(ctk.CTk):
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
 
     def download_selected(self) -> None:
+        from frameforge.gui.actions import can_download
+
         ids = self._selected_job_ids()
         if not ids:
             messagebox.showinfo("FrameForge", "Select one or more pending jobs first")
             return
-        pending = [i for i in ids if self.repo.get(i).status == "pending"]
+        pending = [i for i in ids if can_download(self.repo.get(i))]
         if not pending:
             messagebox.showinfo("FrameForge", "No pending jobs in selection")
             return
@@ -456,15 +458,18 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def upscale_selected(self) -> None:
+        from frameforge.gui.actions import can_upscale
+
         ids = self._selected_job_ids()
-        if not ids:
+        eligible = [i for i in ids if can_upscale(self.repo.get(i))]
+        if not eligible:
             messagebox.showinfo(
                 "FrameForge",
                 "Select one or more completed downloads with a local file first",
             )
             return
         try:
-            queued = self.worker.request_upscale_ids(ids)
+            queued = self.worker.request_upscale_ids(eligible)
         except ValueError as exc:
             messagebox.showerror("FrameForge", str(exc))
             return
@@ -489,11 +494,14 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def cancel_selected(self) -> None:
+        from frameforge.gui.actions import can_cancel
+
         ids = self._selected_job_ids()
         if not ids:
             return
         for job_id in ids:
-            self.worker.cancel_job(job_id)
+            if can_cancel(self.repo.get(job_id)):
+                self.worker.cancel_job(job_id)
         self.refresh_queue()
 
     def retry_failed(self) -> None:

@@ -1,0 +1,26 @@
+"""Which queue actions are valid for a job's current state."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+
+def can_download(job: Any) -> bool:
+    return getattr(job, "status", None) == "pending"
+
+
+def can_upscale(job: Any) -> bool:
+    if getattr(job, "status", None) != "completed":
+        return False
+    src = getattr(job, "download_path", None) or getattr(job, "output_path", None)
+    return bool(src) and Path(src).is_file()
+
+
+def can_cancel(job: Any) -> bool:
+    return getattr(job, "status", None) in {
+        "pending",
+        "downloading",
+        "upscaling",
+        "download_completed",
+    }
