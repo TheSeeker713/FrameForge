@@ -170,6 +170,10 @@ class FrameForgeApp(ctk.CTk):
         self.stop_btn.pack(side="left", padx=(0, 8))
         self.cancel_btn = ctk.CTkButton(controls, text="Cancel selected", command=self.cancel_selected)
         self.cancel_btn.pack(side="left", padx=(0, 8))
+        self.pause_btn = ctk.CTkButton(controls, text="Pause", command=self.pause_selected)
+        self.pause_btn.pack(side="left", padx=(0, 8))
+        self.resume_btn = ctk.CTkButton(controls, text="Resume", command=self.resume_selected)
+        self.resume_btn.pack(side="left", padx=(0, 8))
         self.retry_btn = ctk.CTkButton(controls, text="Retry failed", command=self.retry_failed)
         self.retry_btn.pack(side="left", padx=(0, 8))
         self.prio_up_btn = ctk.CTkButton(
@@ -504,6 +508,38 @@ class FrameForgeApp(ctk.CTk):
                 self.worker.cancel_job(job_id)
         self.refresh_queue()
 
+    def pause_selected(self) -> None:
+        from frameforge.gui.actions import can_pause
+
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select a downloading job to pause")
+            return
+        paused_any = False
+        for job_id in ids:
+            if can_pause(self.repo.get(job_id)):
+                self.worker.pause_job(job_id)
+                paused_any = True
+        if not paused_any:
+            messagebox.showinfo("FrameForge", "Pause is only available while a job is downloading or upscaling")
+        self.refresh_queue()
+
+    def resume_selected(self) -> None:
+        from frameforge.gui.actions import can_resume
+
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select a paused job to resume")
+            return
+        resumed_any = False
+        for job_id in ids:
+            if can_resume(self.repo.get(job_id)):
+                self.worker.resume_job(job_id)
+                resumed_any = True
+        if not resumed_any:
+            messagebox.showinfo("FrameForge", "Resume is only available for paused jobs")
+        self.refresh_queue()
+
     def retry_failed(self) -> None:
         for job in self.repo.list_jobs("failed"):
             self.repo.update_status(job.id, "pending", error=None, progress=0)
@@ -673,11 +709,19 @@ class FrameForgeApp(ctk.CTk):
             self.progress_label.configure(
                 text=f"Upscaling #{active.id} (2×) — {active.progress:.1f}%"
             )
-        elif not self.worker.is_armed:
-            self.progress_bar.set(0)
-            self.progress_label.configure(text="Idle — 0% | — | ETA —")
         else:
-            self.progress_label.configure(text="Worker armed — waiting for next job…")
+            paused_jobs = [j for j in jobs if j.status == "paused"]
+            if paused_jobs and not self.worker.is_armed:
+                p = paused_jobs[0]
+                self.progress_bar.set(max(0.0, min(1.0, p.progress / 100.0)))
+                self.progress_label.configure(
+                    text=f"Paused #{p.id} — {p.progress:.1f}% (Resume to continue)"
+                )
+            elif not self.worker.is_armed:
+                self.progress_bar.set(0)
+                self.progress_label.configure(text="Idle — 0% | — | ETA —")
+            else:
+                self.progress_label.configure(text="Worker armed — waiting for next job…")
 
         if downloading > 1 or upscaling > 1 or (downloading + upscaling) > 1:
             self.seq_banner.configure(text="ERROR: more than one active stage")

@@ -23,4 +23,13 @@ def can_cancel(job: Any) -> bool:
         "downloading",
         "upscaling",
         "download_completed",
+        "paused",
     }
+
+
+def can_pause(job: Any) -> bool:
+    return getattr(job, "status", None) in {"downloading", "upscaling"}
+
+
+def can_resume(job: Any) -> bool:
+    return getattr(job, "status", None) == "paused"
