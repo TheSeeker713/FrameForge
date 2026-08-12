@@ -1,22 +1,52 @@
-# Cookies / authentication (Tier 1.4)
+# Cookies / authentication
 
 FrameForge stores per-domain Netscape cookie files under:
 
 `%USERPROFILE%\Downloads\FrameForge\cookies\<domain>.txt`
 
-## Authenticate flow (GUI)
+## Import from browser (v0.4)
+
+User-triggered only — FrameForge never auto-opens a browser loop.
+
+1. Click **Authenticate site…** (or **Import from browser…** on an `auth_required` error).
+2. Enter the site URL or domain.
+3. Choose a browser (default **Firefox**) and click **Import from browser**.
+4. FrameForge runs:
+
+   `yt-dlp --cookies-from-browser <browser> --cookies <FrameForge cookies path> --skip-download <url>`
+
+5. The Netscape file is validated (must contain at least one cookie row). Header-only stubs are rejected.
+6. On success, later downloads for that domain use `resolve_cookiefile_for_url` automatically.
+
+**Browser order** when auto-trying: `firefox`, then `edge`, `chrome`, `brave`.
+
+### Chromium limitations
+
+Edge/Chrome/Brave often fail while the browser is open, or when cookies are **App-Bound Encrypted**. FrameForge surfaces that error and keeps the manual path:
+
+- Close the Chromium browser and retry, **or**
+- Use Firefox, **or**
+- **Open browser + Import cookies.txt** (extension export).
+
+ChromeCookieUnlock-style recovery is **not** bundled in this pass.
+
+## Manual Netscape import (fallback)
 
 1. Click **Authenticate site…**
 2. Enter a URL or domain.
 3. If cookies already exist for that domain, browser open is skipped (smart skip). Import again to replace.
 4. Otherwise **Open browser**, log in / accept gates in your browser.
 5. Export a Netscape `cookies.txt` (browser extension such as “Get cookies.txt LOCALLY”).
-6. **Import cookies.txt** — validated as non-empty Netscape (tab-separated cookie rows). Empty/garbage files are rejected. Saved under the cookies folder.
-7. Subsequent yt-dlp downloads for that domain automatically pass `cookiefile`.
+6. **Import cookies.txt** — validated as non-empty Netscape (tab-separated cookie rows). Empty/garbage files are rejected.
 
-Header-only stubs created when opening the browser are **not** treated as usable cookies (smart skip requires a real cookie row).
+Header-only stubs created when opening the browser are **not** treated as usable cookies.
 
-If a download fails with a login/bot/age/members wall, the error panel offers **Authenticate this site…** prefilled with that job’s URL (user-triggered; no auto-open loop).
+If a download fails with a login/bot/age/members wall, the error panel offers:
+
+- **Import from browser…** (prefilled URL)
+- **Authenticate this site…** (manual cookies.txt)
+
+Both are user-triggered.
 
 ## Notes
 
