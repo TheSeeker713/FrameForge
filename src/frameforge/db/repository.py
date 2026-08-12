@@ -86,6 +86,11 @@ class Job:
 
         return is_upscale_blocked(self.source_height)
 
+    @property
+    def thumbnail_path(self) -> str | None:
+        path = self.options().get("thumbnail_path")
+        return str(path) if path else None
+
 
 class JobRepository:
     def __init__(self, db_path: str | Path):

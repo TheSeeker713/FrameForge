@@ -85,5 +85,8 @@ def make_download_handler(
         repo.update_progress(job.id, 100.0)
         repo.clear_live_progress(job.id)
         repo.probe_and_store_resolution(job.id, result.path)
+        from frameforge.download.thumbnails import cache_job_thumbnail
+
+        cache_job_thumbnail(repo, job.id, info=result.info)
 
     return handler

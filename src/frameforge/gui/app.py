@@ -281,17 +281,19 @@ class FrameForgeApp(ctk.CTk):
         if not url.lower().startswith(("http://", "https://")):
             messagebox.showerror("FrameForge", "Enter a valid http(s) URL")
             return
-        from frameforge.download.metadata import probe_listing_metadata
+        from frameforge.download.metadata import probe_listing_bundle
+        from frameforge.download.thumbnails import cache_job_thumbnail
 
         # Lightweight probe — never blocks enqueue on failure
-        title, extractor = probe_listing_metadata(url)
-        self.repo.enqueue(
+        title, extractor, thumb_url = probe_listing_bundle(url)
+        job = self.repo.enqueue(
             url,
             title=title,
             extractor=extractor,
             format_preference=self._default_format(),
             upscale=self._default_upscale(),
         )
+        cache_job_thumbnail(self.repo, job.id, thumbnail_url=thumb_url)
         self.url_entry.delete(0, "end")
         self.refresh_queue()
 

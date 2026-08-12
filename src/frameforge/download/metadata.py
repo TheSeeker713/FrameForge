@@ -21,13 +21,20 @@ def probe_listing_metadata(
     *,
     cookiefile: Path | None = None,
 ) -> tuple[str | None, str]:
-    """Return (title|None, extractor_or_site) without downloading the media.
+    title, extractor, _thumb = probe_listing_bundle(url, cookiefile=cookiefile)
+    return title, extractor
 
-    Failures never raise — falls back to hostname site label and no title.
-    """
+
+def probe_listing_bundle(
+    url: str,
+    *,
+    cookiefile: Path | None = None,
+) -> tuple[str | None, str, str | None]:
+    """Return (title, extractor_or_site, thumbnail_url) without downloading media."""
     fallback = site_label_from_url(url)
     try:
         from frameforge.download.cookies import resolve_cookiefile_for_url
+        from frameforge.download.thumbnails import thumbnail_url_from_info
 
         cookie = cookiefile or resolve_cookiefile_for_url(url)
         dl = YtDlpDownloader(use_aria2c=False, cookiefile=cookie)
@@ -39,6 +46,7 @@ def probe_listing_metadata(
             or info.get("ie_key")
             or fallback
         )
-        return (str(title) if title else None, str(extractor))
+        thumb = thumbnail_url_from_info(info)
+        return (str(title) if title else None, str(extractor), thumb)
     except Exception:  # noqa: BLE001
-        return (None, fallback)
+        return (None, fallback, None)
