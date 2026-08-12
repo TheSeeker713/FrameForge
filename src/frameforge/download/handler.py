@@ -8,20 +8,27 @@ from typing import Any
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.download.ytdlp import YtDlpDownloader
-from frameforge.paths import download_dir_for_site, ensure_output_tree
+from frameforge.paths import download_dir_for_site, downloads_dir, ensure_output_tree
 from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 
-def resolve_download_output_dir(job: Job) -> Path:
-    """Site folder for new jobs; keep an existing download_output_dir (resume / old jobs)."""
+def resolve_download_output_dir(job: Job, *, fallback: Path | None = None) -> Path:
+    """Site folder for new jobs; keep resume paths and explicit non-default output dirs."""
     opts = job.options()
     existing = opts.get("download_output_dir")
     if existing:
         dest = Path(existing)
         dest.mkdir(parents=True, exist_ok=True)
         return dest
+    if fallback is not None:
+        try:
+            if fallback.resolve() != downloads_dir().resolve():
+                fallback.mkdir(parents=True, exist_ok=True)
+                return fallback
+        except OSError:
+            pass
     dest = download_dir_for_site(site_key_from_job(job))
     dest.mkdir(parents=True, exist_ok=True)
     return dest
@@ -48,7 +55,7 @@ def make_download_handler(
         if job.status == "paused":
             raise DownloadPaused("paused")
 
-        out_dir = resolve_download_output_dir(job)
+        out_dir = resolve_download_output_dir(job, fallback=dl.output_dir)
         dl.output_dir = out_dir
         repo.merge_options(
             job.id,
