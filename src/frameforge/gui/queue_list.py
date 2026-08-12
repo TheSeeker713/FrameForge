@@ -94,13 +94,14 @@ class QueueList(ctk.CTkScrollableFrame):
 
     def _format(self, job: Job) -> str:
         title = (job.title or job.url or "")[:52]
+        site = f"  [{job.extractor}]" if job.extractor else ""
         res = ""
         if job.source_height:
             res = f"  {job.source_width or '?'}x{job.source_height}"
         err = f"  ERR:{job.error[:36]}" if job.error else ""
         return (
             f"#{job.id}  [{job.status}]  {job.progress:.1f}%  "
-            f"prio={job.priority}{res}  {title}{err}"
+            f"prio={job.priority}{site}{res}  {title}{err}"
         )
 
     def _badge_text(self, job: Job) -> str:

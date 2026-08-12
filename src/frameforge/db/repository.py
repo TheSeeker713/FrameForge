@@ -40,6 +40,7 @@ class Job:
     options_json: str | None
     source_width: int | None = None
     source_height: int | None = None
+    extractor: str | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Job:
@@ -63,6 +64,7 @@ class Job:
             options_json=row["options_json"],
             source_width=row["source_width"] if "source_width" in keys else None,
             source_height=row["source_height"] if "source_height" in keys else None,
+            extractor=row["extractor"] if "extractor" in keys else None,
         )
 
     def options(self) -> dict[str, Any]:
@@ -104,14 +106,15 @@ class JobRepository:
         format_preference: str = "best",
         upscale: bool = False,
         options: dict[str, Any] | None = None,
+        extractor: str | None = None,
     ) -> Job:
         now = utc_now()
         cur = self.conn.execute(
             """
             INSERT INTO jobs(
                 url, title, status, priority, progress, format_preference, upscale,
-                created_at, updated_at, options_json
-            ) VALUES (?, ?, 'pending', ?, 0, ?, ?, ?, ?, ?)
+                created_at, updated_at, options_json, extractor
+            ) VALUES (?, ?, 'pending', ?, 0, ?, ?, ?, ?, ?, ?)
             """,
             (
                 url,
@@ -122,6 +125,7 @@ class JobRepository:
                 now,
                 now,
                 json.dumps(options) if options else None,
+                extractor,
             ),
         )
         self.conn.commit()
@@ -285,6 +289,14 @@ class JobRepository:
             (title, utc_now(), job_id),
         )
         self.conn.commit()
+
+    def set_extractor(self, job_id: int, extractor: str | None) -> Job:
+        self.conn.execute(
+            "UPDATE jobs SET extractor = ?, updated_at = ? WHERE id = ?",
+            (extractor, utc_now(), job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
 
     def set_priority(self, job_id: int, priority: int) -> Job:
         self.conn.execute(

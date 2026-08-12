@@ -141,8 +141,14 @@ class FrameForgeApp(ctk.CTk):
         if not url.lower().startswith(("http://", "https://")):
             messagebox.showerror("FrameForge", "Enter a valid http(s) URL")
             return
+        from frameforge.download.metadata import probe_listing_metadata
+
+        # Lightweight probe — never blocks enqueue on failure
+        title, extractor = probe_listing_metadata(url)
         self.repo.enqueue(
             url,
+            title=title,
+            extractor=extractor,
             format_preference=self._default_format(),
             upscale=self._default_upscale(),
         )

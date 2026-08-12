@@ -113,13 +113,17 @@ def confirm_add(
     format_preference: str = "best",
     upscale: bool = False,
 ) -> list[int]:
+    from frameforge.download.metadata import site_label_from_url
+
     ids: list[int] = []
     for item in preview.items:
         if repo.url_in_queue(item.url) or repo.archive_lookup(item.url) is not None:
             continue
+        # Bulk: inexpensive hostname label only (no per-URL network probe)
         job = repo.enqueue(
             item.url,
             title=item.title,
+            extractor=site_label_from_url(item.url),
             priority=priority,
             format_preference=format_preference,
             upscale=upscale,
