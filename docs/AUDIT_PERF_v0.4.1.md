@@ -100,3 +100,30 @@ This matches the v0.2 / Tier 1 “manual start” design. A **fresh** process sh
 6. **Optional light UI** — setting `ui_light_mode` skips live thumbs / uses slower refresh.
 
 Do **not** enable concurrent media downloads. Worker and tray must keep using `after(0, …)` for GUI mutations (`marshal_ui`, `TrayService.marshal`).
+
+---
+
+## Fixes applied (v0.4.1 performance pass)
+
+| Step | What landed |
+|------|-------------|
+| B1 | `create_app()` recovers interrupted jobs then stays idle. Enqueue / playlist / cookies do not arm. `start_worker=False`. |
+| B2 | `prepare_idle_launch()` = `disarm()` + `recover()` only. Leftover pendings are not claimed on launch. |
+| C1 | `refresh_progress()` updates the progress bar + one row. `QueueList.update_jobs` skips `pack_forget`/`pack` when id order is unchanged. Armed ticks use progress-only; full refresh every `FULL_REFRESH_EVERY_ACTIVE` (5) active ticks. |
+| C2 | Idle **2500 ms**, active **400 ms**, tray **2000 ms**. Withdrawn windows skip queue/progress rebuilds (resource poll still runs). `_cancel_tick()` on `shutdown`. |
+| C3 | `LruCache` max **64** decoded thumbs. Cache hit does not `Image.open`. Tick does not refresh History/Thumbnails unless that tab is visible. |
+| C4 | `schedule_on_ui(widget, fn)` → `after(0, fn)`. Used by `marshal_ui` and `TrayService.marshal`. |
+| D1 | `worker.events` capped at **200**. Error panel text capped at **8000** chars. Queue rows are the current query, not an append-only list. |
+| D2 | Monitor settings reloaded at most every **10 s**. Banner `configure` only when text changes. Ingest never calls `refresh_queue`. |
+| D3 | Setting `ui_light_mode=1` (Settings checkbox): no live thumbs; idle **4000 ms** / active **1000 ms**. |
+
+### Timer intervals (after C2/D3)
+
+| State | Interval |
+|-------|----------|
+| Idle, window visible | 2500 ms full queue refresh (side tabs only if that tab is selected) |
+| Worker armed, window visible | 400 ms progress-only; full refresh every 5 ticks (~2 s) |
+| Window withdrawn to tray | 2000 ms; skip queue widgets; still poll resources / wait-to-quit |
+| Light UI idle / armed | 4000 ms / 1000 ms |
+
+Sequential single-active-stage invariant is unchanged.
