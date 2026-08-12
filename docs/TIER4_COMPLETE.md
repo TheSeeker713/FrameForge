@@ -11,7 +11,7 @@
 | T4.2 | `0191fcf` | Extractor/site label on add + queue display |
 | T4.3 | `950431c` | Open folder / Reveal file |
 | T4.4 | `22cdcb6` | Per-job error detail panel |
-| Doc | *(this commit)* | Tier 4 completion summary |
+| Doc | `01a63769c86cacbe831e6317e883fe55b8e82213` | Tier 4 completion summary |
 
 ## Hard cancel (T4.1)
 
