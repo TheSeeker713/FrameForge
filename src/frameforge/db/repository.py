@@ -118,6 +118,12 @@ class Job:
             return f"PL {self.playlist_index}"
         return "PL"
 
+    @property
+    def site_key(self) -> str:
+        from frameforge.paths_site import site_key_from_job
+
+        return site_key_from_job(self)
+
 
 class JobRepository:
     def __init__(self, db_path: str | Path):

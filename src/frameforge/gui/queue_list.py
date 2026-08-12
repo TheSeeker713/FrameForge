@@ -175,6 +175,8 @@ class QueueList(ctk.CTkScrollableFrame):
             return "BLOCKED 4K+"
         if job.playlist_badge:
             return job.playlist_badge
+        if job.site_key:
+            return job.site_key
         return ""
 
     def update_jobs(self, jobs: list[Job]) -> None:
