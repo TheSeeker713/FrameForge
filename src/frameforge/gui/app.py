@@ -177,6 +177,11 @@ class FrameForgeApp(ctk.CTk):
             controls, text="Upscale selected (2×)", command=self.upscale_selected
         )
         self.upscale_selected_btn.pack(side="left", padx=(0, 8))
+        self.convert_mp3_btn = ctk.CTkButton(
+            controls, text="Convert to MP3", command=self.convert_selected
+        )
+        self.convert_mp3_btn.pack(side="left", padx=(0, 8))
+        self.convert_mp3_btn.configure(state="disabled")
         self.select_recommended_btn = ctk.CTkButton(
             controls, text="Select recommended", command=self.select_recommended
         )
@@ -347,11 +352,13 @@ class FrameForgeApp(ctk.CTk):
         if self._active_tab_name() != "History":
             self._selected_ids = set(ids)
             self._update_error_panel()
+            self._sync_convert_button()
 
     def _on_history_selection_changed(self, ids: set[int]) -> None:
         if self._active_tab_name() == "History":
             self._selected_ids = set(ids)
             self._update_error_panel()
+            self._sync_convert_button()
 
     def _active_tab_name(self) -> str:
         try:
@@ -369,6 +376,7 @@ class FrameForgeApp(ctk.CTk):
         else:
             self._selected_ids = self.queue_list.selected_ids
         self._update_error_panel()
+        self._sync_convert_button()
 
     def _selected_job_ids(self) -> list[int]:
         if self._active_tab_name() == "History":
@@ -420,6 +428,24 @@ class FrameForgeApp(ctk.CTk):
         need = job_needs_auth(job)
         self.auth_from_job_btn.configure(state="normal" if need else "disabled")
         self.import_browser_from_job_btn.configure(state="normal" if need else "disabled")
+        self._sync_convert_button()
+
+    def _sync_convert_button(self) -> None:
+        from frameforge.gui.actions import can_convert
+
+        btn = getattr(self, "convert_mp3_btn", None)
+        if btn is None:
+            return
+        ids = self._selected_job_ids()
+        eligible = False
+        for jid in ids:
+            try:
+                if can_convert(self.repo.get(jid)):
+                    eligible = True
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        btn.configure(state="normal" if eligible else "disabled")
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -764,6 +790,28 @@ class FrameForgeApp(ctk.CTk):
         )
         self.refresh_queue()
 
+    def convert_selected(self) -> None:
+        from frameforge.gui.actions import can_convert
+
+        ids = self._selected_job_ids()
+        eligible = [i for i in ids if can_convert(self.repo.get(i))]
+        if not eligible:
+            messagebox.showinfo(
+                "FrameForge",
+                "Select one or more completed jobs with a local file to convert to MP3",
+            )
+            return
+        try:
+            queued = self.worker.request_convert_ids(eligible)
+        except ValueError as exc:
+            messagebox.showerror("FrameForge", str(exc))
+            return
+        messagebox.showinfo(
+            "FrameForge",
+            f"Queued {len(queued)} job(s) for MP3 convert (runs one at a time).",
+        )
+        self.refresh_queue()
+
     def select_recommended(self) -> None:
         """Multi-select all completed jobs currently recommended for 2× upscale."""
         self.refresh_queue()
@@ -802,7 +850,7 @@ class FrameForgeApp(ctk.CTk):
                 self.worker.pause_job(job_id)
                 paused_any = True
         if not paused_any:
-            messagebox.showinfo("FrameForge", "Pause is only available while a job is downloading or upscaling")
+            messagebox.showinfo("FrameForge", "Pause is only available while a job is downloading, upscaling, or converting")
         self.refresh_queue()
 
     def resume_selected(self) -> None:
@@ -967,6 +1015,7 @@ class FrameForgeApp(ctk.CTk):
 
         downloading = 0
         upscaling = 0
+        converting = 0
         active = None
         for job in jobs:
             if job.status == "downloading":
@@ -974,6 +1023,10 @@ class FrameForgeApp(ctk.CTk):
                 active = job
             elif job.status == "upscaling":
                 upscaling += 1
+                if active is None:
+                    active = job
+            elif job.status == "converting":
+                converting += 1
                 if active is None:
                     active = job
 
@@ -990,6 +1043,11 @@ class FrameForgeApp(ctk.CTk):
             self.progress_label.configure(
                 text=f"Upscaling #{active.id} (2×) — {active.progress:.1f}%"
             )
+        elif active and active.status == "converting":
+            self.progress_bar.set(max(0.0, min(1.0, active.progress / 100.0)))
+            self.progress_label.configure(
+                text=f"Converting #{active.id} → MP3 — {active.progress:.1f}%"
+            )
         else:
             paused_jobs = [j for j in jobs if j.status == "paused"]
             if paused_jobs and not self.worker.is_armed:
@@ -1004,11 +1062,13 @@ class FrameForgeApp(ctk.CTk):
             else:
                 self.progress_label.configure(text="Worker armed — waiting for next job…")
 
-        if downloading > 1 or upscaling > 1 or (downloading + upscaling) > 1:
+        if downloading > 1 or upscaling > 1 or converting > 1 or (
+            downloading + upscaling + converting
+        ) > 1:
             self.seq_banner.configure(text="ERROR: more than one active stage")
         elif self.worker.is_armed:
             self.seq_banner.configure(
-                text="Worker running — one download or upscale at a time (sequential)"
+                text="Worker running — one download, upscale, or convert at a time (sequential)"
             )
         else:
             paused_n = sum(1 for j in jobs if j.status == "paused")
@@ -1024,6 +1084,7 @@ class FrameForgeApp(ctk.CTk):
                     text="Downloads run one at a time — queue only until you press Download"
                 )
         self._update_error_panel()
+        self._sync_convert_button()
 
     def _tick(self) -> None:
         if self._shutting_down:
