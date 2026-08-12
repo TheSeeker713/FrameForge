@@ -112,6 +112,14 @@ class FrameForgeApp(ctk.CTk):
             controls, text="Priority -", command=lambda: self.bump_priority(-1)
         )
         self.prio_down_btn.pack(side="left", padx=(0, 8))
+        self.open_folder_btn = ctk.CTkButton(
+            controls, text="Open folder", command=self.open_folder_selected
+        )
+        self.open_folder_btn.pack(side="left", padx=(0, 8))
+        self.reveal_file_btn = ctk.CTkButton(
+            controls, text="Reveal file", command=self.reveal_file_selected
+        )
+        self.reveal_file_btn.pack(side="left", padx=(0, 8))
         self.refresh_btn = ctk.CTkButton(controls, text="Refresh", command=self.refresh_queue)
         self.refresh_btn.pack(side="left")
 
@@ -339,6 +347,32 @@ class FrameForgeApp(ctk.CTk):
             job = self.repo.get(job_id)
             self.repo.set_priority(job_id, job.priority + delta)
         self.refresh_queue()
+
+    def open_folder_selected(self) -> None:
+        from frameforge.util.reveal import RevealError, open_job_folder
+
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select a job with a local file first")
+            return
+        job = self.repo.get(sorted(ids)[0])
+        try:
+            open_job_folder(job, launch=True)
+        except RevealError as exc:
+            messagebox.showerror("FrameForge", str(exc))
+
+    def reveal_file_selected(self) -> None:
+        from frameforge.util.reveal import RevealError, reveal_job_file
+
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select a job with a local file first")
+            return
+        job = self.repo.get(sorted(ids)[0])
+        try:
+            reveal_job_file(job, launch=True)
+        except RevealError as exc:
+            messagebox.showerror("FrameForge", str(exc))
 
     def refresh_queue(self) -> None:
         jobs = self.repo.list_jobs()
