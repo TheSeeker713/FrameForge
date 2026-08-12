@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
 
@@ -164,11 +165,69 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def authenticate_site(self) -> None:
-        messagebox.showinfo(
-            "FrameForge",
-            "Cookie authentication arrives in Tier 1.4. "
-            "Cookies will live under Downloads\\FrameForge\\cookies\\.",
-        )
+        from frameforge.download import cookies as cookie_mod
+
+        win = ctk.CTkToplevel(self)
+        win.title("Authenticate site")
+        win.geometry("520x320")
+        ctk.CTkLabel(
+            win,
+            text=(
+                "1) Enter a site URL or domain\n"
+                "2) Open browser and log in / accept gates\n"
+                "3) Export Netscape cookies.txt (browser extension)\n"
+                "4) Import that file here\n\n"
+                "If cookies already exist for the domain, re-auth is skipped unless you import again."
+            ),
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(16, 8))
+        entry = ctk.CTkEntry(win, placeholder_text="https://example.com/ or example.com")
+        entry.pack(fill="x", padx=16, pady=4)
+        status = ctk.CTkLabel(win, text="", anchor="w")
+        status.pack(fill="x", padx=16, pady=4)
+
+        def do_open() -> None:
+            raw = entry.get().strip()
+            if not raw:
+                return
+            try:
+                domain = cookie_mod.normalize_domain(raw)
+            except ValueError as exc:
+                messagebox.showerror("FrameForge", str(exc))
+                return
+            if cookie_mod.should_skip_auth_prompt(domain) and cookie_mod.has_cookies(domain):
+                status.configure(
+                    text=f"Cookies already exist for {domain} — skipping browser open. Import to replace."
+                )
+                return
+            cookie_mod.open_site_for_login(raw)
+            status.configure(
+                text=f"Opened browser for {domain}. After login, export cookies.txt and Import."
+            )
+
+        def do_import() -> None:
+            raw = entry.get().strip()
+            if not raw:
+                messagebox.showerror("FrameForge", "Enter domain/URL first")
+                return
+            try:
+                domain = cookie_mod.normalize_domain(raw)
+            except ValueError as exc:
+                messagebox.showerror("FrameForge", str(exc))
+                return
+            path = filedialog.askopenfilename(
+                title="Import Netscape cookies.txt",
+                filetypes=[("Cookie files", "*.txt"), ("All", "*.*")],
+            )
+            if not path:
+                return
+            dest = cookie_mod.import_netscape_cookies(domain, Path(path))
+            status.configure(text=f"Saved cookies to {dest}")
+
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=12)
+        ctk.CTkButton(btn_row, text="Open browser", command=do_open).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(btn_row, text="Import cookies.txt", command=do_import).pack(side="left")
 
     def open_settings(self) -> None:
         win = ctk.CTkToplevel(self)

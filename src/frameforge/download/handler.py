@@ -13,13 +13,9 @@ from frameforge.paths import ensure_output_tree
 
 
 def _cookiefile_for_url(url: str) -> Path | None:
-    try:
-        from frameforge.download.cookies import cookie_path_for_url
+    from frameforge.download.cookies import resolve_cookiefile_for_url
 
-        path = cookie_path_for_url(url)
-        return path if path.is_file() else None
-    except Exception:
-        return None
+    return resolve_cookiefile_for_url(url)
 
 
 def make_download_handler(
