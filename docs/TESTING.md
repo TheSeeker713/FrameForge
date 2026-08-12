@@ -53,6 +53,11 @@ python -m pytest -q
 
 See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.md), [RESOURCES.md](RESOURCES.md), [SHORTCUTS.md](SHORTCUTS.md). Prompt 1 docs ([PAUSE_RESUME.md](PAUSE_RESUME.md), [TRAY_AND_QUIT.md](TRAY_AND_QUIT.md), [COOKIES.md](COOKIES.md)) remain valid.
 
+## v0.4.0 complete (Prompt 1 + Prompt 2)
+
+- **Suite:** `python -m pytest -q` → **192 passed / 0 skipped / 0 failed**
+- See [V0.4_COMPLETE.md](V0.4_COMPLETE.md).
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
