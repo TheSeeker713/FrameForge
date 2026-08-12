@@ -45,6 +45,12 @@ python -m pytest -q
 - **Suite:** `python -m pytest -q` → **157 passed / 1 skipped / 0 failed**
 - Skip: live sample clip can finish before the pause/cancel sampling window (not a quarantine).
 
+## v0.4 Prompt 2 baseline
+
+- **SHA:** `ae10f77acc8739771c4a9904043454ebae76bff8`
+- **Suite:** `python -m pytest -q` → **158 passed / 0 failed**
+- Prompt 1 APIs present: `paused`, exit policy choices, tray service, cookies-from-browser helper.
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
