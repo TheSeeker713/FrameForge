@@ -8,9 +8,23 @@ from typing import Any
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.download.ytdlp import YtDlpDownloader
-from frameforge.paths import ensure_output_tree
+from frameforge.paths import download_dir_for_site, ensure_output_tree
+from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
+
+
+def resolve_download_output_dir(job: Job) -> Path:
+    """Site folder for new jobs; keep an existing download_output_dir (resume / old jobs)."""
+    opts = job.options()
+    existing = opts.get("download_output_dir")
+    if existing:
+        dest = Path(existing)
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest
+    dest = download_dir_for_site(site_key_from_job(job))
+    dest.mkdir(parents=True, exist_ok=True)
+    return dest
 
 
 def _cookiefile_for_url(url: str) -> Path | None:
@@ -34,11 +48,15 @@ def make_download_handler(
         if job.status == "paused":
             raise DownloadPaused("paused")
 
-        out_dir = job.options().get("download_output_dir")
-        if out_dir:
-            dl.output_dir = Path(out_dir)
-            Path(out_dir).mkdir(parents=True, exist_ok=True)
-        repo.merge_options(job.id, {"download_output_dir": str(dl.output_dir)})
+        out_dir = resolve_download_output_dir(job)
+        dl.output_dir = out_dir
+        repo.merge_options(
+            job.id,
+            {
+                "download_output_dir": str(out_dir),
+                "site_key": site_key_from_job(job),
+            },
+        )
 
         archived = repo.archive_lookup(job.url)
         if archived is not None:
