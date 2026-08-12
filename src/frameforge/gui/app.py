@@ -228,9 +228,9 @@ class FrameForgeApp(ctk.CTk):
 
         self.bind("<Control-v>", self._paste_focus)
         self.bind("<Control-Return>", lambda e: self.add_url())
-        self.bind("<Control-q>", lambda e: self.request_quit())
         self.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self._build_menubar()
+        self._install_shortcuts()
         self._shutting_down = False
         from frameforge.gui.tray import TrayService
 
@@ -312,6 +312,41 @@ class FrameForgeApp(ctk.CTk):
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
         self.configure(menu=menubar)
+
+    def _install_shortcuts(self) -> None:
+        from frameforge.gui.shortcuts import ShortcutRegistry
+
+        self.shortcuts = ShortcutRegistry()
+        self.shortcuts.bind_handler("focus_url", lambda: self.url_entry.focus_set())
+        self.shortcuts.bind_handler("download_selected", self.download_selected)
+        self.shortcuts.bind_handler("download_all", self.download_all_pending)
+        self.shortcuts.bind_handler("pause", self.pause_selected)
+        self.shortcuts.bind_handler("resume", self.resume_selected)
+        self.shortcuts.bind_handler("cancel_selected", self.cancel_selected)
+        self.shortcuts.bind_handler("upscale_selected", self.upscale_selected)
+        self.shortcuts.bind_handler("select_recommended", self.select_recommended)
+        self.shortcuts.bind_handler("convert_mp3", self.convert_selected)
+        self.shortcuts.bind_handler("open_folder", self.open_folder_selected)
+        self.shortcuts.bind_handler("reveal_file", self.reveal_file_selected)
+        self.shortcuts.bind_handler("authenticate", self.authenticate_site)
+        self.shortcuts.bind_handler("quit", self.request_quit)
+        self.shortcuts.bind_handler("tab_queue", lambda: self.show_tab("Queue"))
+        self.shortcuts.bind_handler("tab_history", lambda: self.show_tab("History"))
+        self.shortcuts.bind_handler("tab_thumbnails", lambda: self.show_tab("Thumbnails"))
+        self.shortcuts.bind_handler("open_settings", self.open_settings)
+        self.shortcuts.bind_handler("shortcuts_help", self.open_shortcuts_help)
+        self.shortcuts.install(self)
+
+    def show_tab(self, name: str) -> None:
+        try:
+            self.tabs.set(name)
+        except Exception:  # noqa: BLE001
+            return
+        self._on_tab_changed()
+
+    def open_shortcuts_help(self) -> None:
+        """Placeholder until the Help dialog is added; still a real command target."""
+        self._shortcuts_help_opened = True
 
     def request_quit(self) -> None:
         """Window X, File→Quit, Ctrl+Q, and tray Quit all use this policy."""
