@@ -14,6 +14,7 @@ from frameforge.db.migrate import migrate
 
 ACTIVE_DOWNLOAD_STATUSES = ("downloading",)
 INTERRUPTIBLE_STATUSES = ("downloading", "upscaling")
+TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 
 
 def utc_now() -> str:
@@ -148,6 +149,33 @@ class JobRepository:
             rows = self.conn.execute(
                 "SELECT * FROM jobs ORDER BY priority DESC, id ASC"
             ).fetchall()
+        return [Job.from_row(r) for r in rows]
+
+    def list_history(
+        self,
+        *,
+        status: str | None = None,
+        search: str | None = None,
+    ) -> list[Job]:
+        """Terminal jobs (completed/failed/cancelled) for the History view.
+
+        *status*: ``None`` = all terminal; or one of completed/failed/cancelled.
+        *search*: case-insensitive substring match on title, url, or extractor.
+        Does not change ``list_jobs`` / claim behavior for the active queue.
+        """
+        if status is not None and status not in TERMINAL_STATUSES:
+            raise ValueError(f"history status must be one of {TERMINAL_STATUSES}, got {status!r}")
+        statuses = (status,) if status else TERMINAL_STATUSES
+        placeholders = ",".join("?" * len(statuses))
+        sql = f"SELECT * FROM jobs WHERE status IN ({placeholders})"
+        params: list[Any] = list(statuses)
+        needle = (search or "").strip()
+        if needle:
+            like = f"%{needle}%"
+            sql += " AND (IFNULL(title,'') LIKE ? OR url LIKE ? OR IFNULL(extractor,'') LIKE ?)"
+            params.extend([like, like, like])
+        sql += " ORDER BY COALESCE(finished_at, updated_at) DESC, id DESC"
+        rows = self.conn.execute(sql, params).fetchall()
         return [Job.from_row(r) for r in rows]
 
     def count_by_status(self, status: str) -> int:
