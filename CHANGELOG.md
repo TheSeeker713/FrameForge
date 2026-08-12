@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Original 11 items **100% PASS** (live subprocess speed/ETA; failure-driven auth hints)
+- Structured error categories + richer error panel
+- History tab (SQLite terminal jobs; soft-hide)
+- Thumbnails cache + Queue/History previews + Thumbnails tab
+- Worker loop survives handler exceptions; ORT dual-thread test race fixed
+
 ## 0.1.0
 
 - Phase 0–5 initial release scaffold and application

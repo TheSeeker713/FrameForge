@@ -7,6 +7,8 @@
 | **Prior audit** | [`docs/AUDIT_v0.2.0.md`](AUDIT_v0.2.0.md) at `e5d7bd9` (~91%: 9 PASS, 2 PARTIAL) |
 | **Score** | **11 / 11 PASS (100%)** |
 
+Post-gate product notes: [`docs/V0.3_COMPLETE.md`](V0.3_COMPLETE.md).
+
 ## Verification run (A4)
 
 ```powershell
