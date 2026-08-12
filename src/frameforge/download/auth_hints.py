@@ -8,6 +8,8 @@ from typing import Any
 from frameforge.download.cookies import has_cookies, normalize_domain
 
 AUTH_ACTION_LABEL = "Authenticate this site / Import cookies"
+AUTH_BROWSER_IMPORT_LABEL = "Import from browser"
+AUTH_MANUAL_LABEL = "Open browser + Import cookies.txt"
 
 _AUTH_RE = re.compile(
     r"sign in to confirm"
@@ -65,16 +67,17 @@ def auth_action_hint(url_or_domain: str | None = None) -> str:
     if cookies_exist and domain:
         return (
             f"{AUTH_ACTION_LABEL}: cookies already exist for {domain}. "
-            "Import to replace if they are stale, then retry the job."
+            f"{AUTH_BROWSER_IMPORT_LABEL} or Import to replace if they are stale, "
+            "then retry the job."
         )
     if domain:
         return (
-            f"{AUTH_ACTION_LABEL} for {domain}: open Authenticate site…, "
-            "log in / accept gates, export Netscape cookies.txt, then import."
+            f"{AUTH_BROWSER_IMPORT_LABEL} for {domain} (Firefox preferred), "
+            f"or {AUTH_ACTION_LABEL} ({AUTH_MANUAL_LABEL}), then retry the job."
         )
     return (
-        f"{AUTH_ACTION_LABEL}: open Authenticate site…, log in / accept gates, "
-        "export Netscape cookies.txt, then import."
+        f"{AUTH_BROWSER_IMPORT_LABEL} (Firefox preferred), "
+        f"or {AUTH_ACTION_LABEL} ({AUTH_MANUAL_LABEL}), then retry the job."
     )
 
 

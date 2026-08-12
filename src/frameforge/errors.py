@@ -64,7 +64,8 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
 def suggested_action(category: str, *, auth_hint: str | None = None) -> str | None:
     if category == AUTH_REQUIRED:
         return auth_hint or (
-            "Next: Authenticate this site / Import cookies, then Retry failed."
+            "Next: Import from browser (Firefox preferred), or Authenticate this site / "
+            "Import cookies.txt, then Retry failed."
         )
     if category == NETWORK:
         return "Next: check the network connection, then Retry failed."

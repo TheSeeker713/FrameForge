@@ -147,10 +147,19 @@ class FrameForgeApp(ctk.CTk):
             command=self.authenticate_selected_job,
             state="disabled",
         )
-        self.auth_from_job_btn.grid(row=0, column=1, sticky="e")
+        self.auth_from_job_btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.import_browser_from_job_btn = ctk.CTkButton(
+            detail,
+            text="Import from browser…",
+            width=180,
+            command=self.import_browser_selected_job,
+            state="disabled",
+        )
+        self.import_browser_from_job_btn.grid(row=0, column=2, sticky="e")
         detail.grid_columnconfigure(1, weight=0)
+        detail.grid_columnconfigure(2, weight=0)
         self.error_panel = ctk.CTkTextbox(detail, height=88, wrap="word")
-        self.error_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.error_panel.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self.error_panel.configure(state="disabled")
         self._set_error_panel_text("")
 
@@ -382,6 +391,7 @@ class FrameForgeApp(ctk.CTk):
             self._set_error_panel_text("")
             self.error_panel_label.configure(text="Job errors / details")
             self.auth_from_job_btn.configure(state="disabled")
+            self.import_browser_from_job_btn.configure(state="disabled")
             return
         jid = sorted(ids)[0]
         try:
@@ -389,6 +399,7 @@ class FrameForgeApp(ctk.CTk):
         except Exception:  # noqa: BLE001
             self._set_error_panel_text("")
             self.auth_from_job_btn.configure(state="disabled")
+            self.import_browser_from_job_btn.configure(state="disabled")
             return
         text = self.format_error_panel_text(job)
         if text:
@@ -402,9 +413,9 @@ class FrameForgeApp(ctk.CTk):
         self._set_error_panel_text(text)
         from frameforge.download.auth_hints import job_needs_auth
 
-        self.auth_from_job_btn.configure(
-            state="normal" if job_needs_auth(job) else "disabled"
-        )
+        need = job_needs_auth(job)
+        self.auth_from_job_btn.configure(state="normal" if need else "disabled")
+        self.import_browser_from_job_btn.configure(state="normal" if need else "disabled")
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -469,6 +480,20 @@ class FrameForgeApp(ctk.CTk):
             except Exception:  # noqa: BLE001
                 prefill = None
         self.authenticate_site(prefill=prefill)
+
+    def import_browser_selected_job(self) -> None:
+        """Error-panel action: import cookies from browser for the selected auth-failed job."""
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select a job first")
+            return
+        job = self.repo.get(sorted(ids)[0])
+        result = self.import_cookies_from_browser_for_site(job.url, browser="firefox")
+        if result.ok:
+            messagebox.showinfo("FrameForge", result.message)
+            return
+        messagebox.showerror("FrameForge", result.message)
+        self.authenticate_site(prefill=job.url)
 
     def import_cookies_from_browser_for_site(
         self,
