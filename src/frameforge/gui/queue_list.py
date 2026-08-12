@@ -73,8 +73,12 @@ class QueueList(ctk.CTkScrollableFrame):
         return {"frame": frame, "var": var, "label": label, "chk": chk}
 
     def _format(self, job: Job) -> str:
-        title = (job.title or job.url or "")[:80]
-        return f"#{job.id}  [{job.status}]  {job.progress:.1f}%  prio={job.priority}  {title}"
+        title = (job.title or job.url or "")[:60]
+        err = f"  ERR:{job.error[:40]}" if job.error else ""
+        return (
+            f"#{job.id}  [{job.status}]  {job.progress:.1f}%  "
+            f"prio={job.priority}  {title}{err}"
+        )
 
     def update_jobs(self, jobs: list[Job]) -> None:
         """Refresh rows without resetting scroll or wiping selection unexpectedly."""

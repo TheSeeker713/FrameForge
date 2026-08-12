@@ -13,7 +13,7 @@ from frameforge.upscale.pipeline import UpscalePipeline
 def make_upscale_handler(
     pipeline: UpscalePipeline | None = None,
 ) -> Callable[[Job, JobRepository], None]:
-    pipe = pipeline or UpscalePipeline(max_frames=30)
+    pipe = pipeline or UpscalePipeline()
 
     def handler(job: Job, repo: JobRepository) -> None:
         job = repo.get(job.id)

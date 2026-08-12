@@ -70,10 +70,12 @@ class JobRepository:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.conn = connect(self.db_path)
+        self._lock = __import__("threading").RLock()
         migrate(self.conn)
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()
 
     def enqueue(
         self,
@@ -108,10 +110,11 @@ class JobRepository:
         return self.get(int(cur.lastrowid))
 
     def get(self, job_id: int) -> Job:
-        row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-        if not row:
-            raise KeyError(f"job {job_id} not found")
-        return Job.from_row(row)
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if not row:
+                raise KeyError(f"job {job_id} not found")
+            return Job.from_row(row)
 
     def list_jobs(self, status: str | None = None) -> list[Job]:
         if status:
@@ -239,6 +242,39 @@ class JobRepository:
         self.conn.execute(
             "UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?",
             (priority, utc_now(), job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
+
+    def queue_for_upscale(self, job_id: int) -> Job:
+        """Move a completed job with a local download artifact into the upscale stage.
+
+        Sets upscale=1 and status=download_completed so the sequential worker will
+        run the upscale handler without requiring the original enqueue flag.
+        """
+        from pathlib import Path
+
+        job = self.get(job_id)
+        if job.status != "completed":
+            raise ValueError(
+                f"Job {job_id} status is '{job.status}' (need completed to upscale)"
+            )
+        src = job.download_path or job.output_path
+        if not src or not Path(src).exists():
+            raise ValueError(f"Job {job_id} has no valid download_path for upscale")
+        now = utc_now()
+        self.conn.execute(
+            """
+            UPDATE jobs
+            SET upscale = 1,
+                status = 'download_completed',
+                progress = 0,
+                error = NULL,
+                finished_at = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, job_id),
         )
         self.conn.commit()
         return self.get(job_id)

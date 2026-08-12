@@ -90,6 +90,10 @@ class FrameForgeApp(ctk.CTk):
             controls, text="Download all pending", command=self.download_all_pending
         )
         self.download_all_btn.pack(side="left", padx=(0, 8))
+        self.upscale_selected_btn = ctk.CTkButton(
+            controls, text="Upscale selected (2×)", command=self.upscale_selected
+        )
+        self.upscale_selected_btn.pack(side="left", padx=(0, 8))
         self.stop_btn = ctk.CTkButton(controls, text="Stop after current", command=self.stop_worker)
         self.stop_btn.pack(side="left", padx=(0, 8))
         self.cancel_btn = ctk.CTkButton(controls, text="Cancel selected", command=self.cancel_selected)
@@ -271,6 +275,25 @@ class FrameForgeApp(ctk.CTk):
         self.worker.request_download_all()
         self.refresh_queue()
 
+    def upscale_selected(self) -> None:
+        ids = self._selected_job_ids()
+        if not ids:
+            messagebox.showinfo(
+                "FrameForge",
+                "Select one or more completed downloads with a local file first",
+            )
+            return
+        try:
+            queued = self.worker.request_upscale_ids(ids)
+        except ValueError as exc:
+            messagebox.showerror("FrameForge", str(exc))
+            return
+        messagebox.showinfo(
+            "FrameForge",
+            f"Queued {len(queued)} job(s) for 2× upscale (runs one at a time).",
+        )
+        self.refresh_queue()
+
     def stop_worker(self) -> None:
         self.worker.disarm()
         self.refresh_queue()
@@ -302,13 +325,18 @@ class FrameForgeApp(ctk.CTk):
         self.queue_list.update_jobs(jobs)
 
         downloading = 0
+        upscaling = 0
         active = None
         for job in jobs:
             if job.status == "downloading":
                 downloading += 1
                 active = job
+            elif job.status == "upscaling":
+                upscaling += 1
+                if active is None:
+                    active = job
 
-        if active:
+        if active and active.status == "downloading":
             self.progress_bar.set(max(0.0, min(1.0, active.progress / 100.0)))
             opts = active.options()
             speed = opts.get("speed_str") or "—"
@@ -316,17 +344,22 @@ class FrameForgeApp(ctk.CTk):
             self.progress_label.configure(
                 text=f"Downloading #{active.id} — {active.progress:.1f}% | {speed} | ETA {eta}"
             )
+        elif active and active.status == "upscaling":
+            self.progress_bar.set(max(0.0, min(1.0, active.progress / 100.0)))
+            self.progress_label.configure(
+                text=f"Upscaling #{active.id} (2×) — {active.progress:.1f}%"
+            )
         elif not self.worker.is_armed:
             self.progress_bar.set(0)
             self.progress_label.configure(text="Idle — 0% | — | ETA —")
         else:
             self.progress_label.configure(text="Worker armed — waiting for next job…")
 
-        if downloading > 1:
-            self.seq_banner.configure(text="ERROR: more than one download active")
+        if downloading > 1 or upscaling > 1 or (downloading + upscaling) > 1:
+            self.seq_banner.configure(text="ERROR: more than one active stage")
         elif self.worker.is_armed:
             self.seq_banner.configure(
-                text="Worker running — downloads one at a time (sequential)"
+                text="Worker running — one download or upscale at a time (sequential)"
             )
         else:
             self.seq_banner.configure(

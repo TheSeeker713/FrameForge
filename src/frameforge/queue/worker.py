@@ -94,6 +94,31 @@ class SequentialWorker:
         self.recover()
         self.start(armed=True)
 
+    def request_upscale_ids(self, job_ids: Iterable[int]) -> list[int]:
+        """Queue completed jobs for 2× upscale and arm the worker (no new downloads).
+
+        Returns the list of job IDs successfully queued. Raises ValueError if none
+        are eligible (caller may catch and show a message).
+        """
+        queued: list[int] = []
+        errors: list[str] = []
+        for jid in job_ids:
+            try:
+                self.repo.queue_for_upscale(int(jid))
+                queued.append(int(jid))
+            except ValueError as exc:
+                errors.append(str(exc))
+        if not queued:
+            raise ValueError(
+                "; ".join(errors) if errors else "No eligible completed jobs to upscale"
+            )
+        with self._lock:
+            # Empty set: do not claim pending downloads; only process upscale stage
+            self._only_ids = set()
+            self._armed.set()
+        self.start(armed=True)
+        return queued
+
     def run_until_idle(self, timeout: float = 120.0) -> None:
         """Process pending jobs in this thread until queue idle or timeout.
 
