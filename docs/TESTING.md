@@ -25,6 +25,15 @@ SQLite persistence tests must use **real on-disk** DB files and process restart 
 
 Sequential invariant: assert never more than one job in `downloading` at a time; assert non-overlapping download execution windows.
 
+## Full suite (B2 gate)
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pytest -q
+```
+
+**2026-08-12:** **97 passed / 0 failed** (no quarantines). Upscale tests must not run ONNX on the background worker loop and `_process_one` in the same process — pass `request_upscale_ids(..., start_loop=False)` when draining on the calling thread (DirectML is not dual-thread safe).
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
