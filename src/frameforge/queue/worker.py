@@ -37,6 +37,7 @@ class SequentialWorker:
     poll_interval: float = 0.05
     _stop: threading.Event = field(default_factory=threading.Event)
     _armed: threading.Event = field(default_factory=threading.Event)
+    _wait_to_quit: threading.Event = field(default_factory=threading.Event)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _only_ids: set[int] | None = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -48,6 +49,7 @@ class SequentialWorker:
 
     def cancel_job(self, job_id: int) -> Job:
         """Mark job cancelled and kill any active yt-dlp/aria2c/ffmpeg tree."""
+        self.clear_wait_to_quit()
         job = self.repo.cancel(job_id)
         self.processes.kill(job_id)
         return job
@@ -121,6 +123,18 @@ class SequentialWorker:
         with self._lock:
             self._armed.clear()
             self._only_ids = None
+
+    def begin_wait_to_quit(self) -> None:
+        """Disarm further claims; let the current stage finish, then the UI may exit."""
+        self._wait_to_quit.set()
+        self.disarm()
+
+    def clear_wait_to_quit(self) -> None:
+        self._wait_to_quit.clear()
+
+    @property
+    def wait_to_quit(self) -> bool:
+        return self._wait_to_quit.is_set()
 
     def request_download_all(self) -> None:
         """Arm worker to process all pending jobs sequentially until drained."""
