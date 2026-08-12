@@ -103,11 +103,15 @@ class SequentialWorker:
         self.recover()
         self.start(armed=True)
 
-    def request_upscale_ids(self, job_ids: Iterable[int]) -> list[int]:
+    def request_upscale_ids(self, job_ids: Iterable[int], *, start_loop: bool = True) -> list[int]:
         """Queue completed jobs for 2× upscale and arm the worker (no new downloads).
 
         Returns the list of job IDs successfully queued. Raises ValueError if none
         are eligible (caller may catch and show a message).
+
+        *start_loop* defaults True for the GUI. Tests that call ``_process_one`` on
+        the main thread must pass ``start_loop=False`` so ONNX never runs on two
+        threads in the same process (DirectML is not safe that way).
         """
         queued: list[int] = []
         errors: list[str] = []
@@ -125,7 +129,8 @@ class SequentialWorker:
             # Empty set: do not claim pending downloads; only process upscale stage
             self._only_ids = set()
             self._armed.set()
-        self.start(armed=True)
+        if start_loop:
+            self.start(armed=True)
         return queued
 
     def run_until_idle(self, timeout: float = 120.0) -> None:

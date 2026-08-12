@@ -130,8 +130,10 @@ def test_upscale_selected_sequential_with_pending_download(tmp_path: Path):
         upscale_handler=make_upscale_handler(_pipe(tmp_path, max_frames=3)),
         poll_interval=0.05,
     )
-    worker.request_upscale_ids([completed.id])
-    # Process until upscale completes (main thread drains via _process_one while armed)
+    worker.request_upscale_ids([completed.id], start_loop=False)
+    assert worker.is_running is False
+    # Single-thread drain: never call _process_one while the background loop is alive
+    # (ORT/DirectML access-violates if two sessions run in one process).
     deadline = time.time() + 120
     while time.time() < deadline:
         if repo.get(completed.id).status in ("completed", "failed"):
@@ -140,7 +142,7 @@ def test_upscale_selected_sequential_with_pending_download(tmp_path: Path):
             worker._process_one()
         else:
             time.sleep(0.05)
-    worker.stop(timeout=5)
+    worker.disarm()
     assert repo.get(completed.id).status == "completed", repo.get(completed.id).error
     assert repo.get(pending.id).status == "pending"
     assert downloaded == []
@@ -152,6 +154,7 @@ def test_request_upscale_rejects_non_completed(tmp_path: Path):
     job = repo.enqueue("https://example.com/x")
     worker = SequentialWorker(repo, download_handler=lambda j, r: None)
     with pytest.raises(ValueError):
-        worker.request_upscale_ids([job.id])
+        worker.request_upscale_ids([job.id], start_loop=False)
+    assert worker.is_running is False
     worker.stop()
     repo.close()

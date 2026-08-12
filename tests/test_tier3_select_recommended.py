@@ -105,10 +105,10 @@ def test_recommended_job_can_queue_upscale(tmp_path: Path):
         upscale_handler=make_upscale_handler(pipe),
     )
     # Queue via public API then stop background thread before sync upscale
-    queued = worker.request_upscale_ids([job.id])
+    queued = worker.request_upscale_ids([job.id], start_loop=False)
     assert queued == [job.id]
     assert repo.get(job.id).status == "download_completed"
-    worker.stop(timeout=5)
+    assert worker.is_running is False
     _sync_upscale(repo, worker, job.id)
     done = repo.get(job.id)
     assert done.status == "completed", done.error
@@ -138,8 +138,8 @@ def test_blocked_4k_still_refuses_upscale(tmp_path: Path):
         download_handler=lambda j, r: None,
         upscale_handler=make_upscale_handler(pipe),
     )
-    worker.request_upscale_ids([job.id])
-    worker.stop(timeout=5)
+    worker.request_upscale_ids([job.id], start_loop=False)
+    assert worker.is_running is False
     _sync_upscale(repo, worker, job.id)
     done = repo.get(job.id)
     assert done.status == "failed"
