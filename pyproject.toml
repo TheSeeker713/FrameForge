@@ -15,6 +15,7 @@ dependencies = [
   "onnxruntime-directml",
   "customtkinter",
   "Pillow",
+  "pystray",
   "numpy",
   "opencv-python-headless",
 ]
