@@ -38,6 +38,25 @@ def converted_dir() -> Path:
     return frameforge_root() / "converted"
 
 
+def download_dir_for_site(site_key: str) -> Path:
+    """New-job download root: FrameForge/<site_key>/."""
+    from frameforge.paths_site import sanitize_site_key
+
+    return frameforge_root() / sanitize_site_key(site_key)
+
+
+def upscaled_dir_for_site(site_key: str) -> Path:
+    from frameforge.paths_site import sanitize_site_key
+
+    return upscaled_dir() / sanitize_site_key(site_key)
+
+
+def converted_dir_for_site(site_key: str) -> Path:
+    from frameforge.paths_site import sanitize_site_key
+
+    return converted_dir() / sanitize_site_key(site_key)
+
+
 def temp_dir() -> Path:
     return frameforge_root() / "temp"
 
