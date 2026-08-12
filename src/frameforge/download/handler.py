@@ -38,6 +38,7 @@ def make_download_handler(
             repo.set_paths(job.id, download_path=path, output_path=path)
             repo.update_progress(job.id, 100.0)
             repo.clear_live_progress(job.id)
+            repo.probe_and_store_resolution(job.id, path)
             return
 
         def progress_cb(pct: float, meta: dict[str, Any] | None = None) -> None:
@@ -70,5 +71,6 @@ def make_download_handler(
         )
         repo.update_progress(job.id, 100.0)
         repo.clear_live_progress(job.id)
+        repo.probe_and_store_resolution(job.id, result.path)
 
     return handler

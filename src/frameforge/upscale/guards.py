@@ -8,10 +8,22 @@ from frameforge.upscale.ffmpeg_utils import video_size
 
 # Block 4K and above (UHD height)
 MIN_BLOCK_HEIGHT = 2160
+# Recommend upscale for SD/HD ready sources at or below 720p
+RECOMMEND_MAX_HEIGHT = 720
 
 
 class UpscaleBlockedError(RuntimeError):
     """Raised when a source video must not be upscaled."""
+
+
+def is_upscale_recommended(height: int | None) -> bool:
+    """Recommend 2× upscale when height is known and ≤ 720."""
+    return height is not None and 0 < height <= RECOMMEND_MAX_HEIGHT
+
+
+def is_upscale_blocked(height: int | None) -> bool:
+    """True when height is known and ≥ 2160."""
+    return height is not None and height >= MIN_BLOCK_HEIGHT
 
 
 def assert_upscale_allowed(source: Path) -> tuple[int, int]:

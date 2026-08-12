@@ -38,9 +38,12 @@ class Job:
     started_at: str | None
     finished_at: str | None
     options_json: str | None
+    source_width: int | None = None
+    source_height: int | None = None
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> Job:
+        keys = set(row.keys())
         return cls(
             id=row["id"],
             url=row["url"],
@@ -58,12 +61,27 @@ class Job:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
             options_json=row["options_json"],
+            source_width=row["source_width"] if "source_width" in keys else None,
+            source_height=row["source_height"] if "source_height" in keys else None,
         )
 
     def options(self) -> dict[str, Any]:
         if not self.options_json:
             return {}
         return json.loads(self.options_json)
+
+    @property
+    def upscale_recommended(self) -> bool:
+        """True when source height is known and ≤ 720p (Tier 3 recommendation)."""
+        from frameforge.upscale.guards import is_upscale_recommended
+
+        return is_upscale_recommended(self.source_height)
+
+    @property
+    def upscale_blocked(self) -> bool:
+        from frameforge.upscale.guards import is_upscale_blocked
+
+        return is_upscale_blocked(self.source_height)
 
 
 class JobRepository:
@@ -217,7 +235,6 @@ class JobRepository:
         download_path: str | None = None,
         output_path: str | None = None,
     ) -> Job:
-        job = self.get(job_id)
         self.conn.execute(
             """
             UPDATE jobs
@@ -230,6 +247,37 @@ class JobRepository:
         )
         self.conn.commit()
         return self.get(job_id)
+
+    def set_source_resolution(
+        self,
+        job_id: int,
+        width: int | None,
+        height: int | None,
+    ) -> Job:
+        self.conn.execute(
+            """
+            UPDATE jobs
+            SET source_width = ?, source_height = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (width, height, utc_now(), job_id),
+        )
+        self.conn.commit()
+        return self.get(job_id)
+
+    def probe_and_store_resolution(self, job_id: int, path: str | Path | None = None) -> Job:
+        """Probe video size for a job artifact; never raises — unknown stays NULL."""
+        job = self.get(job_id)
+        src = path or job.download_path or job.output_path
+        if not src or not Path(src).exists():
+            return self.set_source_resolution(job_id, None, None)
+        try:
+            from frameforge.upscale.ffmpeg_utils import video_size
+
+            width, height = video_size(Path(src))
+            return self.set_source_resolution(job_id, int(width), int(height))
+        except Exception:
+            return self.set_source_resolution(job_id, None, None)
 
     def set_title(self, job_id: int, title: str) -> None:
         self.conn.execute(
@@ -262,6 +310,8 @@ class JobRepository:
         src = job.download_path or job.output_path
         if not src or not Path(src).exists():
             raise ValueError(f"Job {job_id} has no valid download_path for upscale")
+        if job.source_height is None:
+            self.probe_and_store_resolution(job_id, src)
         now = utc_now()
         self.conn.execute(
             """

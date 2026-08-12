@@ -53,7 +53,11 @@ MIGRATIONS: dict[int, str] = {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
-    """
+    """,
+    2: """
+    ALTER TABLE jobs ADD COLUMN source_width INTEGER;
+    ALTER TABLE jobs ADD COLUMN source_height INTEGER;
+    """,
 }
 
 
