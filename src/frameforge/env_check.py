@@ -92,6 +92,7 @@ def check_environment() -> dict[str, Any]:
         "cv2": _try_import("cv2"),
         "numpy": _try_import("numpy"),
         "PIL": _try_import("PIL"),
+        "psutil": _try_import("psutil"),
         "sqlite3": _try_import("sqlite3"),
     }
     tools = {

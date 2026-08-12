@@ -2,5 +2,7 @@ yt-dlp
 onnxruntime-directml
 customtkinter
 Pillow
+pystray
+psutil
 numpy
 opencv-python-headless

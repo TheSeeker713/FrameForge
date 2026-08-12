@@ -34,6 +34,7 @@ python .\scripts\create_smoke_onnx.py
 | customtkinter | 6.0.0 |
 | Pillow | 12.3.0 |
 | pystray | 0.19.5 |
+| psutil | 7.2.2 |
 | numpy | 2.5.2 |
 | opencv-python-headless | 5.0.0.93 |
 | pytest | 9.1.1 |
