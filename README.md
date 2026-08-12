@@ -25,6 +25,10 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - Optional upscale-after-download stage (still sequential)
 - Dark minimal GUI: paste URL, bulk import, live queue, **History** and **Thumbnails** tabs, settings
 - Live download **% / speed / ETA** on the killable yt-dlp subprocess path
+- **Pause / Resume** downloads (hard-stop, keep `.part` files, continue on resume)
+- **Quit while busy:** cancel, pause, or wait-for-current — never silent exit
+- Optional **close to system tray** (default off)
+- **Import cookies from browser** (Firefox first; Chromium fallback / manual Netscape)
 - Failure-driven **Authenticate this site / Import cookies** hint (no auto-open browser loops)
 
 ## Setup
@@ -51,7 +55,7 @@ python -m frameforge --gui
 
 `%USERPROFILE%\Downloads\FrameForge\` → `downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
 
-See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
+See [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 
 ## License
 
