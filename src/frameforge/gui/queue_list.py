@@ -24,6 +24,7 @@ class QueueList(ctk.CTkScrollableFrame):
         master: Any,
         *,
         on_selection_changed: Callable[[set[int]], None] | None = None,
+        show_timestamps: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(master, **kwargs)
@@ -32,6 +33,7 @@ class QueueList(ctk.CTkScrollableFrame):
         self._selected: set[int] = set()
         self._order: list[int] = []
         self._recommended_ids: set[int] = set()
+        self._show_timestamps = bool(show_timestamps)
 
     @property
     def selected_ids(self) -> set[int]:
@@ -99,9 +101,12 @@ class QueueList(ctk.CTkScrollableFrame):
         if job.source_height:
             res = f"  {job.source_width or '?'}x{job.source_height}"
         err = f"  ERR:{job.error[:36]}" if job.error else ""
+        ts = ""
+        if self._show_timestamps:
+            ts = f"  {job.finished_at or job.updated_at or ''}"
         return (
             f"#{job.id}  [{job.status}]  {job.progress:.1f}%  "
-            f"prio={job.priority}{site}{res}  {title}{err}"
+            f"prio={job.priority}{site}{res}  {title}{err}{ts}"
         )
 
     def _badge_text(self, job: Job) -> str:

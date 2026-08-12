@@ -156,6 +156,7 @@ class JobRepository:
         *,
         status: str | None = None,
         search: str | None = None,
+        include_hidden: bool = False,
     ) -> list[Job]:
         """Terminal jobs (completed/failed/cancelled) for the History view.
 
@@ -176,7 +177,21 @@ class JobRepository:
             params.extend([like, like, like])
         sql += " ORDER BY COALESCE(finished_at, updated_at) DESC, id DESC"
         rows = self.conn.execute(sql, params).fetchall()
-        return [Job.from_row(r) for r in rows]
+        jobs = [Job.from_row(r) for r in rows]
+        if not include_hidden:
+            jobs = [j for j in jobs if not j.options().get("history_hidden")]
+        return jobs
+
+    def hide_from_history(self, job_ids: list[int] | tuple[int, ...]) -> int:
+        """Soft-hide terminal jobs from History (non-destructive; rows stay in SQLite)."""
+        n = 0
+        for jid in job_ids:
+            job = self.get(int(jid))
+            if job.status not in TERMINAL_STATUSES:
+                continue
+            self.merge_options(int(jid), {"history_hidden": True})
+            n += 1
+        return n
 
     def count_by_status(self, status: str) -> int:
         row = self.conn.execute(

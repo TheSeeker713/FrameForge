@@ -71,14 +71,52 @@ class FrameForgeApp(ctk.CTk):
         )
         self.settings_btn.grid(row=0, column=4)
 
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.grid(row=5, column=0, padx=16, pady=8, sticky="nsew")
+        self.tabs.add("Queue")
+        self.tabs.add("History")
+        qtab = self.tabs.tab("Queue")
+        qtab.grid_columnconfigure(0, weight=1)
+        qtab.grid_rowconfigure(0, weight=1)
         self.queue_list = QueueList(
-            self,
-            on_selection_changed=self._on_selection_changed,
+            qtab,
+            on_selection_changed=self._on_queue_selection_changed,
             label_text="Queue",
         )
-        self.queue_list.grid(row=5, column=0, padx=16, pady=8, sticky="nsew")
-        # Back-compat alias for older tests expecting queue_box text
+        self.queue_list.grid(row=0, column=0, sticky="nsew")
         self.queue_box = self.queue_list
+
+        htab = self.tabs.tab("History")
+        htab.grid_columnconfigure(0, weight=1)
+        htab.grid_rowconfigure(1, weight=1)
+        hbar = ctk.CTkFrame(htab, fg_color="transparent")
+        hbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        self.history_filter = ctk.CTkSegmentedButton(
+            hbar,
+            values=["All", "Completed", "Failed"],
+            command=lambda _v: self.refresh_history(),
+        )
+        self.history_filter.set("All")
+        self.history_filter.pack(side="left", padx=(0, 8))
+        self.history_search = ctk.CTkEntry(hbar, placeholder_text="Search title / URL / site")
+        self.history_search.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.history_search.bind("<Return>", lambda _e: self.refresh_history())
+        self.history_retry_btn = ctk.CTkButton(
+            hbar, text="Retry selected", width=120, command=self.retry_history_selected
+        )
+        self.history_retry_btn.pack(side="left", padx=(0, 8))
+        self.history_hide_btn = ctk.CTkButton(
+            hbar, text="Hide selected", width=120, command=self.hide_history_selected
+        )
+        self.history_hide_btn.pack(side="left")
+        self.history_list = QueueList(
+            htab,
+            on_selection_changed=self._on_history_selection_changed,
+            label_text="History",
+            show_timestamps=True,
+        )
+        self.history_list.grid(row=1, column=0, sticky="nsew")
+        self.tabs.configure(command=self._on_tab_changed)
 
         detail = ctk.CTkFrame(self, fg_color="transparent")
         detail.grid(row=6, column=0, padx=16, pady=(0, 4), sticky="ew")
@@ -154,8 +192,36 @@ class FrameForgeApp(ctk.CTk):
         self.after(1000, self._tick)
 
     def _on_selection_changed(self, ids: set[int]) -> None:
-        self._selected_ids = set(ids)
+        self._on_queue_selection_changed(ids)
+
+    def _on_queue_selection_changed(self, ids: set[int]) -> None:
+        if self._active_tab_name() != "History":
+            self._selected_ids = set(ids)
+            self._update_error_panel()
+
+    def _on_history_selection_changed(self, ids: set[int]) -> None:
+        if self._active_tab_name() == "History":
+            self._selected_ids = set(ids)
+            self._update_error_panel()
+
+    def _active_tab_name(self) -> str:
+        try:
+            return str(self.tabs.get())
+        except Exception:  # noqa: BLE001
+            return "Queue"
+
+    def _on_tab_changed(self, *_args: Any) -> None:
+        if self._active_tab_name() == "History":
+            self.refresh_history()
+            self._selected_ids = self.history_list.selected_ids
+        else:
+            self._selected_ids = self.queue_list.selected_ids
         self._update_error_panel()
+
+    def _selected_job_ids(self) -> list[int]:
+        if self._active_tab_name() == "History":
+            return sorted(self._selected_ids or self.history_list.selected_ids)
+        return sorted(self._selected_ids or self.queue_list.selected_ids)
 
     def _set_error_panel_text(self, text: str) -> None:
         self.error_panel.configure(state="normal")
@@ -356,9 +422,6 @@ class FrameForgeApp(ctk.CTk):
 
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
 
-    def _selected_job_ids(self) -> list[int]:
-        return sorted(self._selected_ids or self.queue_list.selected_ids)
-
     def download_selected(self) -> None:
         ids = self._selected_job_ids()
         if not ids:
@@ -424,6 +487,47 @@ class FrameForgeApp(ctk.CTk):
             self.repo.update_status(job.id, "pending", error=None, progress=0)
         self.refresh_queue()
 
+    def retry_history_selected(self) -> None:
+        ids = sorted(self.history_list.selected_ids)
+        n = 0
+        for jid in ids:
+            job = self.repo.get(jid)
+            if job.status == "failed":
+                self.repo.update_status(job.id, "pending", error=None, progress=0)
+                self.repo.merge_options(job.id, {"history_hidden": False})
+                n += 1
+        if n == 0:
+            messagebox.showinfo("FrameForge", "Select one or more failed history jobs to retry")
+            return
+        self.refresh_queue()
+
+    def hide_history_selected(self) -> None:
+        ids = sorted(self.history_list.selected_ids)
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select history rows to hide")
+            return
+        self.repo.hide_from_history(ids)
+        self.refresh_history()
+
+    def refresh_history(self) -> None:
+        filt = "All"
+        try:
+            filt = str(self.history_filter.get())
+        except Exception:  # noqa: BLE001
+            pass
+        status = None
+        if filt == "Completed":
+            status = "completed"
+        elif filt == "Failed":
+            status = "failed"
+        search = ""
+        try:
+            search = self.history_search.get().strip()
+        except Exception:  # noqa: BLE001
+            pass
+        jobs = self.repo.list_history(status=status, search=search or None)
+        self.history_list.update_jobs(jobs)
+
     def bump_priority(self, delta: int) -> None:
         ids = self._selected_job_ids()
         if not ids:
@@ -462,6 +566,7 @@ class FrameForgeApp(ctk.CTk):
     def refresh_queue(self) -> None:
         jobs = self.repo.list_jobs()
         self.queue_list.update_jobs(jobs)
+        self.refresh_history()
 
         downloading = 0
         upscaling = 0
