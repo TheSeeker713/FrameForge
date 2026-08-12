@@ -34,6 +34,12 @@ python -m pytest -q
 
 **2026-08-12:** **97 passed / 0 failed** (no quarantines). Upscale tests must not run ONNX on the background worker loop and `_process_one` in the same process — pass `request_upscale_ids(..., start_loop=False)` when draining on the calling thread (DirectML is not dual-thread safe).
 
+## v0.4 Prompt 1 baseline
+
+- **SHA:** `58a8262ec086a2ee3dae13812fe15dd79de0d356`
+- **Suite:** `python -m pytest -q` → **116 passed / 0 failed**
+- Starting point for pause/resume, quit policy, tray, and browser cookie import.
+
 ## Manual GUI checklist (Phase 4/5)
 
 - [ ] Paste URL and add to queue
