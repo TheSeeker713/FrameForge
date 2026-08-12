@@ -22,7 +22,13 @@ ctk.set_default_color_theme("dark-blue")
 
 
 class FrameForgeApp(ctk.CTk):
-    def __init__(self, repo: JobRepository | None = None, *, start_worker: bool = False):
+    def __init__(
+        self,
+        repo: JobRepository | None = None,
+        *,
+        start_worker: bool = False,
+        tray_icon_factory: Any | None = None,
+    ):
         """GUI defaults to idle worker (start_worker=False). Downloads start only on demand."""
         super().__init__()
         ensure_output_tree()
@@ -198,15 +204,82 @@ class FrameForgeApp(ctk.CTk):
         self.bind("<Control-v>", self._paste_focus)
         self.bind("<Control-Return>", lambda e: self.add_url())
         self.bind("<Control-q>", lambda e: self.request_quit())
-        self.protocol("WM_DELETE_WINDOW", self.request_quit)
+        self.protocol("WM_DELETE_WINDOW", self._on_window_close)
         self._build_menubar()
         self._shutting_down = False
+        from frameforge.gui.tray import TrayService
+
+        self.tray = TrayService(
+            widget=self,
+            on_show=lambda: self.marshal_ui(self.show_from_tray),
+            on_pause_resume=lambda: self.marshal_ui(self._tray_pause_resume),
+            on_quit=lambda: self.marshal_ui(lambda: self.request_quit()),
+            pause_resume_label=self._tray_pause_resume_label,
+            icon_factory=tray_icon_factory,
+        )
 
         if start_worker:
             self.worker.request_download_all()
 
         self.refresh_queue()
         self.after(1000, self._tick)
+
+    def marshal_ui(self, fn) -> None:
+        """Run *fn* on the Tk thread (tray callbacks must not touch CTk directly)."""
+        try:
+            self.after(0, fn)
+        except Exception:  # noqa: BLE001
+            fn()
+
+    def _close_to_tray_enabled(self) -> bool:
+        return self.repo.get_setting("close_to_tray", "0") == "1"
+
+    def hide_to_tray(self) -> None:
+        self.withdraw()
+        try:
+            self.tray.start()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def show_from_tray(self) -> None:
+        self.deiconify()
+        try:
+            self.lift()
+            self.focus_force()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _tray_pause_resume_label(self) -> str:
+        from frameforge.gui.exit_policy import list_active_work
+
+        active = list_active_work(self.repo)
+        if active:
+            return "Pause current"
+        paused = self.repo.list_jobs("paused")
+        if paused:
+            return "Resume current"
+        return "Pause current / Resume current"
+
+    def _tray_pause_resume(self) -> None:
+        from frameforge.gui.actions import can_pause, can_resume
+        from frameforge.gui.exit_policy import list_active_work
+
+        for job in list_active_work(self.repo):
+            if can_pause(job):
+                self.worker.pause_job(job.id)
+                self.refresh_queue()
+                return
+        for job in self.repo.list_jobs("paused"):
+            if can_resume(job):
+                self.worker.resume_job(job.id)
+                self.refresh_queue()
+                return
+
+    def _on_window_close(self) -> None:
+        if self._close_to_tray_enabled():
+            self.hide_to_tray()
+            return
+        self.request_quit()
 
     def _build_menubar(self) -> None:
         menubar = tk.Menu(self)
@@ -473,19 +546,26 @@ class FrameForgeApp(ctk.CTk):
     def open_settings(self) -> None:
         win = ctk.CTkToplevel(self)
         win.title("Settings")
-        win.geometry("420x220")
+        win.geometry("420x280")
         ctk.CTkLabel(win, text="Format preference").pack(anchor="w", padx=16, pady=(16, 4))
         fmt = ctk.CTkEntry(win)
         fmt.insert(0, self._default_format())
         fmt.pack(fill="x", padx=16)
         upscale_var = tk.BooleanVar(value=self._default_upscale())
         ctk.CTkCheckBox(win, text="Upscale after download", variable=upscale_var).pack(
-            anchor="w", padx=16, pady=16
+            anchor="w", padx=16, pady=(12, 4)
         )
+        tray_var = tk.BooleanVar(value=self._close_to_tray_enabled())
+        ctk.CTkCheckBox(
+            win,
+            text="Close to system tray (window X hides; Quit still asks if work is running)",
+            variable=tray_var,
+        ).pack(anchor="w", padx=16, pady=8)
 
         def save() -> None:
             self.repo.set_setting("format_preference", fmt.get().strip() or "best")
             self.repo.set_setting("upscale_after_download", "1" if upscale_var.get() else "0")
+            self.repo.set_setting("close_to_tray", "1" if tray_var.get() else "0")
             win.destroy()
 
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
@@ -807,6 +887,10 @@ class FrameForgeApp(ctk.CTk):
         self.after(1000, self._tick)
 
     def shutdown(self) -> None:
+        try:
+            self.tray.stop(timeout=3)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self.worker.stop(timeout=5)
         except Exception:  # noqa: BLE001
