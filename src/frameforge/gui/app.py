@@ -36,6 +36,11 @@ class FrameForgeApp(ctk.CTk):
         self.geometry("1000x680")
         self.repo = repo or JobRepository(db_path())
         self.worker: SequentialWorker = build_worker(self.repo)
+        from frameforge.monitor.policy import ResourceMonitor, settings_from_repo
+        from frameforge.monitor.sampler import ResourceSampler
+
+        self.resource_sampler = ResourceSampler()
+        self.resource_monitor = ResourceMonitor(settings_from_repo(self.repo))
         self._selected_ids: set[int] = set()
 
         self.grid_columnconfigure(0, weight=1)
@@ -49,7 +54,9 @@ class FrameForgeApp(ctk.CTk):
             text="Downloads run one at a time — queue only until you press Download",
             text_color="#9ad0ff",
         )
-        self.seq_banner.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="w")
+        self.seq_banner.grid(row=1, column=0, padx=16, pady=(0, 4), sticky="w")
+        self.resource_banner = ctk.CTkLabel(self, text="", text_color="#ffcc66")
+        self.resource_banner.grid(row=1, column=0, padx=16, pady=(18, 0), sticky="e")
 
         self.progress_bar = ctk.CTkProgressBar(self)
         self.progress_bar.grid(row=2, column=0, padx=16, pady=(0, 4), sticky="ew")
@@ -683,9 +690,15 @@ class FrameForgeApp(ctk.CTk):
         ctk.CTkButton(btn_row, text="Import cookies.txt", command=do_import).pack(side="left")
 
     def open_settings(self) -> None:
+        from frameforge.monitor.policy import (
+            settings_from_repo,
+            save_settings_to_repo,
+            MonitorSettings,
+        )
+
         win = ctk.CTkToplevel(self)
         win.title("Settings")
-        win.geometry("420x280")
+        win.geometry("480x520")
         ctk.CTkLabel(win, text="Format preference").pack(anchor="w", padx=16, pady=(16, 4))
         fmt = ctk.CTkEntry(win)
         fmt.insert(0, self._default_format())
@@ -701,13 +714,60 @@ class FrameForgeApp(ctk.CTk):
             variable=tray_var,
         ).pack(anchor="w", padx=16, pady=8)
 
+        mon = settings_from_repo(self.repo)
+        ctk.CTkLabel(win, text="Upscale resource monitor").pack(anchor="w", padx=16, pady=(8, 4))
+        mon_var = tk.BooleanVar(value=mon.enabled)
+        ctk.CTkCheckBox(win, text="Enable CPU/RAM monitor while upscaling", variable=mon_var).pack(
+            anchor="w", padx=16
+        )
+        ctk.CTkLabel(win, text="RAM warning %").pack(anchor="w", padx=16, pady=(8, 0))
+        ram_ent = ctk.CTkEntry(win)
+        ram_ent.insert(0, str(int(mon.ram_warning_pct)))
+        ram_ent.pack(fill="x", padx=16)
+        ctk.CTkLabel(win, text="CPU warning %").pack(anchor="w", padx=16, pady=(8, 0))
+        cpu_ent = ctk.CTkEntry(win)
+        cpu_ent.insert(0, str(int(mon.cpu_warning_pct)))
+        cpu_ent.pack(fill="x", padx=16)
+        ctk.CTkLabel(win, text="Sustained seconds").pack(anchor="w", padx=16, pady=(8, 0))
+        sus_ent = ctk.CTkEntry(win)
+        sus_ent.insert(0, str(int(mon.sustained_seconds)))
+        sus_ent.pack(fill="x", padx=16)
+        pause_var = tk.BooleanVar(value=mon.auto_pause)
+        ctk.CTkCheckBox(
+            win,
+            text="Auto-pause upscale on sustained RAM pressure",
+            variable=pause_var,
+        ).pack(anchor="w", padx=16, pady=8)
+
         def save() -> None:
             self.repo.set_setting("format_preference", fmt.get().strip() or "best")
             self.repo.set_setting("upscale_after_download", "1" if upscale_var.get() else "0")
             self.repo.set_setting("close_to_tray", "1" if tray_var.get() else "0")
+            try:
+                ram_pct = float(ram_ent.get().strip() or mon.ram_warning_pct)
+            except ValueError:
+                ram_pct = mon.ram_warning_pct
+            try:
+                cpu_pct = float(cpu_ent.get().strip() or mon.cpu_warning_pct)
+            except ValueError:
+                cpu_pct = mon.cpu_warning_pct
+            try:
+                sustained = float(sus_ent.get().strip() or mon.sustained_seconds)
+            except ValueError:
+                sustained = mon.sustained_seconds
+            updated = MonitorSettings(
+                enabled=bool(mon_var.get()),
+                ram_warning_pct=ram_pct,
+                cpu_warning_pct=cpu_pct,
+                sustained_seconds=sustained,
+                auto_pause=bool(pause_var.get()),
+            )
+            save_settings_to_repo(self.repo, updated)
+            self.resource_monitor.settings = updated
             win.destroy()
 
         ctk.CTkButton(win, text="Save", command=save).pack(padx=16, pady=8)
+        self._settings_win = win
 
     def download_selected(self) -> None:
         from frameforge.gui.actions import can_download
@@ -1085,11 +1145,41 @@ class FrameForgeApp(ctk.CTk):
                 )
         self._update_error_panel()
         self._sync_convert_button()
+        self._apply_resource_banner()
+
+    def _apply_resource_banner(self) -> None:
+        banner = getattr(self, "resource_banner", None)
+        if banner is None:
+            return
+        state = getattr(self, "resource_monitor", None)
+        if state is None or not state.state.warning:
+            banner.configure(text="")
+            return
+        reason = state.state.reason or "Resource pressure"
+        banner.configure(text=f"Warning: {reason}")
+
+    def _poll_resources(self) -> None:
+        """Sample CPU/RAM while an upscale is active. Failures are non-fatal."""
+        try:
+            from frameforge.monitor.policy import settings_from_repo
+
+            self.resource_monitor.settings = settings_from_repo(self.repo)
+            upscaling = self.repo.count_by_status("upscaling") > 0
+            if not upscaling or not self.resource_monitor.settings.enabled:
+                if not self.resource_monitor.state.warning:
+                    self._apply_resource_banner()
+                return
+            reading = self.resource_sampler.sample()
+            self.resource_monitor.ingest(reading)
+            self._apply_resource_banner()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _tick(self) -> None:
         if self._shutting_down:
             return
         self.refresh_queue()
+        self._poll_resources()
         if self.worker.wait_to_quit:
             from frameforge.gui.exit_policy import QUIT_NOW, classify_exit
 
