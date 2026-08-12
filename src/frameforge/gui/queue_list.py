@@ -10,6 +10,7 @@ import customtkinter as ctk
 from PIL import Image
 
 from frameforge.db.repository import Job
+from frameforge.gui.thumb_cache import THUMB_CACHE_MAX, LruCache
 
 
 # Accent for ≤720p recommended upscale rows
@@ -38,7 +39,8 @@ class QueueList(ctk.CTkScrollableFrame):
         self._order: list[int] = []
         self._recommended_ids: set[int] = set()
         self._show_timestamps = bool(show_timestamps)
-        self._thumb_cache: dict[str, Any] = {}
+        self._thumb_cache: LruCache[Any] = LruCache(maxsize=THUMB_CACHE_MAX)
+        self._open_image = Image.open
         self._placeholder_thumb = self._make_placeholder()
         self._geometry_rebuilds = 0
         self._last_notified_sel: set[int] | None = None
@@ -129,7 +131,7 @@ class QueueList(ctk.CTkScrollableFrame):
         if cached is not None:
             return cached
         try:
-            img = Image.open(path)
+            img = self._open_image(path)
             img = img.convert("RGB")
             img.thumbnail(_THUMB_SIZE)
             canvas = Image.new("RGB", _THUMB_SIZE, color=(48, 48, 52))
@@ -137,7 +139,7 @@ class QueueList(ctk.CTkScrollableFrame):
             y = (_THUMB_SIZE[1] - img.size[1]) // 2
             canvas.paste(img, (x, y))
             ctk_img = ctk.CTkImage(light_image=canvas, dark_image=canvas, size=_THUMB_SIZE)
-            self._thumb_cache[path] = ctk_img
+            self._thumb_cache.put(path, ctk_img)
             return ctk_img
         except Exception:  # noqa: BLE001
             return self._placeholder_thumb
