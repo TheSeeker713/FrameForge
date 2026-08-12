@@ -25,6 +25,7 @@ TICK_IDLE_MS = 2500
 TICK_ACTIVE_MS = 400
 TICK_TRAY_MS = 2000
 FULL_REFRESH_EVERY_ACTIVE = 5
+ERROR_PANEL_MAX_CHARS = 8000
 
 
 class FrameForgeApp(ctk.CTk):
@@ -459,6 +460,8 @@ class FrameForgeApp(ctk.CTk):
         return sorted(self._selected_ids or self.queue_list.selected_ids)
 
     def _set_error_panel_text(self, text: str) -> None:
+        if len(text) > ERROR_PANEL_MAX_CHARS:
+            text = text[:ERROR_PANEL_MAX_CHARS] + "\n…"
         self.error_panel.configure(state="normal")
         self.error_panel.delete("1.0", "end")
         if text:

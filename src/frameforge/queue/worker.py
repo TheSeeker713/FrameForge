@@ -14,6 +14,8 @@ from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 JobHandler = Callable[[Job, JobRepository], None]
 
+MAX_WORKER_EVENTS = 200
+
 
 @dataclass
 class WorkerEvent:
@@ -343,8 +345,14 @@ class SequentialWorker:
             return True
         return False
 
+    def _record_event(self, job_id: int, stage: str) -> None:
+        self.events.append(WorkerEvent(job_id, stage, time.time()))
+        overflow = len(self.events) - MAX_WORKER_EVENTS
+        if overflow > 0:
+            del self.events[:overflow]
+
     def _run_download(self, job: Job) -> bool:
-        self.events.append(WorkerEvent(job.id, "download_start", time.time()))
+        self._record_event(job.id, "download_start")
         try:
             self.download_handler(job, self.repo)
             job = self.repo.get(job.id)
@@ -354,27 +362,27 @@ class SequentialWorker:
                 self.repo.update_status(job.id, "download_completed", progress=100.0)
             else:
                 self.repo.update_status(job.id, "completed", progress=100.0)
-            self.events.append(WorkerEvent(job.id, "download_end", time.time()))
+            self._record_event(job.id, "download_end")
             return True
         except Exception as exc:  # noqa: BLE001
             if self._preserve_paused(job.id, exc):
-                self.events.append(WorkerEvent(job.id, "download_pause", time.time()))
+                self._record_event(job.id, "download_pause")
                 return True
             if self._preserve_cancelled(job.id, exc):
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
-                self.events.append(WorkerEvent(job.id, "download_cancel", time.time()))
+                self._record_event(job.id, "download_cancel")
                 return True
             from frameforge.errors import annotate_job_error
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
-            self.events.append(WorkerEvent(job.id, "download_fail", time.time()))
+            self._record_event(job.id, "download_fail")
             return True
         finally:
             self.processes.unregister(job.id)
 
     def _run_upscale(self, job: Job) -> bool:
         self.repo.update_status(job.id, "upscaling", progress=0)
-        self.events.append(WorkerEvent(job.id, "upscale_start", time.time()))
+        self._record_event(job.id, "upscale_start")
         try:
             if not self.upscale_handler:
                 raise RuntimeError("Upscale requested but no upscale_handler configured")
@@ -382,26 +390,26 @@ class SequentialWorker:
             job = self.repo.get(job.id)
             if job.status not in ("cancelled", "paused"):
                 self.repo.update_status(job.id, "completed", progress=100.0)
-            self.events.append(WorkerEvent(job.id, "upscale_end", time.time()))
+            self._record_event(job.id, "upscale_end")
             return True
         except Exception as exc:  # noqa: BLE001
             if self._preserve_paused(job.id, exc):
-                self.events.append(WorkerEvent(job.id, "upscale_pause", time.time()))
+                self._record_event(job.id, "upscale_pause")
                 return True
             if self._preserve_cancelled(job.id, exc):
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
-                self.events.append(WorkerEvent(job.id, "upscale_cancel", time.time()))
+                self._record_event(job.id, "upscale_cancel")
                 return True
             from frameforge.errors import annotate_job_error
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
-            self.events.append(WorkerEvent(job.id, "upscale_fail", time.time()))
+            self._record_event(job.id, "upscale_fail")
             return True
         finally:
             self.processes.unregister(job.id)
 
     def _run_convert(self, job: Job) -> bool:
-        self.events.append(WorkerEvent(job.id, "convert_start", time.time()))
+        self._record_event(job.id, "convert_start")
         try:
             if not self.convert_handler:
                 raise RuntimeError("Convert requested but no convert_handler configured")
@@ -409,20 +417,20 @@ class SequentialWorker:
             job = self.repo.get(job.id)
             if job.status not in ("cancelled", "paused"):
                 self.repo.update_status(job.id, "completed", progress=100.0)
-            self.events.append(WorkerEvent(job.id, "convert_end", time.time()))
+            self._record_event(job.id, "convert_end")
             return True
         except Exception as exc:  # noqa: BLE001
             if self._preserve_paused(job.id, exc):
-                self.events.append(WorkerEvent(job.id, "convert_pause", time.time()))
+                self._record_event(job.id, "convert_pause")
                 return True
             if self._preserve_cancelled(job.id, exc):
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
-                self.events.append(WorkerEvent(job.id, "convert_cancel", time.time()))
+                self._record_event(job.id, "convert_cancel")
                 return True
             from frameforge.errors import annotate_job_error
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
-            self.events.append(WorkerEvent(job.id, "convert_fail", time.time()))
+            self._record_event(job.id, "convert_fail")
             return True
         finally:
             self.processes.unregister(job.id)
