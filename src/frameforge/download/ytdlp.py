@@ -202,9 +202,9 @@ class YtDlpDownloader:
         self.cookiefile = cookiefile
 
     def _format_selector(self) -> str:
-        if self.format_preference and self.format_preference != "best":
-            return self.format_preference
-        return "bv*+ba/b"
+        from frameforge.download.formats import resolve_format_selector
+
+        return resolve_format_selector(self.format_preference)
 
     def extract_info(self, url: str) -> dict[str, Any]:
         from yt_dlp import YoutubeDL
