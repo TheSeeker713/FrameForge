@@ -46,6 +46,7 @@ class SequentialWorker:
     _lock: threading.Lock = field(default_factory=threading.Lock)
     events: list[WorkerEvent] = field(default_factory=list)
     processes: ProcessRegistry = field(default_factory=ProcessRegistry)
+    on_fail_pause: Callable[[Job], None] | None = field(default=None)
 
     def recover(self) -> list[int]:
         return self.repo.recover_interrupted()
@@ -230,6 +231,8 @@ class SequentialWorker:
         deadline = time.time() + timeout
         while time.time() < deadline:
             if not self._process_one():
+                if not self.is_armed:
+                    return
                 pending = self.repo.count_by_status("pending")
                 busy = (
                     self.repo.count_by_status("downloading")
@@ -351,6 +354,16 @@ class SequentialWorker:
         if overflow > 0:
             del self.events[:overflow]
 
+    def _maybe_fail_pause(self, job_id: int) -> None:
+        from frameforge.queue.fail_pause import maybe_fail_pause
+
+        job = self.repo.get(job_id)
+        if maybe_fail_pause(self, self.repo, job) and self.on_fail_pause is not None:
+            try:
+                self.on_fail_pause(job)
+            except Exception:  # noqa: BLE001
+                pass
+
     def _run_download(self, job: Job) -> bool:
         self._record_event(job.id, "download_start")
         try:
@@ -376,6 +389,7 @@ class SequentialWorker:
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self._record_event(job.id, "download_fail")
+            self._maybe_fail_pause(job.id)
             return True
         finally:
             self.processes.unregister(job.id)
@@ -404,6 +418,7 @@ class SequentialWorker:
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self._record_event(job.id, "upscale_fail")
+            self._maybe_fail_pause(job.id)
             return True
         finally:
             self.processes.unregister(job.id)
@@ -431,6 +446,7 @@ class SequentialWorker:
 
             annotate_job_error(self.repo, job.id, str(exc), url=job.url)
             self._record_event(job.id, "convert_fail")
+            self._maybe_fail_pause(job.id)
             return True
         finally:
             self.processes.unregister(job.id)

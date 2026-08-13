@@ -52,6 +52,9 @@ class FrameForgeApp(ctk.CTk):
         self.geometry("1000x680")
         self.repo = repo or JobRepository(db_path())
         self.worker: SequentialWorker = build_worker(self.repo)
+        self.worker.on_fail_pause = lambda job: self.marshal_ui(
+            lambda j=job: self._on_fail_pause(j)
+        )
         from frameforge.monitor.policy import ResourceMonitor, settings_from_repo
         from frameforge.monitor.sampler import ResourceSampler
 
@@ -834,7 +837,7 @@ class FrameForgeApp(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         win.title("Settings")
-        win.geometry("480x580")
+        win.geometry("480x640")
         ctk.CTkLabel(win, text="Format preference").pack(anchor="w", padx=16, pady=(16, 4))
         fmt = ctk.CTkEntry(win)
         fmt.insert(0, self._default_format())
@@ -854,6 +857,14 @@ class FrameForgeApp(ctk.CTk):
             win,
             text="Light UI (no live thumbs, slower refresh — for weak machines)",
             variable=light_var,
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+        pause_auth_var = tk.BooleanVar(
+            value=self.repo.get_setting("fail_pause_on_auth", "1") == "1"
+        )
+        ctk.CTkCheckBox(
+            win,
+            text="Pause queue on bot-check / login failures (recommended)",
+            variable=pause_auth_var,
         ).pack(anchor="w", padx=16, pady=(0, 8))
 
         mon = settings_from_repo(self.repo)
@@ -886,6 +897,7 @@ class FrameForgeApp(ctk.CTk):
             self.repo.set_setting("upscale_after_download", "1" if upscale_var.get() else "0")
             self.repo.set_setting("close_to_tray", "1" if tray_var.get() else "0")
             self.repo.set_setting("ui_light_mode", "1" if light_var.get() else "0")
+            self.repo.set_setting("fail_pause_on_auth", "1" if pause_auth_var.get() else "0")
             self._apply_light_ui()
             try:
                 ram_pct = float(ram_ent.get().strip() or mon.ram_warning_pct)
@@ -1080,6 +1092,103 @@ class FrameForgeApp(ctk.CTk):
             return
         self.repo.clear_finished_from_queue()
         self.refresh_queue()
+
+    def _on_fail_pause(self, job: Job) -> None:
+        from frameforge.queue.fail_pause import fail_pause_payload
+
+        payload = fail_pause_payload(job)
+        self._last_fail_pause = payload
+        hook = getattr(self, "_fail_pause_hook", None)
+        if hook is not None:
+            hook(payload)
+            return
+        self._show_fail_pause_modal(job, payload)
+
+    def _show_fail_pause_modal(self, job: Job, payload: dict[str, Any] | None = None) -> None:
+        from frameforge.queue.fail_pause import fail_pause_payload
+
+        payload = payload or fail_pause_payload(job)
+        win = ctk.CTkToplevel(self)
+        win.title("Download paused")
+        win.geometry("520x420")
+        title = payload.get("title") or f"#{payload.get('job_id')}"
+        ctk.CTkLabel(
+            win, text="Queue paused", font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(anchor="w", padx=16, pady=(16, 4))
+        ctk.CTkLabel(win, text=str(title), wraplength=480, justify="left").pack(
+            anchor="w", padx=16
+        )
+        ctk.CTkLabel(win, text=str(payload.get("url") or ""), wraplength=480, justify="left").pack(
+            anchor="w", padx=16, pady=(0, 8)
+        )
+        ctk.CTkLabel(
+            win,
+            text=f"Cause: {payload.get('cause') or ''}",
+            wraplength=480,
+            justify="left",
+            text_color="#ffcc66",
+        ).pack(anchor="w", padx=16)
+        err = str(payload.get("error") or "")
+        if err:
+            box = ctk.CTkTextbox(win, height=80, wrap="word")
+            box.pack(fill="x", padx=16, pady=8)
+            box.insert("1.0", err)
+            box.configure(state="disabled")
+        btn_row = ctk.CTkFrame(win, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(8, 16))
+        jid = int(payload["job_id"])
+        for spec in payload.get("buttons") or []:
+            aid = spec["id"]
+            ctk.CTkButton(
+                btn_row,
+                text=spec["label"],
+                width=140,
+                command=lambda a=aid, i=jid, w=win: self.handle_fail_pause_action(a, i, w),
+            ).pack(side="top", fill="x", pady=3)
+        self._fail_pause_win = win
+
+    def handle_fail_pause_action(self, action_id: str, job_id: int, win: Any | None = None) -> None:
+        """User choice from the fail-pause modal. Does not auto-start except resume actions."""
+        if win is not None:
+            try:
+                win.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+        self._last_fail_pause_action = (action_id, job_id)
+        if action_id == "stop":
+            self.worker.disarm()
+            self.refresh_queue()
+            return
+        if action_id == "skip_resume":
+            self.worker.request_download_all()
+            self.refresh_queue()
+            return
+        if action_id == "retry":
+            try:
+                job = self.repo.get(job_id)
+                self.repo.update_status(job.id, "pending", error=None, progress=0)
+                self.repo.merge_options(job.id, {"fail_pause": False, "queue_hidden": False})
+                self.worker.request_download_ids([job.id])
+            except KeyError:
+                pass
+            self.refresh_queue()
+            return
+        if action_id == "authenticate":
+            try:
+                url = self.repo.get(job_id).url
+            except KeyError:
+                url = None
+            self.authenticate_site(prefill=url)
+            return
+        if action_id == "import_browser":
+            try:
+                url = self.repo.get(job_id).url
+            except KeyError:
+                url = None
+            if url:
+                self.import_cookies_from_browser_for_site(url, browser="firefox")
+            self.refresh_queue()
+            return
 
     def pause_selected(self) -> None:
         from frameforge.gui.actions import can_pause
