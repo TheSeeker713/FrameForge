@@ -723,6 +723,22 @@ class JobRepository:
             cleared.append(job.id)
         return cleared
 
+    def clear_finished_from_queue(
+        self,
+        *,
+        statuses: tuple[str, ...] | list[str] | None = None,
+    ) -> list[int]:
+        """Hide completed/failed/cancelled (or a subset) from the live queue."""
+        wanted = tuple(statuses) if statuses is not None else TERMINAL_STATUSES
+        ids = [j.id for j in self.list_jobs() if j.status in wanted]
+        return self.clear_from_queue(ids)
+
+    def clear_completed_from_queue(self) -> list[int]:
+        return self.clear_finished_from_queue(statuses=("completed",))
+
+    def clear_failed_from_queue(self) -> list[int]:
+        return self.clear_finished_from_queue(statuses=("failed",))
+
     def add_archive(
         self,
         url: str,
