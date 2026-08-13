@@ -42,3 +42,12 @@ def can_pause(job: Any) -> bool:
 
 def can_resume(job: Any) -> bool:
     return getattr(job, "status", None) == "paused"
+
+
+def can_clear_from_queue(job: Any) -> bool:
+    """True when the job can leave the live queue (not an in-flight media stage)."""
+    return getattr(job, "status", None) not in {
+        "downloading",
+        "upscaling",
+        "converting",
+    }

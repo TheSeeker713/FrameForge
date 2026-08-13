@@ -215,6 +215,14 @@ class FrameForgeApp(ctk.CTk):
         self.stop_btn.pack(side="left", padx=(0, 8))
         self.cancel_btn = ctk.CTkButton(controls, text="Cancel selected", command=self.cancel_selected)
         self.cancel_btn.pack(side="left", padx=(0, 8))
+        self.clear_selected_btn = ctk.CTkButton(
+            controls, text="Clear selected", command=self.clear_selected_from_queue
+        )
+        self.clear_selected_btn.pack(side="left", padx=(0, 8))
+        self.clear_finished_btn = ctk.CTkButton(
+            controls, text="Clear finished", command=self.clear_finished_from_queue
+        )
+        self.clear_finished_btn.pack(side="left", padx=(0, 8))
         self.pause_btn = ctk.CTkButton(controls, text="Pause", command=self.pause_selected)
         self.pause_btn.pack(side="left", padx=(0, 8))
         self.resume_btn = ctk.CTkButton(controls, text="Resume", command=self.resume_selected)
@@ -525,6 +533,7 @@ class FrameForgeApp(ctk.CTk):
         self.auth_from_job_btn.configure(state="normal" if need else "disabled")
         self.import_browser_from_job_btn.configure(state="normal" if need else "disabled")
         self._sync_convert_button()
+        self._sync_clear_buttons()
 
     def _sync_convert_button(self) -> None:
         from frameforge.gui.actions import can_convert
@@ -542,6 +551,27 @@ class FrameForgeApp(ctk.CTk):
             except Exception:  # noqa: BLE001
                 continue
         btn.configure(state="normal" if eligible else "disabled")
+
+    def _sync_clear_buttons(self) -> None:
+        from frameforge.db.repository import TERMINAL_STATUSES
+        from frameforge.gui.actions import can_clear_from_queue
+
+        sel_btn = getattr(self, "clear_selected_btn", None)
+        fin_btn = getattr(self, "clear_finished_btn", None)
+        if sel_btn is None or fin_btn is None:
+            return
+        can_sel = False
+        if self._active_tab_name() != "History":
+            for jid in self._selected_job_ids():
+                try:
+                    if can_clear_from_queue(self.repo.get(jid)):
+                        can_sel = True
+                        break
+                except Exception:  # noqa: BLE001
+                    continue
+        sel_btn.configure(state="normal" if can_sel else "disabled")
+        has_finished = any(j.status in TERMINAL_STATUSES for j in self.repo.list_jobs())
+        fin_btn.configure(state="normal" if has_finished else "disabled")
 
     def _paste_focus(self, _event=None):
         self.url_entry.focus_set()
@@ -1003,6 +1033,42 @@ class FrameForgeApp(ctk.CTk):
                 self.worker.cancel_job(job_id)
         self.refresh_queue()
 
+    def clear_selected_from_queue(self) -> None:
+        from frameforge.gui.actions import can_clear_from_queue
+
+        if self._active_tab_name() == "History":
+            return
+        ids = [i for i in self._selected_job_ids() if can_clear_from_queue(self.repo.get(i))]
+        if not ids:
+            messagebox.showinfo(
+                "FrameForge",
+                "Select pending, paused, completed, failed, or cancelled jobs to clear. "
+                "Active downloads cannot be cleared (pause or cancel first).",
+            )
+            return
+        self.repo.clear_from_queue(ids)
+        self.queue_list.set_selected(set())
+        self._selected_ids = set()
+        self.refresh_queue()
+
+    def clear_finished_from_queue(self) -> None:
+        from frameforge.db.repository import TERMINAL_STATUSES
+
+        n = sum(1 for j in self.repo.list_jobs() if j.status in TERMINAL_STATUSES)
+        if n == 0:
+            messagebox.showinfo("FrameForge", "No completed, failed, or cancelled jobs in the queue")
+            return
+        asker = getattr(self, "_ask_clear_finished", None)
+        ok = asker() if asker else messagebox.askyesno(
+            "FrameForge",
+            f"Clear {n} finished job(s) from the queue?\n\n"
+            "History keeps a record. Media files on disk are not deleted.",
+        )
+        if not ok:
+            return
+        self.repo.clear_finished_from_queue()
+        self.refresh_queue()
+
     def pause_selected(self) -> None:
         from frameforge.gui.actions import can_pause
 
@@ -1288,6 +1354,7 @@ class FrameForgeApp(ctk.CTk):
                 )
         self._update_error_panel()
         self._sync_convert_button()
+        self._sync_clear_buttons()
         self._apply_resource_banner()
 
     def _apply_resource_banner(self) -> None:
