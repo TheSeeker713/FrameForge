@@ -129,6 +129,14 @@ class FrameForgeApp(ctk.CTk):
         )
         self.history_filter.set("All")
         self.history_filter.pack(side="left", padx=(0, 8))
+        self.history_domain = ctk.CTkOptionMenu(
+            hbar,
+            values=["All domains"],
+            command=lambda _v: self.refresh_history(),
+            width=140,
+        )
+        self.history_domain.set("All domains")
+        self.history_domain.pack(side="left", padx=(0, 8))
         self.history_search = ctk.CTkEntry(hbar, placeholder_text="Search title / URL / site")
         self.history_search.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.history_search.bind("<Return>", lambda _e: self.refresh_history())
@@ -1144,8 +1152,31 @@ class FrameForgeApp(ctk.CTk):
             search = self.history_search.get().strip()
         except Exception:  # noqa: BLE001
             pass
-        jobs = self.repo.list_history(status=status, search=search or None)
+        domain = ""
+        try:
+            domain = str(self.history_domain.get()).strip()
+        except Exception:  # noqa: BLE001
+            pass
+        if domain.lower() in {"", "all domains", "all"}:
+            domain = ""
+        jobs = self.repo.list_history(
+            status=status, search=search or None, domain=domain or None
+        )
         self.history_list.update_jobs(jobs)
+        self._refresh_history_domains()
+
+    def _refresh_history_domains(self) -> None:
+        menu = getattr(self, "history_domain", None)
+        if menu is None:
+            return
+        values = ["All domains"] + self.repo.history_domains()
+        try:
+            current = str(menu.get())
+        except Exception:  # noqa: BLE001
+            current = "All domains"
+        menu.configure(values=values)
+        if current not in values:
+            menu.set("All domains")
 
     def focus_job(self, job_id: int) -> bool:
         """Select *job_id* in Queue/History if it still exists. Returns True if found."""

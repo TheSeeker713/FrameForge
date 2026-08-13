@@ -217,11 +217,13 @@ class JobRepository:
         status: str | None = None,
         search: str | None = None,
         include_hidden: bool = False,
+        domain: str | None = None,
     ) -> list[Job]:
         """Terminal jobs (completed/failed/cancelled) for the History view.
 
         *status*: ``None`` = all terminal; or one of completed/failed/cancelled.
         *search*: case-insensitive substring match on title, url, or extractor.
+        *domain*: site_key / host filter (e.g. ``youtube``, ``example.com``).
         Does not change ``list_jobs`` / claim behavior for the active queue.
         """
         if status is not None and status not in TERMINAL_STATUSES:
@@ -240,7 +242,21 @@ class JobRepository:
         jobs = [Job.from_row(r) for r in rows]
         if not include_hidden:
             jobs = [j for j in jobs if not j.options().get("history_hidden")]
+        key = (domain or "").strip().lower()
+        if key and key not in {"all", "all domains", "*"}:
+            jobs = [
+                j
+                for j in jobs
+                if j.site_key.lower() == key
+                or key in (j.url or "").lower()
+                or key in (j.extractor or "").lower()
+            ]
         return jobs
+
+    def history_domains(self) -> list[str]:
+        """Sorted unique site keys present in visible history."""
+        keys = {j.site_key for j in self.list_history() if j.site_key}
+        return sorted(keys)
 
     def hide_from_history(self, job_ids: list[int] | tuple[int, ...]) -> int:
         """Soft-hide terminal jobs from History (non-destructive; rows stay in SQLite)."""
