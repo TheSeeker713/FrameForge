@@ -140,14 +140,18 @@ class FrameForgeApp(ctk.CTk):
         self.history_search = ctk.CTkEntry(hbar, placeholder_text="Search title / URL / site")
         self.history_search.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.history_search.bind("<Return>", lambda _e: self.refresh_history())
-        self.history_retry_btn = ctk.CTkButton(
-            hbar, text="Retry selected", width=120, command=self.retry_history_selected
+        self.history_redownload_btn = ctk.CTkButton(
+            hbar, text="Re-download selected", width=160, command=self.redownload_history_selected
         )
-        self.history_retry_btn.pack(side="left", padx=(0, 8))
-        self.history_hide_btn = ctk.CTkButton(
-            hbar, text="Hide selected", width=120, command=self.hide_history_selected
+        self.history_redownload_btn.pack(side="left", padx=(0, 8))
+        self.history_clear_sel_btn = ctk.CTkButton(
+            hbar, text="Clear selected", width=120, command=self.clear_history_selected
         )
-        self.history_hide_btn.pack(side="left")
+        self.history_clear_sel_btn.pack(side="left", padx=(0, 8))
+        self.history_clear_all_btn = ctk.CTkButton(
+            hbar, text="Clear all history", width=140, command=self.clear_all_history
+        )
+        self.history_clear_all_btn.pack(side="left")
         self.history_list = QueueList(
             htab,
             on_selection_changed=self._on_history_selection_changed,
@@ -1115,25 +1119,53 @@ class FrameForgeApp(ctk.CTk):
         self.refresh_queue()
 
     def retry_history_selected(self) -> None:
-        ids = sorted(self.history_list.selected_ids)
-        n = 0
-        for jid in ids:
-            job = self.repo.get(jid)
-            if job.status == "failed":
-                self.repo.update_status(job.id, "pending", error=None, progress=0)
-                self.repo.merge_options(job.id, {"history_hidden": False})
-                n += 1
-        if n == 0:
-            messagebox.showinfo("FrameForge", "Select one or more failed history jobs to retry")
-            return
-        self.refresh_queue()
+        """Backward-compatible alias: re-enqueue as new pending jobs (does not arm)."""
+        self.redownload_history_selected()
 
-    def hide_history_selected(self) -> None:
+    def redownload_history_selected(self) -> None:
         ids = sorted(self.history_list.selected_ids)
         if not ids:
-            messagebox.showinfo("FrameForge", "Select history rows to hide")
+            messagebox.showinfo("FrameForge", "Select one or more history jobs to re-download")
             return
-        self.repo.hide_from_history(ids)
+        new_ids = self.repo.reenqueue_as_pending(ids)
+        if not new_ids:
+            return
+        self.refresh_queue()
+        self.queue_list.set_selected(set(new_ids))
+        self._selected_ids = set(new_ids)
+
+    def hide_history_selected(self) -> None:
+        self.clear_history_selected()
+
+    def clear_history_selected(self) -> None:
+        ids = sorted(self.history_list.selected_ids)
+        if not ids:
+            messagebox.showinfo("FrameForge", "Select history rows to clear")
+            return
+        asker = getattr(self, "_ask_clear_history_selected", None)
+        ok = asker() if asker else messagebox.askyesno(
+            "FrameForge",
+            f"Clear {len(ids)} item(s) from history?\n\nThis does not delete media files.",
+        )
+        if not ok:
+            return
+        self.repo.clear_history(ids)
+        self.refresh_history()
+
+    def clear_all_history(self) -> None:
+        n = len(self.repo.list_history())
+        if n == 0:
+            messagebox.showinfo("FrameForge", "History is already empty")
+            return
+        asker = getattr(self, "_ask_clear_all_history", None)
+        ok = asker() if asker else messagebox.askyesno(
+            "FrameForge",
+            f"Clear ALL {n} history item(s)?\n\n"
+            "This cannot be undone in the History tab. Media files on disk are not deleted.",
+        )
+        if not ok:
+            return
+        self.repo.clear_history(all_rows=True)
         self.refresh_history()
 
     def refresh_history(self) -> None:

@@ -47,13 +47,16 @@ def test_history_tab_lists_terminal_and_hide(tmp_path: Path):
         assert pending.id in app.queue_list._rows
 
         app.history_list.set_selected({done.id})
+        app._ask_clear_history_selected = lambda: True
         app.hide_history_selected()
         assert done.id not in app.history_list._rows
         assert done.id in app.queue_list._rows
 
         app.history_list.set_selected({failed.id})
-        app.retry_history_selected()
-        assert repo.get(failed.id).status == "pending"
+        app.redownload_history_selected()
+        assert repo.get(failed.id).status == "failed"
+        pending_urls = [j.url for j in repo.list_jobs() if j.status == "pending"]
+        assert failed.url in pending_urls
     finally:
         app.destroy()
         repo.close()

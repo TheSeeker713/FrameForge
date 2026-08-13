@@ -269,6 +269,33 @@ class JobRepository:
             n += 1
         return n
 
+    def reenqueue_as_pending(self, job_ids: list[int] | tuple[int, ...]) -> list[int]:
+        """Create new pending jobs for history rows. Does not modify the originals."""
+        new_ids: list[int] = []
+        for jid in job_ids:
+            job = self.get(int(jid))
+            created = self.enqueue(
+                job.url,
+                title=job.title,
+                format_preference=job.format_preference or "best",
+                upscale=bool(job.upscale),
+                extractor=job.extractor,
+            )
+            new_ids.append(created.id)
+        return new_ids
+
+    def clear_history(
+        self,
+        job_ids: list[int] | tuple[int, ...] | None = None,
+        *,
+        all_rows: bool = False,
+    ) -> int:
+        if all_rows:
+            ids = [j.id for j in self.list_history()]
+        else:
+            ids = list(job_ids or [])
+        return self.hide_from_history(ids)
+
     def count_by_status(self, status: str, *, include_queue_hidden: bool = False) -> int:
         vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
         row = self.conn.execute(
