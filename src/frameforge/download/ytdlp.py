@@ -200,6 +200,9 @@ class YtDlpDownloader:
         self.format_preference = format_preference
         self.use_aria2c = use_aria2c
         self.cookiefile = cookiefile
+        self.sleep_interval: float | None = None
+        self.max_sleep_interval: float = 5.0
+        self.limit_rate_bps: int | None = None
 
     def _format_selector(self) -> str:
         from frameforge.download.formats import resolve_format_selector
@@ -301,7 +304,18 @@ class YtDlpDownloader:
                     "--auto-file-renaming=false",
                 ]
             }
+        else:
+            # HLS/DASH fragments: one job still, multiple connections
+            opts["concurrent_fragment_downloads"] = 8
+        self._apply_rate_opts(opts)
         return opts
+
+    def _apply_rate_opts(self, opts: dict[str, Any]) -> None:
+        if getattr(self, "sleep_interval", None):
+            opts["sleep_interval"] = float(self.sleep_interval)
+            opts["max_sleep_interval"] = float(getattr(self, "max_sleep_interval", 5) or 5)
+        if getattr(self, "limit_rate_bps", None):
+            opts["ratelimit"] = int(self.limit_rate_bps)
 
     def download(
         self,
@@ -398,6 +412,11 @@ class YtDlpDownloader:
                     "aria2c:-x 8 -s 8 -k 1M --file-allocation=none --summary-interval=1 --enable-color=false -c --allow-overwrite=true --auto-file-renaming=false",
                 ]
             )
+        if self.sleep_interval:
+            cmd.extend(["--sleep-interval", str(self.sleep_interval)])
+            cmd.extend(["--max-sleep-interval", str(self.max_sleep_interval)])
+        if self.limit_rate_bps:
+            cmd.extend(["--limit-rate", str(int(self.limit_rate_bps))])
         cmd.append(url)
         return cmd
 
