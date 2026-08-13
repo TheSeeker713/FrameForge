@@ -17,6 +17,7 @@ from frameforge.errors import (
     UNKNOWN,
     annotate_job_error,
     classify_error,
+    format_ytdlp_exit_error,
     human_cause,
     should_fail_pause,
     suggested_actions,
@@ -39,8 +40,14 @@ def test_classify_error_known_messages():
     assert classify_error("Download cancelled by user") == CANCELLED
     assert classify_error("yt-dlp exited with code 1") == UNKNOWN
     assert classify_error(None) == UNKNOWN
+    bot_with_tail = format_ytdlp_exit_error(
+        1, ["[download] Destination: x.mp4", "ERROR: Sign in to confirm you’re not a bot"]
+    )
+    assert classify_error(bot_with_tail) == BOT_CHECK
+    assert "not a bot" in bot_with_tail
     assert should_fail_pause(BOT_CHECK) is True
     assert should_fail_pause(AUTH_REQUIRED) is True
+    assert should_fail_pause(UNKNOWN) is True
     assert should_fail_pause(NETWORK) is False
     assert "cookies" in human_cause(AUTH_REQUIRED).lower() or "signed in" in human_cause(AUTH_REQUIRED).lower()
     assert any("browser" in a.lower() for a in suggested_actions(BOT_CHECK))

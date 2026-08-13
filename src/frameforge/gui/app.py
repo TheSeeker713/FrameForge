@@ -52,6 +52,9 @@ class FrameForgeApp(ctk.CTk):
         self.geometry("1000x680")
         self.repo = repo or JobRepository(db_path())
         self.worker: SequentialWorker = build_worker(self.repo)
+        from frameforge.ui_flet.bridge import UiBridge
+
+        self.bridge = UiBridge(self.repo, self.worker)
         self.worker.on_fail_pause = lambda job: self.marshal_ui(
             lambda j=job: self._on_fail_pause(j)
         )
@@ -1169,53 +1172,27 @@ class FrameForgeApp(ctk.CTk):
             except Exception:  # noqa: BLE001
                 pass
         self._last_fail_pause_action = (action_id, job_id)
-        if action_id == "stop":
-            self.worker.disarm()
-            self.refresh_queue()
-            return
-        if action_id == "skip_resume":
-            self.worker.request_download_all()
-            self.refresh_queue()
-            return
-        if action_id == "retry":
-            try:
-                job = self.repo.get(job_id)
-                self.repo.update_status(job.id, "pending", error=None, progress=0)
-                self.repo.merge_options(job.id, {"fail_pause": False, "queue_hidden": False})
-                self.worker.request_download_ids([job.id])
-            except KeyError:
-                pass
-            self.refresh_queue()
-            return
-        if action_id == "authenticate":
-            try:
-                url = self.repo.get(job_id).url
-            except KeyError:
-                url = None
-            self.authenticate_site(prefill=url)
-            return
-        if action_id == "import_browser":
-            try:
-                url = self.repo.get(job_id).url
-            except KeyError:
-                url = None
-            if not url:
-                return
-            result = self.import_cookies_from_browser_for_site(url, browser="firefox")
-            ok = bool(getattr(result, "ok", False))
-            if ok:
-                asker = getattr(self, "_ask_retry_resume_after_cookies", None)
-                resume = asker() if asker else messagebox.askyesno(
+        result = self.bridge.handle_fail_pause_action(
+            action_id,
+            job_id,
+            authenticate=lambda url: self.authenticate_site(prefill=url),
+            import_browser=lambda url: self.import_cookies_from_browser_for_site(
+                url, browser="firefox"
+            ),
+            ask_retry_resume=getattr(self, "_ask_retry_resume_after_cookies", None)
+            or (
+                lambda: messagebox.askyesno(
                     "FrameForge",
                     "Cookies imported. Retry this job and resume the queue?",
                 )
-                if resume:
-                    self.handle_fail_pause_action("retry", job_id)
-                    return
-            elif getattr(result, "message", None):
-                messagebox.showerror("FrameForge", str(result.message))
+            ),
+        )
+        if action_id == "import_browser" and not result.get("retried"):
+            err = getattr(result.get("result"), "message", None)
+            if err and not getattr(result.get("result"), "ok", False):
+                messagebox.showerror("FrameForge", str(err))
+        if action_id in {"stop", "skip_resume", "retry", "import_browser"}:
             self.refresh_queue()
-            return
 
     def pause_selected(self) -> None:
         from frameforge.gui.actions import can_pause

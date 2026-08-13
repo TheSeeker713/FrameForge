@@ -33,8 +33,10 @@ CATEGORIES = (
     UNKNOWN,
 )
 
-# Failures that should pause a bulk run (Phase 3.2).
-FAIL_PAUSE_CATEGORIES = frozenset({AUTH_REQUIRED, BOT_CHECK})
+# Failures that should pause a bulk run (bot/auth and hard unknown).
+FAIL_PAUSE_CATEGORIES = frozenset({AUTH_REQUIRED, BOT_CHECK, UNKNOWN})
+STDERR_TAIL_LINES = 12
+STDERR_TAIL_CHARS = 2000
 
 _BOT_RE = re.compile(
     r"sign in to confirm"
@@ -110,6 +112,23 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
     if _NETWORK_RE.search(text):
         return NETWORK
     return UNKNOWN
+
+
+def stderr_tail(message: str | None, *, max_lines: int = STDERR_TAIL_LINES) -> str:
+    """Last non-empty lines of yt-dlp/ffmpeg output for the error panel."""
+    lines = [ln.strip() for ln in str(message or "").splitlines() if ln.strip()]
+    tail = "\n".join(lines[-max_lines:])
+    if len(tail) > STDERR_TAIL_CHARS:
+        return tail[-STDERR_TAIL_CHARS:]
+    return tail
+
+
+def format_ytdlp_exit_error(rc: int, lines: list[str] | tuple[str, ...], *, max_lines: int = STDERR_TAIL_LINES) -> str:
+    """Combine exit code with a stderr/stdout tail so classifiers see bot/auth text."""
+    tail = stderr_tail("\n".join(lines), max_lines=max_lines)
+    if tail:
+        return f"yt-dlp exited with code {rc}\n{tail}"
+    return f"yt-dlp exited with code {rc}"
 
 
 def human_cause(category: str) -> str:
@@ -215,8 +234,9 @@ def annotate_job_error(
     repo.update_status(job_id, status, error=str(message))
     patch: dict[str, Any] = {
         "error_category": cat,
-        "error_cause": human_cause(cat),
+        "error_cause": human_cause(cat) or "The download failed.",
         "error_actions": suggested_actions(cat),
+        "error_stderr_tail": stderr_tail(message),
     }
     if cat in (AUTH_REQUIRED, BOT_CHECK):
         patch["auth_required"] = True

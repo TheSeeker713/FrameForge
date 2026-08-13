@@ -461,10 +461,15 @@ class YtDlpDownloader:
         proc = subprocess.Popen(cmd, **kwargs)  # noqa: S603
         process_registry.register(job_id, proc.pid)
         printed: list[str] = []
+        output_tail: list[str] = []
         try:
             assert proc.stdout is not None
             for raw in iter_subprocess_text_chunks(proc.stdout):
                 line = raw.rstrip("\n\r")
+                if line:
+                    output_tail.append(line)
+                    if len(output_tail) > 40:
+                        del output_tail[0]
                 if process_registry.was_paused(job_id):
                     raise DownloadPaused("paused")
                 if process_registry.was_killed(job_id):
@@ -492,7 +497,9 @@ class YtDlpDownloader:
             if process_registry.was_killed(job_id):
                 raise DownloadCancelled("cancelled")
             if rc != 0:
-                raise RuntimeError(f"yt-dlp exited with code {rc}")
+                from frameforge.errors import format_ytdlp_exit_error
+
+                raise RuntimeError(format_ytdlp_exit_error(rc, output_tail or printed))
         except (DownloadCancelled, DownloadPaused):
             if proc.poll() is None:
                 process_registry.kill(job_id)
