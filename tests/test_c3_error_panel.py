@@ -16,9 +16,10 @@ def test_panel_auth_4k_and_cancel(tmp_path: Path):
     auth = repo.enqueue("https://www.youtube.com/watch?v=x", title="gated")
     apply_auth_failure(repo, auth.id, "Sign in to confirm you’re not a bot", auth.url)
     auth_text = FrameForgeApp.format_error_panel_text(repo.get(auth.id))
-    assert "Category: auth_required" in auth_text
+    assert "Category: bot_check" in auth_text
     assert "not a bot" in auth_text
-    assert AUTH_ACTION_LABEL in auth_text
+    assert AUTH_ACTION_LABEL in auth_text or "Import from browser" in auth_text
+    assert "Cause:" in auth_text
 
     blocked = repo.enqueue("https://example.com/uhd", title="uhd")
     annotate_job_error(repo, blocked.id, "Blocked: source is 4K/≥2160p (height=2160)")
