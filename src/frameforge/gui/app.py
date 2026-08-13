@@ -1185,8 +1185,21 @@ class FrameForgeApp(ctk.CTk):
                 url = self.repo.get(job_id).url
             except KeyError:
                 url = None
-            if url:
-                self.import_cookies_from_browser_for_site(url, browser="firefox")
+            if not url:
+                return
+            result = self.import_cookies_from_browser_for_site(url, browser="firefox")
+            ok = bool(getattr(result, "ok", False))
+            if ok:
+                asker = getattr(self, "_ask_retry_resume_after_cookies", None)
+                resume = asker() if asker else messagebox.askyesno(
+                    "FrameForge",
+                    "Cookies imported. Retry this job and resume the queue?",
+                )
+                if resume:
+                    self.handle_fail_pause_action("retry", job_id)
+                    return
+            elif getattr(result, "message", None):
+                messagebox.showerror("FrameForge", str(result.message))
             self.refresh_queue()
             return
 
