@@ -19,6 +19,11 @@ CONVERT_PENDING_STATUS = "convert_pending"
 TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 PAUSED_STATUS = "paused"
 HOLDING_STATUSES = (PAUSED_STATUS,)
+# Live queue omits these; History still lists terminal rows.
+QUEUE_VISIBLE_SQL = (
+    "(options_json IS NULL OR json_extract(options_json, '$.queue_hidden') IS NULL "
+    "OR json_extract(options_json, '$.queue_hidden') = 0)"
+)
 
 
 def utc_now() -> str:
@@ -124,6 +129,10 @@ class Job:
 
         return site_key_from_job(self)
 
+    @property
+    def queue_hidden(self) -> bool:
+        return bool(self.options().get("queue_hidden"))
+
 
 class JobRepository:
     def __init__(self, db_path: str | Path):
@@ -177,15 +186,17 @@ class JobRepository:
                 raise KeyError(f"job {job_id} not found")
             return Job.from_row(row)
 
-    def list_jobs(self, status: str | None = None) -> list[Job]:
+    def list_jobs(self, status: str | None = None, *, include_queue_hidden: bool = False) -> list[Job]:
+        vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
         if status:
             rows = self.conn.execute(
-                "SELECT * FROM jobs WHERE status = ? ORDER BY priority DESC, id ASC",
+                f"SELECT * FROM jobs WHERE status = ?{vis} ORDER BY priority DESC, id ASC",
                 (status,),
             ).fetchall()
         else:
+            where = "1=1" if include_queue_hidden else QUEUE_VISIBLE_SQL
             rows = self.conn.execute(
-                "SELECT * FROM jobs ORDER BY priority DESC, id ASC"
+                f"SELECT * FROM jobs WHERE {where} ORDER BY priority DESC, id ASC"
             ).fetchall()
         return [Job.from_row(r) for r in rows]
 
@@ -242,9 +253,10 @@ class JobRepository:
             n += 1
         return n
 
-    def count_by_status(self, status: str) -> int:
+    def count_by_status(self, status: str, *, include_queue_hidden: bool = False) -> int:
+        vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
         row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM jobs WHERE status = ?", (status,)
+            f"SELECT COUNT(*) AS c FROM jobs WHERE status = ?{vis}", (status,)
         ).fetchone()
         return int(row["c"])
 
@@ -554,9 +566,9 @@ class JobRepository:
                 return None
             if job_ids is None:
                 row = self.conn.execute(
-                    """
+                    f"""
                     SELECT id FROM jobs
-                    WHERE status = 'pending'
+                    WHERE status = 'pending' AND {QUEUE_VISIBLE_SQL}
                     ORDER BY priority DESC, id ASC
                     LIMIT 1
                     """
@@ -567,6 +579,7 @@ class JobRepository:
                     f"""
                     SELECT id FROM jobs
                     WHERE status = 'pending' AND id IN ({placeholders})
+                      AND {QUEUE_VISIBLE_SQL}
                     ORDER BY priority DESC, id ASC
                     LIMIT 1
                     """,
@@ -602,9 +615,9 @@ class JobRepository:
                 self.conn.execute("ROLLBACK")
                 return None
             row = self.conn.execute(
-                """
+                f"""
                 SELECT id FROM jobs
-                WHERE status = ?
+                WHERE status = ? AND {QUEUE_VISIBLE_SQL}
                 ORDER BY priority DESC, id ASC
                 LIMIT 1
                 """,
@@ -669,14 +682,46 @@ class JobRepository:
 
     def url_in_queue(self, url: str) -> bool:
         row = self.conn.execute(
-            """
+            f"""
             SELECT 1 FROM jobs
             WHERE url = ? AND status NOT IN ('cancelled')
+              AND {QUEUE_VISIBLE_SQL}
             LIMIT 1
             """,
             (url,),
         ).fetchone()
         return row is not None
+
+    def hide_from_queue(self, job_id: int) -> Job:
+        """Soft-remove from the live queue. Does not delete media or the SQLite row."""
+        return self.merge_options(job_id, {"queue_hidden": True})
+
+    def delete_job_row(self, job_id: int) -> None:
+        """Hard-delete a jobs row. Never deletes media files on disk."""
+        self.conn.execute("DELETE FROM jobs WHERE id = ?", (int(job_id),))
+        self.conn.commit()
+
+    def clear_from_queue(self, job_ids: list[int] | tuple[int, ...]) -> list[int]:
+        """Remove jobs from the live queue. Media files are left on disk.
+
+        Terminal jobs (completed/failed/cancelled) are hidden so History keeps
+        them. Pending/paused and other non-active rows are deleted. Active
+        download/upscale/convert stages are skipped (cancel or pause first).
+        """
+        cleared: list[int] = []
+        for jid in job_ids:
+            try:
+                job = self.get(int(jid))
+            except KeyError:
+                continue
+            if job.status in ACTIVE_STAGE_STATUSES:
+                continue
+            if job.status in TERMINAL_STATUSES:
+                self.hide_from_queue(job.id)
+            else:
+                self.delete_job_row(job.id)
+            cleared.append(job.id)
+        return cleared
 
     def add_archive(
         self,
