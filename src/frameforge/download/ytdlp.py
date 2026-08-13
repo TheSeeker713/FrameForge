@@ -182,6 +182,22 @@ class DownloadResult:
     info: dict[str, Any]
 
 
+GENTLE_RATE_SETTING = "gentle_rate_mode"
+GENTLE_SLEEP_INTERVAL = 2.0
+GENTLE_MAX_SLEEP_INTERVAL = 5.0
+GENTLE_LIMIT_RATE_BPS = 2 * 1024 * 1024  # 2 MiB/s — off by default
+
+
+def apply_gentle_rate(downloader: "YtDlpDownloader", enabled: bool) -> None:
+    if enabled:
+        downloader.sleep_interval = GENTLE_SLEEP_INTERVAL
+        downloader.max_sleep_interval = GENTLE_MAX_SLEEP_INTERVAL
+        downloader.limit_rate_bps = GENTLE_LIMIT_RATE_BPS
+    else:
+        downloader.sleep_interval = None
+        downloader.limit_rate_bps = None
+
+
 class YtDlpDownloader:
     def __init__(
         self,

@@ -866,6 +866,12 @@ class FrameForgeApp(ctk.CTk):
             text="Pause queue on bot-check / login failures (recommended)",
             variable=pause_auth_var,
         ).pack(anchor="w", padx=16, pady=(0, 8))
+        gentle_var = tk.BooleanVar(value=self.repo.get_setting("gentle_rate_mode", "0") == "1")
+        ctk.CTkCheckBox(
+            win,
+            text="Gentle rate mode (sleep + 2 MiB/s cap — use after bot checks)",
+            variable=gentle_var,
+        ).pack(anchor="w", padx=16, pady=(0, 8))
 
         mon = settings_from_repo(self.repo)
         ctk.CTkLabel(win, text="Upscale resource monitor").pack(anchor="w", padx=16, pady=(8, 4))
@@ -898,6 +904,7 @@ class FrameForgeApp(ctk.CTk):
             self.repo.set_setting("close_to_tray", "1" if tray_var.get() else "0")
             self.repo.set_setting("ui_light_mode", "1" if light_var.get() else "0")
             self.repo.set_setting("fail_pause_on_auth", "1" if pause_auth_var.get() else "0")
+            self.repo.set_setting("gentle_rate_mode", "1" if gentle_var.get() else "0")
             self._apply_light_ui()
             try:
                 ram_pct = float(ram_ent.get().strip() or mon.ram_warning_pct)
@@ -1128,6 +1135,13 @@ class FrameForgeApp(ctk.CTk):
             justify="left",
             text_color="#ffcc66",
         ).pack(anchor="w", padx=16)
+        ctk.CTkLabel(
+            win,
+            text="Tip: after cookies work, Settings → Gentle rate mode can reduce bot checks. It is off by default.",
+            wraplength=480,
+            justify="left",
+            text_color="#a0a0a0",
+        ).pack(anchor="w", padx=16, pady=(8, 0))
         err = str(payload.get("error") or "")
         if err:
             box = ctk.CTkTextbox(win, height=80, wrap="word")

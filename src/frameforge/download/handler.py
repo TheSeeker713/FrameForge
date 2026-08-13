@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from frameforge.db.repository import Job, JobRepository
-from frameforge.download.ytdlp import YtDlpDownloader
+from frameforge.download.ytdlp import YtDlpDownloader, apply_gentle_rate
 from frameforge.paths import download_dir_for_site, downloads_dir, ensure_output_tree
 from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
@@ -98,6 +98,7 @@ def make_download_handler(
             )
 
         dl.format_preference = job.format_preference or "best"
+        apply_gentle_rate(dl, repo.get_setting("gentle_rate_mode", "0") == "1")
         cookie = _cookiefile_for_url(job.url)
         if cookie is not None:
             dl.cookiefile = cookie
