@@ -37,4 +37,4 @@ API: `list_history(status=…, search=…, domain=…)`.
 
 - Clear finished from the queue → rows remain in History.
 - Clear from History → rows stay out of History until you would un-hide them in the DB; they are also gone from the live queue if they were already `queue_hidden`.
-- Re-download puts fresh pending jobs on the Queue tab without clobbering the history record.
+The v0.5 Flet History tab uses the same `list_history` / `reenqueue_as_pending` APIs. Re-download still does **not** arm the worker.

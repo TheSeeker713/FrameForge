@@ -13,7 +13,8 @@
 | `frameforge.pipeline` | Download → optional upscale orchestration (Phase 3) |
 | `frameforge.convert` | ffmpeg MP3 convert stage (v0.4) |
 | `frameforge.monitor` | psutil CPU/RAM sampler + upscale pressure policy (v0.4) |
-| `frameforge.gui` | CustomTkinter dark UI (Phase 4) |
+| `frameforge.ui_flet` | Flet light UI (v0.5 primary window) |
+| `frameforge.gui` | Shared actions/tray/exit policy; legacy CustomTkinter module |
 
 ## Data layout
 

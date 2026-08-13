@@ -27,4 +27,4 @@ Plain letter keys are not stolen while the URL/text entry is focused unless **Ct
 
 Quit still uses the Prompt 1 three-option policy when a download, upscale, or convert is running.
 
-Source of truth: `frameforge.gui.shortcuts.DEFAULT_SHORTCUTS`.
+Source of truth: `frameforge.gui.shortcuts.DEFAULT_SHORTCUTS` (action ids). The v0.5 Flet window binds the same ids; Tk sequences apply to the legacy CTk module only.

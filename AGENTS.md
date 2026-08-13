@@ -6,7 +6,7 @@ Target: Windows 11, AMD Ryzen 7 6800H + Radeon 680M, offline after setup.
 ## Identity
 
 - Pure Python package under `src/frameforge/`
-- GUI: CustomTkinter (dark, minimal, powerful)
+- GUI: **Flet** (light SaaS chrome, v0.5). Backend stays Python.
 - Downloads: yt-dlp + aria2c + FFmpeg
 - Upscale: Real-ESRGAN via ONNX Runtime (DirectML preferred, CPU fallback)
 - Queue: SQLite WAL, persistent across restarts

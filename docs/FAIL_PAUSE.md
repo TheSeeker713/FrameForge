@@ -46,6 +46,8 @@ Turn the default policy off in Settings if you want the bulk run to keep going a
 
 You must choose an action. The worker does not silently continue failing the rest of the list.
 
+The Flet UI calls the same handlers via `UiBridge.retry_job` / `handle_fail_pause_action` (see [UI_BRIDGE.md](UI_BRIDGE.md)). Retry that fails again hits the same disarm + `on_fail_pause` entrypoint.
+
 ## Gentle rate (optional)
 
 The modal mentions Settings → **Gentle rate mode** (sleep interval + 2 MiB/s cap). It is **off by default**. Enable it after cookies work if bot checks keep returning. See [SPEED.md](SPEED.md).

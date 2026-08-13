@@ -2,7 +2,7 @@
 
 Fully local Windows video downloader + AI video upscaler.
 
-**Stack:** Pure Python · CustomTkinter · yt-dlp · FFmpeg · aria2c · ONNX (DirectML preferred)
+**Stack:** Pure Python · Flet · yt-dlp · FFmpeg · aria2c · ONNX (DirectML preferred)
 
 **Hardware target:** Windows 11 Pro, AMD Ryzen 7 6800H + Radeon 680M, 32 GB RAM
 
@@ -10,7 +10,7 @@ Fully local Windows video downloader + AI video upscaler.
 
 Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI upscaling. Upscalers are usually separate tools. FrameForge differentiates by:
 
-- Pure Python + CustomTkinter
+- Pure Python + **Flet** (light SaaS UI)
 - **Strictly sequential** single-job downloads
 - **SQLite WAL** persistent queue (survives restarts)
 - **TXT/MD bulk import** with preview, confirmation, and dedupe
@@ -23,7 +23,7 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - Highest practical quality downloads via yt-dlp + aria2c + FFmpeg merge
 - Persistent job queue with priority, cancel, retry
 - Optional upscale-after-download stage (still sequential)
-- Dark minimal GUI: paste URL, bulk import, live queue, **History** and **Thumbnails** tabs, settings
+- Light **Flet** GUI (cards, floating bar, pill tabs). CustomTkinter is not the default window.
 - Live download **% / speed / ETA** on the killable yt-dlp subprocess path
 - **Pause / Resume** downloads (hard-stop, keep `.part` files, continue on resume)
 - **Quit while busy:** cancel, pause, or wait-for-current — never silent exit
@@ -65,7 +65,7 @@ python -m frameforge --gui
 
 `%USERPROFILE%\Downloads\FrameForge\` → per-site download folders (`youtube/`, `x.com/`, …), `upscaled/<site>/`, `converted/<site>/`, plus global `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
 
-See [docs/QUEUE_CLEAR.md](docs/QUEUE_CLEAR.md), [docs/HISTORY_V2.md](docs/HISTORY_V2.md), [docs/FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [docs/SPEED.md](docs/SPEED.md), [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [docs/V0.4_COMPLETE.md](docs/V0.4_COMPLETE.md), [docs/V0.4.2_COMPLETE.md](docs/V0.4.2_COMPLETE.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
+See [docs/UI_REDESIGN.md](docs/UI_REDESIGN.md), [docs/ACCEPTANCE_V05.md](docs/ACCEPTANCE_V05.md), [docs/V0.5_UI_COMPLETE.md](docs/V0.5_UI_COMPLETE.md), [docs/QUEUE_CLEAR.md](docs/QUEUE_CLEAR.md), [docs/HISTORY_V2.md](docs/HISTORY_V2.md), [docs/FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [docs/SPEED.md](docs/SPEED.md), [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [docs/V0.4_COMPLETE.md](docs/V0.4_COMPLETE.md), [docs/V0.4.2_COMPLETE.md](docs/V0.4.2_COMPLETE.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 
 ## License
 

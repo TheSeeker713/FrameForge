@@ -26,14 +26,22 @@ def test_injected_handler_exception_worker_stays_alive(tmp_path: Path):
 
     deadline = time.time() + 15
     while time.time() < deadline:
-        st_b = repo.get(boom.id).status
-        st_o = repo.get(ok.id).status
-        if st_b in ("failed", "cancelled") and st_o in ("completed", "failed", "cancelled"):
+        if repo.get(boom.id).status == "failed":
             break
         time.sleep(0.05)
 
     assert repo.get(boom.id).status == "failed"
     assert "injected" in (repo.get(boom.id).error or "")
+    # Hard unknown fail-pauses the bulk run; remaining jobs stay pending.
+    assert repo.get(ok.id).status == "pending"
+    assert worker.is_armed is False
+    assert worker.is_running is True
+    worker.request_download_all()
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if repo.get(ok.id).status == "completed":
+            break
+        time.sleep(0.05)
     assert repo.get(ok.id).status == "completed"
     assert repo.count_by_status("downloading") == 0
     assert repo.count_by_status("upscaling") == 0

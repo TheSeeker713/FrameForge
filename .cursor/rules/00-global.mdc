@@ -7,7 +7,7 @@ alwaysApply: true
 
 - Follow Phases → Steps in `docs/PHASES.md`. Never jump ahead.
 - After every step: real tests to 100%, then commit and push `main` to TheSeeker713/FrameForge.
-- Prefer simplicity. No Electron. CustomTkinter GUI.
+- Prefer simplicity. No Electron. **Flet GUI** (v0.5; CustomTkinter is not the default window).
 - All user media under `%USERPROFILE%\Downloads\FrameForge\`.
 - **Sequential downloads only** — never more than one active download job.
 - SQLite WAL queue for persistence; prove with on-disk DB + restart tests.

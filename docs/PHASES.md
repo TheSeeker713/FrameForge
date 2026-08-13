@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.4.2 (queue clear, History v2, fail-pause, speed)
+## Status: v0.5.0 (Flet GUI rewrite)
 
-Package version remains **0.4.0**. All phases 0–5 plus v0.4 Prompt 1/2, site folders, v0.4.1 perf, and v0.4.2 queue/history/fail-pause/speed are implemented. Run `.\scripts\verify_final.ps1` or `python -m pytest -q` for the full gate. See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md).
+Package version is **0.5.0**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker, fail-pause, history v2, and queue clear are unchanged. See [V0.5_UI_COMPLETE.md](V0.5_UI_COMPLETE.md) and [UI_REDESIGN.md](UI_REDESIGN.md).
 
 ## Phase 0 – Foundation
 

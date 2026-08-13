@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Full GUI rewrite on Flet (light SaaS chrome; CustomTkinter is not the default window)
+- Floating selection bar; contextual Upscale / Convert
+- Fail-pause on retry and hard unknown; stderr tail on yt-dlp exits
+- Settings single-instance; display version 0.5.0
+
 ## 0.4.0
 
 - Pause / resume downloads (hard-stop, keep partials, yt-dlp continue)

@@ -1,6 +1,7 @@
 yt-dlp
 onnxruntime-directml
 customtkinter
+flet==0.86.5
 Pillow
 pystray
 psutil

@@ -52,6 +52,12 @@
 
 **Decision:** Project venv uses Python 3.12 (meets ≥3.11 requirement).
 
-## ADR-010: Competitive positioning
+## ADR-011: Flet as primary GUI (v0.5)
+
+**Decision:** The default `python -m frameforge --gui` window is Flet 0.86. CustomTkinter is not mixed into that window. Backend services stay Python; `UiBridge` is the command layer.
+
+**Why:** Match the locked light card / floating-bar mockups; still a single language; tray may remain pystray.
+
+**Supersedes (window only):** ADR-001’s CustomTkinter as the *primary* window. Sequential/SQLite/ONNX ADRs are unchanged.
 
 FrameForge is not a concurrent multi-download manager clone. It is a sequential, persistent, AMD-friendly downloader with integrated local AI upscaling and bulk TXT/MD import.

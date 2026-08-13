@@ -2,7 +2,9 @@
 
 **Source of truth for current UI:** `src/frameforge/gui/app.py` (`FrameForgeApp`), plus `actions.py`, `shortcuts.py`, `exit_policy.py`, `tray.py`, `playlist_picker.py`, `queue_list.py`.
 
-**Entry:** `python -m frameforge --gui` → `frameforge.gui.app.create_app()` → CustomTkinter `mainloop()`. Production launch: `start_worker=False`, `recover_on_launch=True` (pending only; no auto-start).
+**Entry (v0.5):** `python -m frameforge --gui` → `frameforge.ui_flet.app.run_gui` (Flet).
+
+**Former entry:** `frameforge.gui.app.create_app()` → CustomTkinter `mainloop()` (kept for tests / tray helpers). Production launch: `start_worker=False`, `recover_on_launch=True` (pending only; no auto-start).
 
 v0.5 replaces the CustomTkinter **window** with Flet. Backend (SQLite WAL worker, yt-dlp, ONNX, cookies, history) stays. Every command below must remain reachable after the rewrite (new chrome: header icons, hero, card overflow, floating bar, modals — not a 14-button toolbar).
 
