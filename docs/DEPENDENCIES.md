@@ -19,6 +19,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
+# GUI (v0.5): flet==0.86.5 is a project dependency
 pip install onnx   # used to generate local smoke ONNX if Real-ESRGAN download unavailable
 python .\scripts\create_smoke_onnx.py
 # Optional when network policy allows Real-ESRGAN weights:
@@ -32,6 +33,7 @@ python .\scripts\create_smoke_onnx.py
 | yt-dlp | 2026.7.4 |
 | onnxruntime-directml | 1.24.4 |
 | customtkinter | 6.0.0 |
+| flet | 0.86.5 | Primary GUI (v0.5); pin used in tests |
 | Pillow | 12.3.0 |
 | pystray | 0.19.5 |
 | psutil | 7.2.2 |
