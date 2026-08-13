@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.4.0 (Prompt 1 + Prompt 2)
+## Status: v0.4.2 (queue clear, History v2, fail-pause, speed)
 
-All phases 0–5 plus v0.4 Prompt 1 (pause/quit/tray/cookies) and Prompt 2 (playlists, formats, convert, resource monitor, shortcuts) are implemented. Run `.\scripts\verify_final.ps1` or `python -m pytest -q` for the full gate.
+Package version remains **0.4.0**. All phases 0–5 plus v0.4 Prompt 1/2, site folders, v0.4.1 perf, and v0.4.2 queue/history/fail-pause/speed are implemented. Run `.\scripts\verify_final.ps1` or `python -m pytest -q` for the full gate. See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md).
 
 ## Phase 0 – Foundation
 
