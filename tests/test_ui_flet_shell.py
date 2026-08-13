@@ -38,5 +38,8 @@ def test_shell_header_and_tab_placeholders():
     labels = [t.label for t in bar.tabs]
     assert tuple(labels) == TAB_LABELS
     shell = build_shell()
-    assert len(shell.controls) == 2
+    assert len(shell.controls) == 3
+    icons = [c.tooltip for c in header.controls if isinstance(c, ft.IconButton)]
+    assert "Settings" in icons
+    assert "Authenticate" in icons
     apply_page_chrome  # imported for C2 wiring; construction is side-effect free

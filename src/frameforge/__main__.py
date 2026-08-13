@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Probe dependencies and output directories",
     )
-    parser.add_argument("--gui", action="store_true", help="Launch CustomTkinter GUI")
+    parser.add_argument("--gui", action="store_true", help="Launch Flet GUI")
     args = parser.parse_args(argv)
 
     if args.version:
@@ -33,13 +33,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if report.get("ok") else 1
 
     if args.gui:
-        from frameforge.gui.app import create_app
+        from frameforge.ui_flet.app import run_gui
 
-        app = create_app()
-        try:
-            app.mainloop()
-        finally:
-            app.shutdown()
+        run_gui()
         return 0
 
     parser.print_help()
