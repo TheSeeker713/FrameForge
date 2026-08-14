@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.1 (Flet interaction fix)
+## Status: v0.5.2 (hover, bot-check mastery, packaging)
 
-Package version is **0.5.1**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker, fail-pause, history v2, and queue clear are unchanged. See [V0.5.1_COMPLETE.md](V0.5.1_COMPLETE.md), [ACCEPTANCE_V051.md](ACCEPTANCE_V051.md), and [V0.5_UI_COMPLETE.md](V0.5_UI_COMPLETE.md).
+Package version is **0.5.2**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.2_COMPLETE.md](V0.5.2_COMPLETE.md), [ACCEPTANCE_V052.md](ACCEPTANCE_V052.md), [BOT_CHECK_PLAYBOOK.md](BOT_CHECK_PLAYBOOK.md), [PACKAGING.md](PACKAGING.md).
 
 ## Phase 0 – Foundation
 

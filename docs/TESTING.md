@@ -63,6 +63,11 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.5.2 hover, bot-check, packaging
+
+- **Suite:** `python -m pytest -q` → **314 passed / 0 skipped / 0 failed**
+- See [ACCEPTANCE_V052.md](ACCEPTANCE_V052.md), [BOT_CHECK_PLAYBOOK.md](BOT_CHECK_PLAYBOOK.md), [PACKAGING.md](PACKAGING.md).
+
 ## v0.5.1 Flet interaction fix
 
 - **Suite:** `python -m pytest -q` → **298 passed / 0 skipped / 0 failed**

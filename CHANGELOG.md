@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- Hover elevation on cards and buttons (widget shadows only; window drag ghost stays gone)
+- Bot-check playbook: classify stderr, validate cookies before resume, short gentle-rate cooldown
+- PyInstaller one-folder Flet build revalidated (`dist\FrameForge\FrameForge.exe`)
+
 ## 0.5.1
 
 - Emergency Flet interaction fix: dialogs close (X / Esc / barrier / Cancel)
