@@ -1,7 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for FrameForge portable build
+# One-folder PyInstaller build for the Flet GUI (stable on Windows).
+# One-file is not used: Flet's desktop client is a Flutter tree that
+# does not extract reliably from a single exe on this stack.
 
-import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
@@ -16,23 +17,37 @@ datas = []
 binaries = []
 hiddenimports = [
     "frameforge",
+    "frameforge.__main__",
+    "frameforge.ui_flet.app",
+    "frameforge.ui_flet.bridge",
     "frameforge.gui.app",
     "frameforge.db.repository",
     "frameforge.queue.worker",
     "frameforge.download.ytdlp",
     "frameforge.download.bulk_import",
     "frameforge.download.handler",
+    "frameforge.download.cookie_validate",
     "frameforge.upscale.pipeline",
     "frameforge.upscale.handler",
     "frameforge.pipeline",
+    "flet",
+    "flet_desktop",
     "customtkinter",
     "onnxruntime",
+    "rich",
 ]
 
-tmp_ret = collect_all("customtkinter")
-datas += tmp_ret[0]
-binaries += tmp_ret[1]
-hiddenimports += tmp_ret[2]
+for pkg in ("flet", "flet_desktop", "customtkinter"):
+    tmp_ret = collect_all(pkg)
+    datas += tmp_ret[0]
+    binaries += tmp_ret[1]
+    hiddenimports += tmp_ret[2]
+
+# Bundle the already-cached Flet Windows client next to the exe so --gui
+# does not depend on a first-run GitHub download when the cache exists.
+_flet_client = Path.home() / ".flet" / "client" / "flet-desktop-full-0.86.5" / "flet"
+if _flet_client.is_dir() and (_flet_client / "flet.exe").is_file():
+    datas.append((str(_flet_client), "flet-client"))
 
 a = Analysis(
     [str(ENTRY)],
@@ -42,7 +57,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "packaging" / "pyi_rth_flet_view.py")],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
