@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from frameforge.download.cookie_validate import clear_session_cookie_validation
+from frameforge.download.cookies import cookie_path_for_url
 from frameforge.db.repository import JobRepository
 from frameforge.errors import annotate_job_error
 from tests.test_tray_service import _FakeIcon
@@ -36,10 +38,18 @@ def test_fail_pause_actions_use_job_url(tmp_path: Path):
 
         def fake_browser(url, *, browser="firefox"):
             browser_calls.append((url, browser))
+            dest = cookie_path_for_url(url)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(
+                "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tx\n",
+                encoding="utf-8",
+            )
             return SimpleNamespace(ok=True, message="imported")
 
         app.authenticate_site = fake_auth  # type: ignore[method-assign]
         app.import_cookies_from_browser_for_site = fake_browser  # type: ignore[method-assign]
+        app.bridge.cookie_probe = lambda url, cookiefile: {"id": "abc", "title": "ok"}
+        clear_session_cookie_validation()
         app._ask_retry_resume_after_cookies = lambda: False
         requested: list[list[int]] = []
         app.worker.request_download_ids = lambda ids: requested.append(list(ids))  # type: ignore[method-assign]

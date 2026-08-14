@@ -226,6 +226,15 @@ class FrameForgeUi:
 
     def _fail_pause_dialog(self, payload: dict[str, Any]) -> ft.AlertDialog:
         jid = int(payload["job_id"])
+        status = ft.Text("", color=COLORS["warn"], visible=False)
+
+        def retry_resume(_e=None) -> None:
+            self.bridge.handle_fail_pause_action("retry_resume", jid)
+            self.close_dialog()
+            self.refresh_queue()
+
+        resume_btn = elevated_filled_button("Retry this job and resume queue", on_click=retry_resume)
+        resume_btn.visible = False
 
         def act(aid: str):
             def _(_e=None):
@@ -236,11 +245,19 @@ class FrameForgeUi:
                     return
                 if aid == "import_browser":
                     url = str(payload.get("url") or "")
-                    if url:
-                        self.import_cookies_from_browser_for_site(url, browser="firefox")
-                    self.bridge.handle_fail_pause_action(aid, jid)
-                    self.close_dialog()
-                    self.refresh_queue()
+                    recovered = self.bridge.recover_bot_cookies(
+                        url,
+                        import_browser=lambda u: self.import_cookies_from_browser_for_site(
+                            u, browser="firefox"
+                        ),
+                        probe=getattr(self, "cookie_probe", None),
+                    )
+                    status.value = str(recovered.get("message") or "")
+                    status.visible = True
+                    status.color = COLORS["success"] if recovered.get("ok") else COLORS["danger"]
+                    resume_btn.visible = bool(recovered.get("ok"))
+                    if self.page is not None:
+                        self.page.update()
                     return
                 self.bridge.handle_fail_pause_action(aid, jid)
                 self.close_dialog()
@@ -248,7 +265,7 @@ class FrameForgeUi:
 
             return _
 
-        return ft.AlertDialog(
+        dlg = ft.AlertDialog(
             modal=False,
             title=ft.Text("Queue paused"),
             content=ft.Column(
@@ -256,6 +273,13 @@ class FrameForgeUi:
                     ft.Text(str(payload.get("title") or "")),
                     ft.Text(str(payload.get("url") or ""), color=COLORS["text_secondary"]),
                     ft.Text(f"Cause: {payload.get('cause') or ''}", color=COLORS["warn"]),
+                    ft.Text(
+                        "Import cookies, then retry only after they validate. Remaining jobs stay pending.",
+                        color=COLORS["text_secondary"],
+                        size=12,
+                    ),
+                    status,
+                    resume_btn,
                 ],
                 spacing=8,
                 width=460,
@@ -268,6 +292,8 @@ class FrameForgeUi:
                 elevated_outlined_button("Stop queue", on_click=act("stop")),
             ],
         )
+        dlg.data = {"status": status, "resume": resume_btn}
+        return dlg
 
     def build(self) -> ft.Column:
         status = status_from_repo(self.repo, self.worker)
@@ -789,6 +815,11 @@ class FrameForgeUi:
         if err is not None:
             err.value = f"Saved cookies to {dest}"
             err.visible = True
+        val = self.bridge.validate_site_cookies(raw, probe=getattr(self, "cookie_probe", None))
+        if not val.ok:
+            self._set_auth_error(val.message)
+            return
+        self.bridge.enable_gentle_after_bot()
         self.close_dialog()
 
     def _auth_domain_value(self) -> str:
@@ -817,10 +848,15 @@ class FrameForgeUi:
             self._set_auth_error("Enter a site URL or domain first.")
             return
         result = self.import_cookies_from_browser_for_site(raw, browser="firefox")
-        if getattr(result, "ok", False):
-            self.close_dialog()
+        if not getattr(result, "ok", False):
+            self._set_auth_error(getattr(result, "message", None) or "Firefox import failed.")
             return
-        self._set_auth_error(getattr(result, "message", None) or "Firefox import failed.")
+        val = self.bridge.validate_site_cookies(raw, probe=getattr(self, "cookie_probe", None))
+        if not val.ok:
+            self._set_auth_error(val.message)
+            return
+        self.bridge.enable_gentle_after_bot()
+        self.close_dialog()
 
     def _auth_choose_txt(self, _e: Any = None) -> None:
         if self.page is None:

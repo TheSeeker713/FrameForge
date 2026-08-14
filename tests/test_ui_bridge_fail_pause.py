@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+from frameforge.download.cookie_validate import clear_session_cookie_validation
+from frameforge.download.cookies import cookie_path_for_url
 from frameforge.db.repository import JobRepository
 from frameforge.errors import BOT_CHECK, UNKNOWN, annotate_job_error, format_ytdlp_exit_error
 from frameforge.queue.fail_pause import maybe_fail_pause
@@ -99,6 +101,14 @@ def test_bridge_fail_pause_authenticate_uses_job_url(tmp_path: Path):
     requested: list[list[int]] = []
     worker.request_download_ids = lambda ids: requested.append(list(ids))  # type: ignore[method-assign]
     worker.request_download_all = lambda: requested.append(["all"])  # type: ignore[method-assign]
+    clear_session_cookie_validation()
+    dest = cookie_path_for_url(job.url)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tx\n",
+        encoding="utf-8",
+    )
+    bridge.cookie_probe = lambda url, cookiefile: {"id": "abc", "title": "ok"}
     bridge.handle_fail_pause_action(
         "import_browser",
         job.id,

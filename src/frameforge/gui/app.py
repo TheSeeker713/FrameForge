@@ -1188,9 +1188,15 @@ class FrameForgeApp(ctk.CTk):
             ),
         )
         if action_id == "import_browser" and not result.get("retried"):
-            err = getattr(result.get("result"), "message", None)
-            if err and not getattr(result.get("result"), "ok", False):
-                messagebox.showerror("FrameForge", str(err))
+            if result.get("validated") is False:
+                messagebox.showerror(
+                    "FrameForge",
+                    str(result.get("message") or "Cookies did not unlock this site — try browser login then import again."),
+                )
+            else:
+                err = getattr(result.get("result"), "message", None)
+                if err and not getattr(result.get("result"), "ok", False):
+                    messagebox.showerror("FrameForge", str(err))
         if action_id in {"stop", "skip_resume", "retry", "import_browser"}:
             self.refresh_queue()
 

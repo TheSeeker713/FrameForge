@@ -59,6 +59,63 @@ class UiBridge:
     def retry_all_failed(self) -> list[int]:
         return self.retry_failed_ids([j.id for j in self.repo.list_jobs("failed")])
 
+    def retry_and_resume(self, job_id: int) -> None:
+        """Reset the failed job and arm the whole pending queue (explicit user action)."""
+        self.retry_job(int(job_id))
+        self.worker.request_download_all()
+
+    def enable_gentle_after_bot(self, n: int | None = None) -> int:
+        from frameforge.download.cookie_validate import GENTLE_AFTER_BOT_JOBS, enable_gentle_after_bot
+
+        return enable_gentle_after_bot(self.repo, GENTLE_AFTER_BOT_JOBS if n is None else n)
+
+    def validate_site_cookies(self, url: str, *, probe: Any | None = None) -> Any:
+        from frameforge.download.cookie_validate import validate_cookies_for_url
+
+        return validate_cookies_for_url(url, probe=probe if probe is not None else getattr(self, "cookie_probe", None))
+
+    def recover_bot_cookies(
+        self,
+        url: str,
+        *,
+        import_browser: ImportBrowserFn | None = None,
+        probe: Any | None = None,
+    ) -> dict[str, Any]:
+        """Import cookies then validate. Never arms the worker."""
+        from frameforge.download.cookie_validate import UNLOCK_FAIL
+
+        if import_browser is None:
+            return {"ok": False, "stage": "import", "message": "No import handler", "retried": False}
+        result = import_browser(url)
+        ok = bool(getattr(result, "ok", False)) if result is not None else False
+        if not ok:
+            return {
+                "ok": False,
+                "stage": "import",
+                "message": getattr(result, "message", None) or "Cookie import failed.",
+                "result": result,
+                "retried": False,
+            }
+        validation = self.validate_site_cookies(url, probe=probe)
+        if not validation.ok:
+            return {
+                "ok": False,
+                "stage": "validate",
+                "message": validation.message or UNLOCK_FAIL,
+                "result": result,
+                "validation": validation,
+                "retried": False,
+            }
+        self.enable_gentle_after_bot()
+        return {
+            "ok": True,
+            "stage": "ready",
+            "message": validation.message + " Retry this job and resume the queue.",
+            "result": result,
+            "validation": validation,
+            "retried": False,
+        }
+
     def download_selected(self, job_ids: list[int]) -> None:
         pending = [i for i in job_ids if self.repo.get(i).status == "pending"]
         if pending:
@@ -101,17 +158,40 @@ class UiBridge:
                 url = None
             if not url:
                 return {"action": "import_browser", "url": None, "retried": False}
-            result = import_browser(url) if import_browser is not None else None
-            ok = bool(getattr(result, "ok", False)) if result is not None else False
-            if ok and ask_retry_resume is not None and ask_retry_resume():
+            recovered = self.recover_bot_cookies(
+                url,
+                import_browser=import_browser,
+                probe=getattr(self, "cookie_probe", None),
+            )
+            if not recovered.get("ok"):
+                return {
+                    "action": "import_browser",
+                    "url": url,
+                    "retried": False,
+                    "validated": False,
+                    "message": recovered.get("message"),
+                    "result": recovered.get("result"),
+                }
+            if ask_retry_resume is not None and ask_retry_resume():
                 self.retry_job(job_id)
-                return {"action": "import_browser", "url": url, "retried": True, "result": result}
+                return {
+                    "action": "import_browser",
+                    "url": url,
+                    "retried": True,
+                    "validated": True,
+                    "result": recovered.get("result"),
+                }
             return {
                 "action": "import_browser",
                 "url": url,
                 "retried": False,
-                "result": result,
+                "validated": True,
+                "result": recovered.get("result"),
+                "message": recovered.get("message"),
             }
+        if action_id == "retry_resume":
+            self.retry_and_resume(job_id)
+            return {"action": "retry_resume", "job_id": job_id}
         return {"action": action_id}
 
     def maybe_fail_pause(self, job: Any) -> bool:

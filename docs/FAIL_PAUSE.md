@@ -48,9 +48,11 @@ You must choose an action. The worker does not silently continue failing the res
 
 The Flet UI calls the same handlers via `UiBridge.retry_job` / `handle_fail_pause_action` (see [UI_BRIDGE.md](UI_BRIDGE.md)). Retry that fails again hits the same disarm + `on_fail_pause` entrypoint.
 
+After **Import from browser**, cookies are **validated** before resume. Success offers **Retry this job and resume the queue**. Failure keeps the modal open. See [BOT_CHECK_PLAYBOOK.md](BOT_CHECK_PLAYBOOK.md).
+
 ## Gentle rate (optional)
 
-The modal mentions Settings → **Gentle rate mode** (sleep interval + 2 MiB/s cap). It is **off by default**. Enable it after cookies work if bot checks keep returning. See [SPEED.md](SPEED.md).
+Settings → **Gentle rate mode** (sleep interval + 2 MiB/s cap) is **off by default**. After a successful bot-check cookie recovery, FrameForge enables a **short cooldown** for the next 3 jobs (`gentle_jobs_left`) without flipping the permanent setting. See [SPEED.md](SPEED.md).
 
 ## Invariants
 

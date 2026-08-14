@@ -44,9 +44,15 @@ _BOT_RE = re.compile(
     r"|you are not a bot"
     r"|not a bot"
     r"|bot.?check"
+    r"|bot detection"
     r"|recaptcha"
+    r"|hcaptcha"
     r"|unusual traffic"
-    r"|confirm you.?re human",
+    r"|confirm you.?re (a )?human"
+    r"|verify you are (a )?human"
+    r"|please complete the security check"
+    r"|automated (queries|traffic|access|requests)"
+    r"|detected unusual",
     re.IGNORECASE,
 )
 _RATE_RE = re.compile(
@@ -54,7 +60,8 @@ _RATE_RE = re.compile(
     r"|status code 429"
     r"|too many requests"
     r"|rate[- ]limit"
-    r"|slow down",
+    r"|slow down"
+    r"|429 too many",
     re.IGNORECASE,
 )
 _UNAVAIL_RE = re.compile(

@@ -98,7 +98,9 @@ def make_download_handler(
             )
 
         dl.format_preference = job.format_preference or "best"
-        apply_gentle_rate(dl, repo.get_setting("gentle_rate_mode", "0") == "1")
+        from frameforge.download.cookie_validate import consume_gentle_job
+
+        apply_gentle_rate(dl, consume_gentle_job(repo))
         cookie = _cookiefile_for_url(job.url)
         if cookie is not None:
             dl.cookiefile = cookie

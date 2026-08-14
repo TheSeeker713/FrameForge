@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import flet as ft
 
+from frameforge.download.cookie_validate import clear_session_cookie_validation
+from frameforge.download.cookies import cookie_path_for_url
 from frameforge.db.repository import JobRepository
 from frameforge.errors import annotate_job_error
 from frameforge.queue.worker import SequentialWorker
@@ -71,12 +73,30 @@ def test_authenticate_second_open_does_not_stack(tmp_path: Path):
     ui.shutdown()
 
 
+def _write_site_cookies(url: str) -> Path:
+    path = cookie_path_for_url(url)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tFALSE\t0\tSID\ttest\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_authenticate_firefox_success_closes_error_stays(tmp_path: Path):
+    clear_session_cookie_validation()
     ui = _ui(tmp_path)
     page = FakePage()
     ui.page = page
-    ui.import_browser_fn = lambda url, browser="firefox": SimpleNamespace(ok=True, message="ok")
-    dlg = ui.open_authenticate("https://www.youtube.com/watch?v=z")
+    ui.cookie_probe = lambda url, cookiefile: {"id": "z", "title": "ok"}
+
+    def ok_import(url, browser="firefox"):
+        _write_site_cookies(url)
+        return SimpleNamespace(ok=True, message="ok")
+
+    ui.import_browser_fn = ok_import
+    ui.open_authenticate("https://www.youtube.com/watch?v=z")
     ui._auth_firefox()
     assert ui.auth_open is False
     assert ui.dialogs.current is None
@@ -91,9 +111,11 @@ def test_authenticate_firefox_success_closes_error_stays(tmp_path: Path):
 
 
 def test_authenticate_cookies_txt_success_closes(tmp_path: Path):
+    clear_session_cookie_validation()
     ui = _ui(tmp_path)
     page = FakePage()
     ui.page = page
+    ui.cookie_probe = lambda url, cookiefile: {"id": "z", "title": "ok"}
     ui.open_authenticate("https://www.youtube.com/watch?v=z")
     cookie = _netscape(tmp_path / "cookies.txt")
     ui.import_cookies_txt_path(cookie)
