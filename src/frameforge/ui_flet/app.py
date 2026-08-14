@@ -25,6 +25,7 @@ from frameforge.ui_flet.components.status_pill import status_from_repo
 from frameforge.ui_flet.dialog_host import DialogHost
 from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
 from frameforge.ui_flet.queue_chrome import queue_chrome_spec
+from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import (
     COLORS,
     FONT_FAMILY,
@@ -121,13 +122,8 @@ def build_hero(*, on_add: Any | None = None, on_import: Any | None = None) -> ft
         focused_border_color=COLORS["accent"],
         prefix_icon=ft.Icons.LINK,
     )
-    add = ft.FilledButton(
-        content="+ Add to Queue",
-        bgcolor=COLORS["accent"],
-        color="#FFFFFF",
-        on_click=on_add,
-    )
-    imp = ft.OutlinedButton(content="Import TXT/MD", icon=ft.Icons.UPLOAD_FILE, on_click=on_import)
+    add = elevated_filled_button("+ Add to Queue", on_click=on_add)
+    imp = elevated_outlined_button("Import TXT/MD", on_click=on_import, icon=ft.Icons.UPLOAD_FILE)
     row = ft.Row([url, add, imp], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
     row.data = {"url": url, "add": add, "import": imp}
     return row
@@ -265,11 +261,11 @@ class FrameForgeUi:
                 width=460,
             ),
             actions=[
-                ft.FilledButton(content="Import from browser", on_click=act("import_browser")),
-                ft.OutlinedButton(content="Authenticate site", on_click=act("authenticate")),
-                ft.OutlinedButton(content="Retry this job", on_click=act("retry")),
-                ft.OutlinedButton(content="Skip & resume queue", on_click=act("skip_resume")),
-                ft.OutlinedButton(content="Stop queue", on_click=act("stop")),
+                elevated_filled_button("Import from browser", on_click=act("import_browser")),
+                elevated_outlined_button("Authenticate site", on_click=act("authenticate")),
+                elevated_outlined_button("Retry this job", on_click=act("retry")),
+                elevated_outlined_button("Skip & resume queue", on_click=act("skip_resume")),
+                elevated_outlined_button("Stop queue", on_click=act("stop")),
             ],
         )
 

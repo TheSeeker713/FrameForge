@@ -7,6 +7,7 @@ from typing import Any
 import flet as ft
 
 from frameforge.download.formats import PRESET_LABELS, label_for_preference
+from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
 
@@ -104,8 +105,8 @@ def build_settings_dialog(
         title=ft.Text("Settings", color=COLORS["text_primary"], weight=ft.FontWeight.BOLD),
         content=body,
         actions=[
-            ft.OutlinedButton(content="Cancel", on_click=cancel),
-            ft.FilledButton(content="Save", bgcolor=COLORS["accent"], on_click=save),
+            elevated_outlined_button("Cancel", on_click=cancel),
+            elevated_filled_button("Save", on_click=save),
         ],
         bgcolor=COLORS["surface"],
         on_dismiss=cancel,

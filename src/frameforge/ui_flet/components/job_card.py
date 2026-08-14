@@ -7,6 +7,11 @@ from typing import Any
 
 import flet as ft
 
+from frameforge.ui_flet.elevation import (
+    bind_hover_elevation,
+    elevated_filled_button,
+    elevated_outlined_button,
+)
 from frameforge.ui_flet.job_view import MORE_LABELS, OVERFLOW_LABELS, overflow_actions
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
@@ -74,7 +79,15 @@ def build_job_card(
                 on_click=lambda _e=None, jid=job.id, action=aid: on_overflow(jid, action) if on_overflow else None,
             )
         )
-    menu = ft.PopupMenuButton(items=menu_items)
+    menu = ft.PopupMenuButton(items=menu_items, tooltip="More actions")
+    overflow = bind_hover_elevation(
+        ft.Container(
+            content=menu,
+            padding=4,
+            border_radius=8,
+            data={"kind": "overflow"},
+        )
+    )
     progress = None
     if view["progress"] is not None:
         progress = ft.ProgressBar(value=min(1.0, max(0.0, view["progress"] / 100.0)), color=COLORS["progress"], bgcolor="#E2E8F0")
@@ -88,13 +101,12 @@ def build_job_card(
         if view["expanded"]:
             actions = ft.Row(
                 [
-                    ft.FilledButton(
-                        content="Re-authenticate",
-                        bgcolor=COLORS["accent"],
+                    elevated_filled_button(
+                        "Re-authenticate",
                         on_click=lambda _e, jid=job.id: on_reauth(jid) if on_reauth else None,
                     ),
-                    ft.OutlinedButton(
-                        content="Retry",
+                    elevated_outlined_button(
+                        "Retry",
                         on_click=lambda _e, jid=job.id: on_retry(jid) if on_retry else None,
                     ),
                 ],
@@ -108,7 +120,7 @@ def build_job_card(
         )
     body_controls: list[ft.Control] = [
         ft.Row(
-            [checks, thumb, ft.Column([title, meta], expand=True, spacing=2), *badges, menu],
+            [checks, thumb, ft.Column([title, meta], expand=True, spacing=2), *badges, overflow],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=10,
         )
@@ -117,15 +129,15 @@ def build_job_card(
         body_controls.append(progress)
     if fail_row is not None:
         body_controls.append(fail_row)
-    return ft.Container(
+    card = ft.Container(
         bgcolor=fill,
         border=ft.Border.all(1, COLORS["accent"] if selected else COLORS["border"]),
         border_radius=RADIUS_CARD,
         padding=12,
         data={"job_id": job.id, "view": view},
         content=ft.Column(body_controls, spacing=8),
-        shadow=ft.BoxShadow(blur_radius=8, color="#0F172A14", offset=ft.Offset(0, 1)),
     )
+    return bind_hover_elevation(card, selected=selected)
 
 
 def _more_menu(spec: dict[str, Any], on_more: Callable[[str], None] | None) -> ft.PopupMenuButton:
@@ -168,27 +180,27 @@ def build_floating_bar(
     ]
     if spec.get("show_download"):
         buttons.append(
-            ft.FilledButton(content="Download selected", bgcolor=COLORS["accent"], on_click=lambda _e: on_download and on_download())
+            elevated_filled_button("Download selected", on_click=lambda _e: on_download and on_download())
         )
     if spec.get("show_upscale"):
-        buttons.append(ft.OutlinedButton(content="Upscale 2x", on_click=lambda _e: on_upscale and on_upscale()))
+        buttons.append(elevated_outlined_button("Upscale 2x", on_click=lambda _e: on_upscale and on_upscale()))
     if spec.get("show_convert"):
-        buttons.append(ft.OutlinedButton(content="Convert to MP3", on_click=lambda _e: on_convert and on_convert()))
+        buttons.append(elevated_outlined_button("Convert to MP3", on_click=lambda _e: on_convert and on_convert()))
     if spec.get("show_retry"):
-        buttons.append(ft.OutlinedButton(content="Retry selected", on_click=lambda _e: on_retry and on_retry()))
+        buttons.append(elevated_outlined_button("Retry selected", on_click=lambda _e: on_retry and on_retry()))
     if spec.get("show_clear"):
-        buttons.append(ft.OutlinedButton(content="Clear selected", on_click=lambda _e: on_clear and on_clear()))
+        buttons.append(elevated_outlined_button("Clear selected", on_click=lambda _e: on_clear and on_clear()))
     buttons.append(_more_menu(spec, on_more))
-    return ft.Container(
+    bar = ft.Container(
         bgcolor=COLORS["surface"],
         border=ft.Border.all(1, COLORS["border"]),
         border_radius=16,
         padding=12,
         visible=True,
-        shadow=ft.BoxShadow(blur_radius=16, color="#0F172A22", offset=ft.Offset(0, 4)),
         content=ft.Row(buttons, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         data=spec,
     )
+    return bind_hover_elevation(bar)
 
 
 def build_queue_chrome(
@@ -204,32 +216,34 @@ def build_queue_chrome(
     buttons: list[ft.Control] = []
     if spec.get("show_download_all"):
         buttons.append(
-            ft.FilledButton(
-                content="Download all pending",
-                bgcolor=COLORS["accent"],
+            elevated_filled_button(
+                "Download all pending",
                 on_click=lambda _e: on_download_all and on_download_all(),
             )
         )
     if spec.get("show_retry_failed"):
         buttons.append(
-            ft.OutlinedButton(content="Retry failed", on_click=lambda _e: on_retry_failed and on_retry_failed())
+            elevated_outlined_button("Retry failed", on_click=lambda _e: on_retry_failed and on_retry_failed())
         )
     if spec.get("show_clear_finished"):
         buttons.append(
-            ft.OutlinedButton(content="Clear finished", on_click=lambda _e: on_clear_finished and on_clear_finished())
+            elevated_outlined_button("Clear finished", on_click=lambda _e: on_clear_finished and on_clear_finished())
         )
     buttons.append(
-        ft.OutlinedButton(
-            content="Clear selected",
+        elevated_outlined_button(
+            "Clear selected",
             disabled=not spec.get("clear_selected_enabled"),
             on_click=lambda _e: on_clear_selected and on_clear_selected(),
         )
     )
-    return ft.Container(
+    row = ft.Container(
         visible=True,
         data=spec,
         content=ft.Row(buttons, spacing=8, wrap=True),
+        padding=4,
+        border_radius=10,
     )
+    return bind_hover_elevation(row)
 
 
 def empty_queue_state() -> ft.Container:
