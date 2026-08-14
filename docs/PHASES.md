@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.0 (Flet GUI rewrite)
+## Status: v0.5.1 (Flet interaction fix)
 
-Package version is **0.5.0**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker, fail-pause, history v2, and queue clear are unchanged. See [V0.5_UI_COMPLETE.md](V0.5_UI_COMPLETE.md) and [UI_REDESIGN.md](UI_REDESIGN.md).
+Package version is **0.5.1**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker, fail-pause, history v2, and queue clear are unchanged. See [V0.5.1_COMPLETE.md](V0.5.1_COMPLETE.md), [ACCEPTANCE_V051.md](ACCEPTANCE_V051.md), and [V0.5_UI_COMPLETE.md](V0.5_UI_COMPLETE.md).
 
 ## Phase 0 – Foundation
 

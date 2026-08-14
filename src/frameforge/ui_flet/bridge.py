@@ -40,10 +40,24 @@ class UiBridge:
 
     def retry_job(self, job_id: int) -> None:
         """Reset one failed job to pending and arm download for that id (explicit Retry)."""
-        job = self.repo.get(int(job_id))
-        self.repo.update_status(job.id, "pending", error=None, progress=0)
-        self.repo.merge_options(job.id, {"fail_pause": False, "queue_hidden": False})
-        self.worker.request_download_ids([job.id])
+        self.retry_failed_ids([int(job_id)])
+
+    def retry_failed_ids(self, job_ids: list[int]) -> list[int]:
+        """Reset given failed jobs to pending and arm those ids only (one arm call)."""
+        ids: list[int] = []
+        for raw in job_ids:
+            job = self.repo.get(int(raw))
+            if job.status != "failed":
+                continue
+            self.repo.update_status(job.id, "pending", error=None, progress=0)
+            self.repo.merge_options(job.id, {"fail_pause": False, "queue_hidden": False})
+            ids.append(job.id)
+        if ids:
+            self.worker.request_download_ids(ids)
+        return ids
+
+    def retry_all_failed(self) -> list[int]:
+        return self.retry_failed_ids([j.id for j in self.repo.list_jobs("failed")])
 
     def download_selected(self, job_ids: list[int]) -> None:
         pending = [i for i in job_ids if self.repo.get(i).status == "pending"]

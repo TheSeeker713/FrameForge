@@ -1,4 +1,4 @@
-"""Queue / history job card and floating selection bar (Flet)."""
+"""Queue / history job card, floating selection bar, and queue chrome row (Flet)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import flet as ft
 
-from frameforge.ui_flet.job_view import OVERFLOW_IDS, card_view
+from frameforge.ui_flet.job_view import MORE_LABELS, OVERFLOW_LABELS, overflow_actions
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
 
@@ -44,6 +44,8 @@ def build_job_card(
     on_expand: Callable[[int], None] | None = None,
     on_overflow: Callable[[int, str], None] | None = None,
 ) -> ft.Container:
+    from frameforge.ui_flet.job_view import card_view
+
     view = card_view(job, selected=selected, expanded=expanded, show_progress=show_progress)
     bg, fg = status_colors(view["status"])
     fill = COLORS["select"] if selected else COLORS["surface"]
@@ -64,15 +66,15 @@ def build_job_card(
     badges = [_pill(view["status"], bg=bg, fg=fg)]
     if view["recommended"]:
         badges.append(_pill("Recommended 2x", bg=COLORS["warn_bg"], fg=COLORS["warn"]))
-    menu = ft.PopupMenuButton(
-        items=[
-            ft.PopupMenuItem(content=aid.replace("_", " ").title(), data=aid)
-            for aid in OVERFLOW_IDS
-        ],
-        on_select=lambda e, jid=job.id: on_overflow(jid, str(e.control.data or e.data or ""))
-        if on_overflow
-        else None,
-    )
+    menu_items = []
+    for aid in overflow_actions(job):
+        menu_items.append(
+            ft.PopupMenuItem(
+                content=OVERFLOW_LABELS.get(aid, aid.replace("_", " ").title()),
+                on_click=lambda _e=None, jid=job.id, action=aid: on_overflow(jid, action) if on_overflow else None,
+            )
+        )
+    menu = ft.PopupMenuButton(items=menu_items)
     progress = None
     if view["progress"] is not None:
         progress = ft.ProgressBar(value=min(1.0, max(0.0, view["progress"] / 100.0)), color=COLORS["progress"], bgcolor="#E2E8F0")
@@ -126,12 +128,38 @@ def build_job_card(
     )
 
 
+def _more_menu(spec: dict[str, Any], on_more: Callable[[str], None] | None) -> ft.PopupMenuButton:
+    """Plain PopupMenuButton — never nest another Button (that swallows clicks)."""
+    items = []
+    for aid in spec.get("more_items") or [
+        "set_format",
+        "clear_finished",
+        "select_recommended",
+        "clear_selected",
+        "download_all",
+    ]:
+        items.append(
+            ft.PopupMenuItem(
+                content=MORE_LABELS.get(aid, aid.replace("_", " ").title()),
+                on_click=lambda _e=None, action=aid: on_more(action) if on_more else None,
+            )
+        )
+    return ft.PopupMenuButton(
+        content=ft.Text("More", color=COLORS["accent"], weight=ft.FontWeight.W_600),
+        tooltip="More",
+        items=items,
+        data={"kind": "more", "items": [it.content for it in items]},
+    )
+
+
 def build_floating_bar(
     spec: dict[str, Any],
     *,
     on_download: Callable[[], None] | None = None,
     on_upscale: Callable[[], None] | None = None,
     on_convert: Callable[[], None] | None = None,
+    on_clear: Callable[[], None] | None = None,
+    on_retry: Callable[[], None] | None = None,
     on_more: Callable[[str], None] | None = None,
 ) -> ft.Container:
     buttons: list[ft.Control] = [
@@ -146,21 +174,11 @@ def build_floating_bar(
         buttons.append(ft.OutlinedButton(content="Upscale 2x", on_click=lambda _e: on_upscale and on_upscale()))
     if spec.get("show_convert"):
         buttons.append(ft.OutlinedButton(content="Convert to MP3", on_click=lambda _e: on_convert and on_convert()))
-    buttons.append(
-        ft.PopupMenuButton(
-            content=ft.OutlinedButton(content="More"),
-            items=[
-                ft.PopupMenuItem(content="Set format", data="set_format"),
-                ft.PopupMenuItem(content="Clear finished", data="clear_finished"),
-                ft.PopupMenuItem(content="Select recommended", data="select_recommended"),
-                ft.PopupMenuItem(content="Clear selected", data="clear_selected"),
-                ft.PopupMenuItem(content="Download all pending", data="download_all"),
-            ],
-            on_select=lambda e: on_more(str(getattr(e.control, "data", None) or getattr(e, "data", "") or ""))
-            if on_more
-            else None,
-        )
-    )
+    if spec.get("show_retry"):
+        buttons.append(ft.OutlinedButton(content="Retry selected", on_click=lambda _e: on_retry and on_retry()))
+    if spec.get("show_clear"):
+        buttons.append(ft.OutlinedButton(content="Clear selected", on_click=lambda _e: on_clear and on_clear()))
+    buttons.append(_more_menu(spec, on_more))
     return ft.Container(
         bgcolor=COLORS["surface"],
         border=ft.Border.all(1, COLORS["border"]),
@@ -170,6 +188,47 @@ def build_floating_bar(
         shadow=ft.BoxShadow(blur_radius=16, color="#0F172A22", offset=ft.Offset(0, 4)),
         content=ft.Row(buttons, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         data=spec,
+    )
+
+
+def build_queue_chrome(
+    spec: dict[str, Any],
+    *,
+    on_download_all: Callable[[], None] | None = None,
+    on_retry_failed: Callable[[], None] | None = None,
+    on_clear_finished: Callable[[], None] | None = None,
+    on_clear_selected: Callable[[], None] | None = None,
+) -> ft.Container:
+    if not spec.get("visible"):
+        return ft.Container(visible=False, data=spec)
+    buttons: list[ft.Control] = []
+    if spec.get("show_download_all"):
+        buttons.append(
+            ft.FilledButton(
+                content="Download all pending",
+                bgcolor=COLORS["accent"],
+                on_click=lambda _e: on_download_all and on_download_all(),
+            )
+        )
+    if spec.get("show_retry_failed"):
+        buttons.append(
+            ft.OutlinedButton(content="Retry failed", on_click=lambda _e: on_retry_failed and on_retry_failed())
+        )
+    if spec.get("show_clear_finished"):
+        buttons.append(
+            ft.OutlinedButton(content="Clear finished", on_click=lambda _e: on_clear_finished and on_clear_finished())
+        )
+    buttons.append(
+        ft.OutlinedButton(
+            content="Clear selected",
+            disabled=not spec.get("clear_selected_enabled"),
+            on_click=lambda _e: on_clear_selected and on_clear_selected(),
+        )
+    )
+    return ft.Container(
+        visible=True,
+        data=spec,
+        content=ft.Row(buttons, spacing=8, wrap=True),
     )
 
 

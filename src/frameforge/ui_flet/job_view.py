@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from frameforge.errors import human_cause
@@ -29,6 +30,32 @@ OVERFLOW_IDS = (
     "reveal_file",
     "remove_from_queue",
 )
+
+MORE_LABELS = {
+    "download_selected": "Download selected",
+    "upscale": "Upscale 2x",
+    "convert": "Convert to MP3",
+    "set_format": "Set format",
+    "clear_selected": "Clear selected",
+    "retry_selected": "Retry selected",
+    "open_folder": "Open folder",
+    "reveal_file": "Reveal file",
+    "select_recommended": "Select recommended",
+    "clear_finished": "Clear finished",
+    "download_all": "Download all pending",
+    "retry": "Retry",
+    "remove_from_queue": "Clear from queue",
+}
+
+OVERFLOW_LABELS = {
+    "retry": "Retry",
+    "upscale": "Upscale 2x",
+    "convert": "Convert to MP3",
+    "set_format": "Set format",
+    "open_folder": "Open folder",
+    "reveal_file": "Reveal file",
+    "remove_from_queue": "Clear from queue",
+}
 
 
 def status_pill(job: Any) -> str:
@@ -91,6 +118,35 @@ def overflow_actions(job: Any) -> list[str]:
     return actions
 
 
+def _has_local_file(job: Any) -> bool:
+    for raw in (getattr(job, "output_path", None), getattr(job, "download_path", None)):
+        if raw and Path(raw).exists():
+            return True
+    return False
+
+
+def more_menu_items(jobs: list[Any], selected_ids: set[int]) -> list[str]:
+    """Action ids for the More menu. Empty handlers are forbidden — every id is wired."""
+    selected = [j for j in jobs if j.id in selected_ids]
+    items: list[str] = []
+    if any(can_download(j) for j in selected):
+        items.append("download_selected")
+    if any(can_upscale(j) and not getattr(j, "upscale_blocked", False) for j in selected):
+        items.append("upscale")
+    if any(can_convert(j) for j in selected):
+        items.append("convert")
+    items.append("set_format")
+    items.append("clear_selected")
+    if any(getattr(j, "status", None) == "failed" for j in selected):
+        items.append("retry_selected")
+    if len(selected) == 1 and _has_local_file(selected[0]):
+        items.append("open_folder")
+        items.append("reveal_file")
+    items.append("select_recommended")
+    items.append("clear_finished")
+    return items
+
+
 def floating_bar_view(jobs: list[Any], selected_ids: set[int]) -> dict[str, Any] | None:
     if not selected_ids:
         return None
@@ -102,7 +158,10 @@ def floating_bar_view(jobs: list[Any], selected_ids: set[int]) -> dict[str, Any]
         "show_download": any(can_download(j) for j in selected),
         "show_upscale": any(can_upscale(j) and not getattr(j, "upscale_blocked", False) for j in selected),
         "show_convert": any(can_convert(j) for j in selected),
+        "show_clear": True,
+        "show_retry": any(getattr(j, "status", None) == "failed" for j in selected),
         "ids": [j.id for j in selected],
+        "more_items": more_menu_items(jobs, selected_ids),
     }
 
 

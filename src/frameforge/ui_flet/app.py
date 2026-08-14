@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import flet as ft
 
+from frameforge import __version__
 from frameforge.db.repository import JobRepository
 from frameforge.paths import db_path, ensure_output_tree
 from frameforge.pipeline import build_worker
@@ -13,11 +17,14 @@ from frameforge.ui_flet.bridge import UiBridge
 from frameforge.ui_flet.components.job_card import (
     build_floating_bar,
     build_job_card,
+    build_queue_chrome,
     empty_queue_state,
 )
 from frameforge.ui_flet.components.settings_dialog import build_settings_dialog
 from frameforge.ui_flet.components.status_pill import status_from_repo
+from frameforge.ui_flet.dialog_host import DialogHost
 from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
+from frameforge.ui_flet.queue_chrome import queue_chrome_spec
 from frameforge.ui_flet.theme import (
     COLORS,
     FONT_FAMILY,
@@ -26,9 +33,12 @@ from frameforge.ui_flet.theme import (
     WINDOW_WIDTH,
 )
 
+_GUI_RUNNING = False
+
 
 def apply_page_chrome(page: ft.Page) -> None:
-    page.title = "FrameForge"
+    """Opaque native window + no DWM shadow — avoids the Windows drag ghost copy."""
+    page.title = f"FrameForge {__version__}"
     page.bgcolor = COLORS["app_bg"]
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 20
@@ -39,6 +49,13 @@ def apply_page_chrome(page: ft.Page) -> None:
         window.height = WINDOW_HEIGHT
         window.min_width = 900
         window.min_height = 600
+        window.bgcolor = COLORS["app_bg"]
+        window.opacity = 1.0
+        window.shadow = False
+        window.title_bar_hidden = False
+        window.frameless = False
+        window.visible = True
+        window.ignore_mouse_events = False
 
 
 def _placeholder_panel(label: str) -> ft.Container:
@@ -166,15 +183,20 @@ class FrameForgeUi:
         if start_worker:
             self.worker.request_download_all()
         self.page: ft.Page | None = None
+        self.dialogs = DialogHost(self)
         self.settings_dialog: ft.AlertDialog | None = None
         self.settings_focus_count = 0
         self.auth_open = False
+        self.format_open = False
+        self.bulk_open = False
+        self.playlist_open = False
         self.header: ft.Row | None = None
         self.hero: ft.Row | None = None
         self.tabs: ft.Tabs | None = None
         self.selected_ids: set[int] = set()
         self.expanded_failed: set[int] = set()
         self.queue_list: ft.ListView | None = None
+        self.queue_chrome: ft.Container | None = None
         self.history_list: ft.ListView | None = None
         self.thumbs_grid: ft.GridView | None = None
         self.floating: ft.Container | None = None
@@ -185,29 +207,53 @@ class FrameForgeUi:
         self.history_status: str | None = None
         self.history_domain: str | None = None
         self.history_search: str = ""
+        self.file_picker: ft.FilePicker | None = None
+        self.reveal_launch = True
+        self.exit_process_on_quit = False
+        self._shutdown_complete = False
+        self._import_preview: Any | None = None
+        self._pending_import = False
+        self._browser_cookie_runner: Any | None = None
+        self.import_browser_fn: Any | None = None
+        self.last_more_action: str | None = None
+        self.more_invocations: list[str] = []
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
+
+    def close_dialog(self, _e: Any = None) -> None:
+        self.dialogs.close(_e)
 
     def _on_fail_pause(self, job: Any, payload: dict[str, Any]) -> None:
         self.fail_pause_payload = payload
         self.fail_pause_shown += 1
         if self.page is not None:
-            self.page.show_dialog(self._fail_pause_dialog(payload))
-            self.page.update()
+            self.dialogs.open("fail_pause", self._fail_pause_dialog(payload))
 
     def _fail_pause_dialog(self, payload: dict[str, Any]) -> ft.AlertDialog:
         jid = int(payload["job_id"])
 
         def act(aid: str):
             def _(_e=None):
+                if aid == "authenticate":
+                    url = payload.get("url")
+                    self.close_dialog()
+                    self.open_authenticate(prefill=url)
+                    return
+                if aid == "import_browser":
+                    url = str(payload.get("url") or "")
+                    if url:
+                        self.import_cookies_from_browser_for_site(url, browser="firefox")
+                    self.bridge.handle_fail_pause_action(aid, jid)
+                    self.close_dialog()
+                    self.refresh_queue()
+                    return
                 self.bridge.handle_fail_pause_action(aid, jid)
-                if self.page is not None:
-                    self.page.pop_dialog()
+                self.close_dialog()
                 self.refresh_queue()
 
             return _
 
         return ft.AlertDialog(
-            modal=True,
+            modal=False,
             title=ft.Text("Queue paused"),
             content=ft.Column(
                 [
@@ -239,12 +285,13 @@ class FrameForgeUi:
             on_import=lambda _e=None: self.import_file(),
         )
         self.resource_banner = ft.Container(visible=False, data={"text": ""})
+        self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.thumbs_grid = ft.GridView(expand=True, runs_count=4, max_extent=220, spacing=8)
         self.floating = ft.Container(visible=False)
         queue_body = ft.Column(
-            [self.queue_list, self.floating],
+            [self.queue_chrome, self.queue_list, self.floating],
             expand=True,
             spacing=8,
         )
@@ -286,6 +333,21 @@ class FrameForgeUi:
         self._sync_floating()
         self.refresh_queue(force=True)
 
+    def _sync_queue_chrome(self) -> None:
+        spec = queue_chrome_spec(self.queue_jobs(), self.selected_ids)
+        if self.queue_chrome is None:
+            return
+        built = build_queue_chrome(
+            spec,
+            on_download_all=self.download_all_pending,
+            on_retry_failed=self.retry_all_failed,
+            on_clear_finished=self.clear_finished,
+            on_clear_selected=self.clear_selected,
+        )
+        self.queue_chrome.visible = built.visible
+        self.queue_chrome.content = built.content
+        self.queue_chrome.data = spec
+
     def _sync_floating(self) -> None:
         spec = floating_bar_view(self.queue_jobs(), self.selected_ids)
         if self.floating is None:
@@ -301,6 +363,8 @@ class FrameForgeUi:
             on_download=self.download_selected,
             on_upscale=self.upscale_selected,
             on_convert=self.convert_selected,
+            on_clear=self.clear_selected,
+            on_retry=self.retry_selected_failed,
             on_more=self._on_more,
         ).content
         self.floating.data = spec
@@ -333,6 +397,7 @@ class FrameForgeUi:
                 )
                 for job in jobs
             ]
+        self._sync_queue_chrome()
         self._sync_floating()
         if self.page is not None:
             self.page.update()
@@ -358,9 +423,35 @@ class FrameForgeUi:
         self.bridge.retry_job(job_id)
         self.refresh_queue(force=True)
 
+    def retry_all_failed(self) -> list[int]:
+        ids = self.bridge.retry_all_failed()
+        self.refresh_queue(force=True)
+        return ids
+
+    def retry_selected_failed(self) -> list[int]:
+        ids = self.bridge.retry_failed_ids(sorted(self.selected_ids))
+        self.refresh_queue(force=True)
+        return ids
+
+    def download_all_pending(self) -> None:
+        self.bridge.download_all_pending()
+        self.refresh_queue(force=True)
+
+    def clear_finished(self) -> None:
+        self.repo.clear_finished_from_queue()
+        self.selected_ids.clear()
+        self.refresh_queue(force=True)
+
+    def clear_selected(self) -> None:
+        if not self.selected_ids:
+            return
+        self.repo.clear_from_queue(sorted(self.selected_ids))
+        self.selected_ids.clear()
+        self.refresh_queue(force=True)
+
     def reauthenticate_job(self, job_id: int) -> None:
-        self.bridge.handle_fail_pause_action("authenticate", job_id)
-        self.auth_open = True
+        job = self.repo.get(job_id)
+        self.open_authenticate(prefill=job.url)
 
     def download_selected(self) -> None:
         self.bridge.download_selected(sorted(self.selected_ids))
@@ -369,9 +460,13 @@ class FrameForgeUi:
     def upscale_selected(self) -> None:
         from frameforge.gui.actions import can_upscale
 
-        ids = [i for i in self.selected_ids if can_upscale(self.repo.get(i)) and not self.repo.get(i).upscale_blocked]
-        for jid in ids:
-            self.worker.request_upscale_ids([jid]) if hasattr(self.worker, "request_upscale_ids") else None
+        ids = [
+            i
+            for i in self.selected_ids
+            if can_upscale(self.repo.get(i)) and not self.repo.get(i).upscale_blocked
+        ]
+        if ids and hasattr(self.worker, "request_upscale_ids"):
+            self.worker.request_upscale_ids(ids)
         self.refresh_queue(force=True)
 
     def convert_selected(self) -> None:
@@ -379,41 +474,75 @@ class FrameForgeUi:
             self.worker.request_convert_ids(sorted(self.selected_ids))
         self.refresh_queue(force=True)
 
+    def open_folder_selected(self) -> None:
+        from frameforge.util.reveal import RevealError, open_job_folder
+
+        ids = sorted(self.selected_ids)
+        if not ids:
+            return
+        job = self.repo.get(ids[0])
+        try:
+            open_job_folder(job, launch=self.reveal_launch)
+        except RevealError:
+            pass
+
+    def reveal_file_selected(self) -> None:
+        from frameforge.util.reveal import RevealError, reveal_job_file
+
+        ids = sorted(self.selected_ids)
+        if not ids:
+            return
+        job = self.repo.get(ids[0])
+        try:
+            reveal_job_file(job, launch=self.reveal_launch)
+        except RevealError:
+            pass
+
+    def select_recommended(self) -> None:
+        self.selected_ids = {
+            j.id for j in self.queue_jobs() if j.upscale_recommended and j.status == "completed"
+        }
+        self.refresh_queue(force=True)
+
     def handle_overflow(self, job_id: int, action: str) -> None:
+        self.selected_ids = {job_id}
         if action == "retry":
             self.retry_failed_job(job_id)
         elif action == "remove_from_queue":
-            self.repo.clear_from_queue([job_id])
-            self.selected_ids.discard(job_id)
-            self.refresh_queue(force=True)
+            self.clear_selected()
         elif action == "upscale":
-            self.selected_ids = {job_id}
             self.upscale_selected()
         elif action == "convert":
-            self.selected_ids = {job_id}
             self.convert_selected()
         elif action == "set_format":
-            self._format_job_ids = [job_id]
-            self.format_open = True
+            self.open_format_modal([job_id])
+        elif action == "open_folder":
+            self.open_folder_selected()
+        elif action == "reveal_file":
+            self.reveal_file_selected()
         else:
             self._last_overflow = (job_id, action)
 
     def _on_more(self, action: str) -> None:
-        if action == "clear_finished":
-            self.repo.clear_finished_from_queue()
-        elif action == "clear_selected":
-            self.repo.clear_from_queue(sorted(self.selected_ids))
-            self.selected_ids.clear()
-        elif action == "select_recommended":
-            self.selected_ids = {
-                j.id for j in self.queue_jobs() if j.upscale_recommended and j.status == "completed"
-            }
-        elif action == "download_all":
-            self.bridge.download_all_pending()
-        elif action == "set_format":
-            self.format_open = True
-            self._format_job_ids = sorted(self.selected_ids)
-        self.refresh_queue(force=True)
+        self.last_more_action = action
+        self.more_invocations.append(action)
+        handlers = {
+            "clear_finished": self.clear_finished,
+            "clear_selected": self.clear_selected,
+            "select_recommended": self.select_recommended,
+            "download_all": self.download_all_pending,
+            "download_selected": self.download_selected,
+            "set_format": lambda: self.open_format_modal(sorted(self.selected_ids)),
+            "upscale": self.upscale_selected,
+            "convert": self.convert_selected,
+            "retry_selected": self.retry_selected_failed,
+            "open_folder": self.open_folder_selected,
+            "reveal_file": self.reveal_file_selected,
+        }
+        fn = handlers.get(action)
+        if fn is None:
+            raise ValueError(f"unwired More action: {action}")
+        fn()
 
     def set_history_filter(self, status: str | None) -> None:
         self.history_status = status
@@ -481,55 +610,92 @@ class FrameForgeUi:
         self.resource_banner.data = {"text": text or ""}
         self.resource_banner.content = ft.Text(text or "", color=COLORS["warn"]) if text else None
 
+    def _default_format(self) -> str:
+        return self.repo.get_setting("format_preference", "best") or "best"
+
+    def _default_upscale(self) -> bool:
+        return self.repo.get_setting("upscale_after_download", "0") == "1"
+
     def open_format_modal(self, job_ids: list[int] | None = None) -> ft.AlertDialog:
         from frameforge.ui_flet.components.modals import format_dialog
 
         ids = list(job_ids or sorted(self.selected_ids))
-        self.format_open = True
         self._format_job_ids = ids
 
         def apply(label: str) -> None:
             for jid in ids:
                 self.repo.set_format_preference(jid, label)
-            self.format_open = False
+            self.close_dialog()
 
-        self.format_dialog = format_dialog(on_apply=apply, on_cancel=lambda _e=None: setattr(self, "format_open", False))
-        return self.format_dialog
+        self.format_dialog = format_dialog(on_apply=apply, on_cancel=self.close_dialog)
+        return self.dialogs.open("format", self.format_dialog)
 
-    def open_bulk_confirm(self, new_count: int, dup_count: int) -> ft.AlertDialog:
+    def open_bulk_confirm(
+        self,
+        new_count: int,
+        dup_count: int,
+        preview: Any | None = None,
+    ) -> ft.AlertDialog:
+        from frameforge.download.bulk_import import confirm_add
         from frameforge.ui_flet.components.modals import bulk_import_dialog
 
-        self.bulk_open = True
+        self._import_preview = preview
+
+        def on_add(_e=None) -> None:
+            if self._import_preview is not None:
+                confirm_add(
+                    self._import_preview,
+                    self.repo,
+                    format_preference=self._default_format(),
+                    upscale=self._default_upscale(),
+                )
+                self._import_preview = None
+            self.close_dialog()
+            self.refresh_queue(force=True)
+
         self.bulk_dialog = bulk_import_dialog(
             new_count,
             dup_count,
-            on_add=lambda _e=None: setattr(self, "bulk_open", False),
-            on_cancel=lambda _e=None: setattr(self, "bulk_open", False),
+            on_add=on_add,
+            on_cancel=self.close_dialog,
         )
-        return self.bulk_dialog
+        return self.dialogs.open("bulk", self.bulk_dialog)
 
     def open_playlist_modal(self, title: str, entries: list[Any]) -> ft.AlertDialog:
         from frameforge.ui_flet.components.modals import playlist_dialog
 
-        self.playlist_open = True
+        self.playlist_entries = list(entries)
+        self.playlist_selected = set(range(len(entries)))
+
+        def on_enqueue(_e=None) -> None:
+            self.playlist_enqueued = sorted(self.playlist_selected)
+            self.close_dialog()
+
         self.playlist_dialog = playlist_dialog(
             title,
             entries,
-            on_enqueue=lambda _e=None: setattr(self, "playlist_open", False),
-            on_cancel=lambda _e=None: setattr(self, "playlist_open", False),
+            on_enqueue=on_enqueue,
+            on_cancel=self.close_dialog,
+            on_select_all=lambda: setattr(self, "playlist_selected", set(range(len(entries)))),
+            on_select_none=lambda: setattr(self, "playlist_selected", set()),
         )
-        return self.playlist_dialog
+        return self.dialogs.open("playlist", self.playlist_dialog)
 
     def open_quit_busy(self) -> ft.AlertDialog:
+        from frameforge.gui.exit_policy import OUTCOME_EXIT, apply_quit_choice
         from frameforge.ui_flet.components.modals import quit_busy_dialog
 
         self.quit_choice: str | None = None
 
         def choose(c: str) -> None:
             self.quit_choice = c
+            self.close_dialog()
+            outcome = apply_quit_choice(self.worker, c)
+            if outcome == OUTCOME_EXIT:
+                self._finish_exit()
 
-        self.quit_dialog = quit_busy_dialog(on_choice=choose, on_cancel=lambda _e=None: None)
-        return self.quit_dialog
+        self.quit_dialog = quit_busy_dialog(on_choice=choose, on_cancel=self.close_dialog)
+        return self.dialogs.open("quit", self.quit_dialog)
 
     def add_url(self) -> Any | None:
         field = (self.hero.data or {}).get("url") if self.hero is not None else None
@@ -544,56 +710,234 @@ class FrameForgeUi:
             self.page.update()
         return job
 
-    def import_file(self) -> None:
-        """Placeholder until Phase E bulk-import modal; enqueue is never auto-started."""
-        self._pending_import = True
+    def _ensure_file_picker(self) -> ft.FilePicker:
+        if self.file_picker is None:
+            self.file_picker = ft.FilePicker()
+        page = self.page
+        if page is not None:
+            services = getattr(page, "services", None)
+            if services is None:
+                page.services = []
+                services = page.services
+            if self.file_picker not in services:
+                services.append(self.file_picker)
+                try:
+                    page.update()
+                except Exception:  # noqa: BLE001
+                    pass
+        return self.file_picker
+
+    def import_file(self, path: str | None = None) -> ft.AlertDialog | None:
+        """Hero Import: picker (or explicit path) → confirm modal → pending only. Never arms."""
+        if path:
+            return self.show_import_preview(path)
+        if self.page is None:
+            self._pending_import = True
+            return None
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_import_file)
+        return None
+
+    async def _pick_import_file(self) -> None:
+        picker = self._ensure_file_picker()
+        files = await picker.pick_files(
+            dialog_title="Import URL list",
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["txt", "md"],
+        )
+        if not files:
+            return
+        picked = files[0].path
+        if picked:
+            self.show_import_preview(picked)
+
+    def show_import_preview(self, path: str | Path) -> ft.AlertDialog:
+        from frameforge.download.bulk_import import preview_import
+
+        preview = preview_import(path, self.repo)
+        return self.open_bulk_confirm(preview.new_count, preview.skipped_dupe_count, preview=preview)
+
+    def confirm_bulk_import(self) -> None:
+        data = getattr(getattr(self, "bulk_dialog", None), "data", None) or {}
+        on_add = data.get("on_add")
+        if on_add:
+            on_add()
+
+    def import_cookies_from_browser_for_site(self, url_or_domain: str, *, browser: str = "firefox"):
+        if self.import_browser_fn is not None:
+            return self.import_browser_fn(url_or_domain, browser=browser)
+        from frameforge.download.browser_import import import_cookies_from_browser
+
+        return import_cookies_from_browser(
+            url_or_domain,
+            browser=browser,
+            runner=self._browser_cookie_runner,
+        )
+
+    def import_cookies_txt_path(self, path: str | Path) -> None:
+        from frameforge.download import cookies as cookie_mod
+
+        raw = self._auth_domain_value()
+        err = self._auth_error_control()
+        try:
+            domain = cookie_mod.normalize_domain(raw)
+            dest = cookie_mod.import_netscape_cookies(domain, Path(path))
+        except Exception as exc:  # noqa: BLE001
+            if err is not None:
+                err.value = str(exc)
+                err.visible = True
+                if self.page is not None:
+                    self.page.update()
+            return
+        if err is not None:
+            err.value = f"Saved cookies to {dest}"
+            err.visible = True
+        self.close_dialog()
+
+    def _auth_domain_value(self) -> str:
+        dlg = getattr(self, "auth_dialog", None)
+        data = getattr(dlg, "data", None) or {}
+        field = data.get("field")
+        return (getattr(field, "value", None) or "").strip()
+
+    def _auth_error_control(self) -> Any | None:
+        dlg = getattr(self, "auth_dialog", None)
+        data = getattr(dlg, "data", None) or {}
+        return data.get("error")
+
+    def _set_auth_error(self, text: str) -> None:
+        err = self._auth_error_control()
+        if err is None:
+            return
+        err.value = text
+        err.visible = bool(text)
+        if self.page is not None:
+            self.page.update()
+
+    def _auth_firefox(self, _e: Any = None) -> None:
+        raw = self._auth_domain_value()
+        if not raw:
+            self._set_auth_error("Enter a site URL or domain first.")
+            return
+        result = self.import_cookies_from_browser_for_site(raw, browser="firefox")
+        if getattr(result, "ok", False):
+            self.close_dialog()
+            return
+        self._set_auth_error(getattr(result, "message", None) or "Firefox import failed.")
+
+    def _auth_choose_txt(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_cookies_txt)
+
+    async def _pick_cookies_txt(self) -> None:
+        picker = self._ensure_file_picker()
+        files = await picker.pick_files(
+            dialog_title="Import Netscape cookies.txt",
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["txt"],
+        )
+        if not files or not files[0].path:
+            return
+        self.import_cookies_txt_path(files[0].path)
 
     def open_authenticate(self, prefill: str | None = None) -> ft.AlertDialog:
         from frameforge.ui_flet.components.modals import authenticate_dialog
-        from urllib.parse import urlparse
 
-        self.auth_open = True
+        if self.dialogs.kind == "auth" and self.dialogs.current is not None:
+            return self.dialogs.open("auth", self.dialogs.current)
         host = ""
         if prefill:
             host = urlparse(prefill).hostname or prefill
         self.auth_dialog = authenticate_dialog(
             host or "site",
-            on_firefox=lambda _e=None: None,
-            on_txt=lambda _e=None: None,
-            on_close=lambda _e=None: setattr(self, "auth_open", False),
+            prefill=prefill or "",
+            on_firefox=self._auth_firefox,
+            on_txt=self._auth_choose_txt,
+            on_close=self.close_dialog,
         )
-        if self.page is not None:
-            self.page.show_dialog(self.auth_dialog)
-            self.page.update()
-        return self.auth_dialog
+        return self.dialogs.open("auth", self.auth_dialog)
 
     def open_settings(self) -> ft.AlertDialog:
+        if self.dialogs.kind == "settings" and self.dialogs.current is not None:
+            return self.dialogs.open("settings", self.dialogs.current)
         if self.bridge.settings_open and self.settings_dialog is not None:
-            self.settings_focus_count += 1
-            if self.page is not None:
-                self.page.show_dialog(self.settings_dialog)
-                self.page.update()
-            return self.settings_dialog
-
-        def on_close(_e=None) -> None:
-            self.bridge.settings_open = False
-            if self.page is not None:
-                self.page.pop_dialog()
-                self.page.update()
+            return self.dialogs.open("settings", self.settings_dialog)
 
         self.settings_dialog = build_settings_dialog(
             self.repo,
-            on_close=on_close,
+            on_close=self.close_dialog,
         )
-        self.bridge.settings_open = True
-        if self.page is not None:
-            self.page.show_dialog(self.settings_dialog)
-            self.page.update()
-        return self.settings_dialog
+        return self.dialogs.open("settings", self.settings_dialog)
+
+    def _on_keyboard(self, e: Any) -> None:
+        key = getattr(e, "key", None)
+        if key in {"Escape", "Esc"}:
+            self.close_dialog()
+
+    def _on_window_event(self, e: Any) -> None:
+        et = getattr(e, "type", None)
+        name = getattr(et, "value", et)
+        if name in ("close", getattr(ft.WindowEventType, "CLOSE", "close")):
+            self.handle_window_close()
+
+    def _on_disconnect(self, _e: Any = None) -> None:
+        if not self._shutdown_complete:
+            self._finish_exit()
+
+    def handle_window_close(self, _e: Any = None) -> str:
+        from frameforge.gui.exit_policy import NEEDS_CHOICE, classify_exit
+
+        kind = classify_exit(self.repo, self.worker)
+        if kind == NEEDS_CHOICE:
+            self.open_quit_busy()
+            return "choice"
+        self._finish_exit()
+        return "exit"
+
+    def _finish_exit(self) -> None:
+        if self._shutdown_complete:
+            return
+        self.close_dialog()
+        self.shutdown()
+        self._shutdown_complete = True
+        if self.exit_process_on_quit:
+            self._destroy_and_exit()
+
+    def _destroy_and_exit(self) -> None:
+        page = self.page
+        if page is not None:
+            win = getattr(page, "window", None)
+            if win is not None:
+                try:
+                    win.prevent_close = False
+                except Exception:  # noqa: BLE001
+                    pass
+                for meth in ("destroy", "close"):
+                    fn = getattr(win, meth, None)
+                    if callable(fn):
+                        try:
+                            fn()
+                        except Exception:  # noqa: BLE001
+                            pass
+                        break
+        os._exit(0)
 
     def attach_page(self, page: ft.Page) -> None:
         self.page = page
+        self.exit_process_on_quit = isinstance(page, ft.Page)
         apply_page_chrome(page)
+        win = getattr(page, "window", None)
+        if win is not None:
+            win.prevent_close = True
+            win.on_event = self._on_window_event
+        page.on_disconnect = self._on_disconnect
+        page.on_keyboard_event = self._on_keyboard
+        page.on_close = self.handle_window_close
+        self._ensure_file_picker()
         page.add(self.build())
 
     def shutdown(self) -> None:
@@ -632,9 +976,18 @@ def main(page: ft.Page) -> None:
 
 
 def run_gui(**kwargs: Any) -> None:
+    global _GUI_RUNNING
+    if _GUI_RUNNING:
+        raise RuntimeError("FrameForge GUI is already running in this process")
+    _GUI_RUNNING = True
     ui = create_ui(**kwargs)
 
     def _main(page: ft.Page) -> None:
         ui.attach_page(page)
 
-    ft.app(_main)
+    try:
+        ft.app(_main)
+    finally:
+        _GUI_RUNNING = False
+        if not ui._shutdown_complete:
+            ui.shutdown()

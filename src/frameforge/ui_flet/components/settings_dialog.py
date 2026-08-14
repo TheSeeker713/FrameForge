@@ -100,7 +100,7 @@ def build_settings_dialog(
         height=420,
     )
     dlg = ft.AlertDialog(
-        modal=True,
+        modal=False,
         title=ft.Text("Settings", color=COLORS["text_primary"], weight=ft.FontWeight.BOLD),
         content=body,
         actions=[
@@ -108,6 +108,7 @@ def build_settings_dialog(
             ft.FilledButton(content="Save", bgcolor=COLORS["accent"], on_click=save),
         ],
         bgcolor=COLORS["surface"],
+        on_dismiss=cancel,
     )
     dlg.data = {
         "fmt": fmt,

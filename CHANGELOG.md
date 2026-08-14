@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- Emergency Flet interaction fix: dialogs close (X / Esc / barrier / Cancel)
+- Import TXT/MD, More menu, and queue chrome (Clear finished / Retry failed) wired
+- Window drag ghost (opaque HWND, no DWM shadow); process exits so the next `--gui` is clean
+- Display version 0.5.1
+
 ## 0.5.0
 
 - Full GUI rewrite on Flet (light SaaS chrome; CustomTkinter is not the default window)
