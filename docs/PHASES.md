@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.8 (quit that works + aria2 → native fallback)
+## Status: v0.5.9 (output path recovery + field UX)
 
-Package version is **0.5.8**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.8_COMPLETE.md](V0.5.8_COMPLETE.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [SPEED.md](SPEED.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
+Package version is **0.5.9**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md), [OUTPUT_PATH.md](OUTPUT_PATH.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
 
 ## Phase 0 – Foundation
 

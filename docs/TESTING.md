@@ -63,6 +63,11 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.5.9 (output path recovery + field UX)
+
+- See [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md), [OUTPUT_PATH.md](OUTPUT_PATH.md).
+- Suite: `python -m pytest -q` → **408 passed / 0 skipped / 0 failed**.
+
 ## v0.5.8 (quit that works + aria2 native fallback)
 
 - See [V0.5.8_COMPLETE.md](V0.5.8_COMPLETE.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [SPEED.md](SPEED.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [FAIL_PAUSE.md](FAIL_PAUSE.md).

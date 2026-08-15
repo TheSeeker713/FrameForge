@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.9
+
+- Recover `download_path` after yt-dlp exit 0 via printed path, `*[id].*` glob, recent media, and info.json (`docs/OUTPUT_PATH.md`)
+- Missing file after success is `output_missing` (not unknown/auth); fail-pause leads with Retry / Open folder, not Firefox
+- Retry / Resume download returns cancelled and failed rows to pending without auto-start
+- Progress ticks every 0.5s on the UI loop while a stage is active (including unfocused); aria2 SIZE without `%` still updates the bar
+- Click a completed thumbnail to open the file in the default player
+- BLOCKED 4K+ means upscale policy; idle line explains Stop / fail-pause when pending remain
+
 ## 0.5.8
 
 - Quit: native X → “Quit FrameForge?” (Quit / Cancel only); UI and process tree exit on a hard deadline (`docs/UI_SHUTDOWN.md`)

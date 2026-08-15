@@ -18,6 +18,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `blocked_4k` | 4K / ≥2160 blocked for upscale | Pick a lower source resolution. |
 | `cancelled` | user cancel | Job was cancelled. |
 | `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
+| `output_missing` | exit 0 but no file / archive orphan | File missing on disk after a “successful” download. |
 | `unknown` | anything else | Unclassified failure. |
 
 Suggested next steps are listed on the error panel (cookies / retry / wait / skip).
@@ -26,7 +27,7 @@ Suggested next steps are listed on the error panel (cookies / retry / wait / ski
 
 Setting **Pause queue on bot-check / login failures** (`fail_pause_on_auth`, default **ON**).
 
-When a job fails with `auth_required`, `bot_check`, `js_runtime`, or hard `unknown`:
+When a job fails with `auth_required`, `bot_check`, `js_runtime`, `output_missing`, or hard `unknown`:
 
 1. The worker **halts** (`halt_after_fail`): disarms **and** latches so a stale
    `_armed` flag cannot claim the next pending.
@@ -41,7 +42,9 @@ runs fail-pause instead of promoting that row to `completed`.
 
 Optional `fail_pause_on_any=1` pauses on every failure (not exposed as a checkbox; default off).
 
-`aria2_forbidden` is **not** a fail-pause category. Attempt 1 (aria2 403) never marks the job failed; the worker only sees a failure after the native retry also fails. A final `aria2_forbidden` (both methods hit CDN 403) does not halt the bulk queue. See [SPEED.md](SPEED.md).
+`output_missing` pauses the bulk queue **without** cookie import. Actions are Retry (force re-download if the yt-dlp archive is stale), Open folder, Skip & resume, Stop, and Copy report. See [OUTPUT_PATH.md](OUTPUT_PATH.md).
+
+`aria2_forbidden` is **not** a fail-pause category.
 
 Turn the default policy off in Settings if you want the bulk run to keep going after auth/bot failures.
 
