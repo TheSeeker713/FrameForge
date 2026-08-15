@@ -47,6 +47,7 @@ def test_disable_dwm_glass_is_noop_without_our_hwnd():
     assert disable_dwm_glass(None) == "noop"
     apply_page_chrome(page, set_size=False)
     assert page.window.bgcolor is not None
+    assert page.window.title_bar_hidden is False
 
 
 def test_reveal_uses_explorer_select_not_kill():

@@ -27,7 +27,7 @@ from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
 from frameforge.ui_flet.queue_chrome import queue_chrome_spec
 from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import COLORS, TAB_LABELS
-from frameforge.ui_flet.window_chrome import apply_page_chrome, build_custom_title_bar
+from frameforge.ui_flet.window_chrome import USE_CUSTOM_TITLE_BAR, apply_page_chrome, build_custom_title_bar
 
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
@@ -397,24 +397,28 @@ class FrameForgeUi:
         )
         history_body = ft.Column([hist_filters, self.history_list], expand=True)
         self.tabs = build_tabs(queue_body, history_body, self.thumbs_grid)
-        self.title_bar = build_custom_title_bar(
-            on_close=self.handle_window_close,
-            on_min=self.minimize_window,
-            on_max=self.toggle_maximize,
-            on_drag_start=self._on_title_drag_start,
-            on_drag_end=self._on_title_drag_end,
-        )
+        controls: list[ft.Control] = [
+            self.header,
+            self.hero,
+            self.undo_banner,
+            self.resource_banner,
+            self.tabs,
+        ]
+        if USE_CUSTOM_TITLE_BAR:
+            self.title_bar = build_custom_title_bar(
+                on_close=self.handle_window_close,
+                on_min=self.minimize_window,
+                on_max=self.toggle_maximize,
+                on_drag_start=self._on_title_drag_start,
+                on_drag_end=self._on_title_drag_end,
+            )
+            controls.insert(0, self.title_bar)
+        else:
+            self.title_bar = None
         root = ft.Column(
             expand=True,
             spacing=16,
-            controls=[
-                self.title_bar,
-                self.header,
-                self.hero,
-                self.undo_banner,
-                self.resource_banner,
-                self.tabs,
-            ],
+            controls=controls,
         )
         self.refresh_queue(force=True)
         self.refresh_history()

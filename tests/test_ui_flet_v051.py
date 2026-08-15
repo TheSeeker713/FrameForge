@@ -301,7 +301,7 @@ def test_window_chrome_opaque_no_shadow_ghost():
     assert page.window.bgcolor == COLORS["app_bg"]
     assert page.window.opacity == 1.0
     assert page.window.shadow is False
-    assert page.window.title_bar_hidden is True
+    assert page.window.title_bar_hidden is False
     assert page.window.frameless is False
 
 

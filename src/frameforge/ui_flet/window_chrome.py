@@ -1,4 +1,4 @@
-"""Custom Flutter title bar so content stays painted while dragging (Flet 0.86)."""
+"""FrameForge window chrome — native OS title bar (reliable drag)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from frameforge.ui_flet.theme import COLORS, FONT_FAMILY, WINDOW_HEIGHT, WINDOW_
 # 6-digit hex only — never None, never 8-digit alpha, never "transparent".
 OPAQUE_BG = COLORS["app_bg"]
 TITLE_BAR_HEIGHT = 36
+# Custom WindowDragArea is gated off. Native caption is the drag surface (PASS).
+USE_CUSTOM_TITLE_BAR = False
 
 
 def chrome_snapshot(page: Any) -> dict[str, Any]:
@@ -30,19 +32,20 @@ def chrome_snapshot(page: Any) -> dict[str, Any]:
         "visible": getattr(win, "visible", None) if win is not None else None,
         "ignore_mouse_events": getattr(win, "ignore_mouse_events", None) if win is not None else None,
         "transparent": getattr(win, "transparent", None) if win is not None else None,
-        "custom_title_bar": True,
+        "custom_title_bar": bool(USE_CUSTOM_TITLE_BAR),
     }
 
 
 def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]:
-    """Opaque fill + hidden native caption. Drag is WindowDragArea, not DWM.
+    """Opaque fill + native OS title bar. Drag is the Windows caption, not WindowDragArea.
 
     ``set_size`` only on first attach — reapplying width/height during drag fights the user.
+    Never calls DWM or the process foreground-window API. See SHELL_SAFETY.md.
     """
     page.title = f"FrameForge {__version__}"
     page.bgcolor = OPAQUE_BG
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = ft.Padding.only(left=20, right=20, bottom=20, top=0)
+    page.padding = ft.Padding.all(20)
     page.theme = ft.Theme(font_family=FONT_FAMILY, color_scheme_seed=COLORS["accent"])
     if hasattr(page, "decoration"):
         try:
@@ -59,16 +62,14 @@ def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]
         window.bgcolor = OPAQUE_BG
         window.opacity = 1.0
         window.shadow = False
-        window.title_bar_hidden = True
+        window.title_bar_hidden = bool(USE_CUSTOM_TITLE_BAR)
         if hasattr(window, "title_bar_buttons_hidden"):
-            window.title_bar_buttons_hidden = True
+            window.title_bar_buttons_hidden = bool(USE_CUSTOM_TITLE_BAR)
         window.frameless = False
         if hasattr(window, "transparent"):
             window.transparent = False
         if getattr(window, "ignore_mouse_events", False):
             window.ignore_mouse_events = False
-        # Never apply Win32 DWM to whatever happens to be focused. Ticks re-run
-        # this function; foreign HWNDs (Explorer) must not be touched. See SHELL_SAFETY.md.
     return chrome_snapshot(page)
 
 
@@ -80,7 +81,7 @@ def build_custom_title_bar(
     on_drag_start: Any | None = None,
     on_drag_end: Any | None = None,
 ) -> ft.WindowDragArea:
-    """Flutter-drawn caption. Native DWM title-bar drag is what went outline-only."""
+    """Gated helper. Default GUI does not use this — native caption is the drag surface."""
     min_btn = ft.IconButton(
         icon=ft.Icons.REMOVE,
         tooltip="Minimize",

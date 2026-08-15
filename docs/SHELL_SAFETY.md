@@ -11,7 +11,7 @@ Foreground window is **not** “our window.”
 ## Fix (v0.5.6)
 
 - Removed all `GetForegroundWindow` / `DwmSetWindowAttribute` usage from the chrome path.
-- FrameForge chrome is **Flet-only** (`page` / `page.window` bgcolor, opacity, hidden title bar, `WindowDragArea`).
+- FrameForge chrome is **Flet-only** (`page` / `page.window` bgcolor, opacity) plus the **native OS title bar** (`title_bar_hidden = False`). No `WindowDragArea` by default. Zero DWM.
 - If a native HWND is needed later, it must come from the FrameForge/Flet window object. Unknown handle → **no-op**.
 - Reveal-in-folder still uses `explorer /select,<path>` only. It does not kill `explorer.exe` or write theme keys.
 

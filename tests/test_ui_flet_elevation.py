@@ -100,6 +100,6 @@ def test_window_chrome_forbids_os_shadow_after_elevation():
     assert page.window.bgcolor == COLORS["app_bg"]
     assert page.window.shadow is False
     assert page.window.opacity == 1.0
-    assert page.window.title_bar_hidden is True
+    assert page.window.title_bar_hidden is False
     style = filled_button_style()
     assert style.elevation[ft.ControlState.HOVERED] >= 3

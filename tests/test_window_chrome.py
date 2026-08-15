@@ -1,4 +1,4 @@
-"""v0.5.3 — opaque chrome flags; reapply must not reset size."""
+"""v0.5.7 — native OS title bar; drag is Windows caption, not WindowDragArea."""
 
 from __future__ import annotations
 
@@ -6,19 +6,25 @@ from pathlib import Path
 
 from tests.flet_fakes import FakePage
 from frameforge.ui_flet.theme import COLORS
-from frameforge.ui_flet.window_chrome import OPAQUE_BG, apply_page_chrome, chrome_snapshot
+from frameforge.ui_flet.window_chrome import (
+    OPAQUE_BG,
+    USE_CUSTOM_TITLE_BAR,
+    apply_page_chrome,
+    chrome_snapshot,
+)
 
 
-def test_apply_page_chrome_is_fully_opaque():
+def test_apply_page_chrome_uses_native_title_bar():
     page = FakePage()
     snap = apply_page_chrome(page, set_size=True)
     assert snap["page_bgcolor"] == OPAQUE_BG == COLORS["app_bg"]
     assert snap["window_bgcolor"] == OPAQUE_BG
     assert snap["opacity"] == 1.0
     assert snap["shadow"] is False
-    assert snap["title_bar_hidden"] is True
+    assert snap["title_bar_hidden"] is False
     assert snap["frameless"] is False
-    assert snap["custom_title_bar"] is True
+    assert snap["custom_title_bar"] is False
+    assert USE_CUSTOM_TITLE_BAR is False
     assert "transparent" not in str(snap["page_bgcolor"]).lower()
     assert snap == chrome_snapshot(page)
 
@@ -34,10 +40,10 @@ def test_reapply_does_not_reset_size():
     assert page.window.bgcolor == OPAQUE_BG
     assert page.window.shadow is False
     apply_page_chrome(page, set_size=False)
-    assert page.window.title_bar_hidden is True
+    assert page.window.title_bar_hidden is False
 
 
-def test_custom_title_bar_is_window_drag_area_with_close(tmp_path: Path):
+def test_default_gui_has_no_window_drag_area_and_native_close(tmp_path: Path):
     import flet as ft
 
     from frameforge.db.repository import JobRepository
@@ -47,17 +53,15 @@ def test_custom_title_bar_is_window_drag_area_with_close(tmp_path: Path):
 
     bar = build_custom_title_bar(on_close=lambda: None, on_min=lambda: None, on_max=lambda: None)
     assert isinstance(bar, ft.WindowDragArea)
-    assert bar.data["close"].tooltip == "Close"
-    assert bar.data["close"].on_click is not None
 
     repo = JobRepository(tmp_path / "w.db")
     worker = SequentialWorker(repo, download_handler=lambda j, r: None, poll_interval=0.05)
     ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
     ui.page = FakePage()
     ui.build()
-    assert isinstance(ui.title_bar, ft.WindowDragArea)
+    assert ui.title_bar is None
     ui.page.window.prevent_close = True
-    ui.title_bar.data["close"].on_click()
+    assert ui.handle_window_close() == "choice"
     assert ui.dialogs.kind == "quit"
     ui.minimize_window()
     assert ui.page.window.minimized is True
