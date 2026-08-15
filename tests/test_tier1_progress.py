@@ -200,6 +200,17 @@ def test_parse_cli_progress_ignores_non_progress():
     assert unknown["eta_str"] == "—"
 
 
+def test_parse_aria2_size_without_percent():
+    parsed = parse_cli_progress_line(
+        "[#1 SIZE:512MiB/1.0GiB CN:16 DL:3.1MiB ETA:2m30s]"
+    )
+    assert parsed is not None
+    assert parsed["percent"] > 45
+    assert parsed["percent"] < 55
+    assert parsed["speed_str"] != "—"
+    assert parsed["eta_seconds"] == 150.0
+
+
 def _is_live_speed_or_eta(meta: dict) -> bool:
     speed = meta.get("speed_str")
     eta = meta.get("eta_str")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import re
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -22,6 +21,10 @@ if TYPE_CHECKING:
 ProgressCb = Callable[[float, dict[str, Any]], None]
 
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_SIZE_PAIR_RE = re.compile(
+    r"SIZE:\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B)\s*/\s*(\d+(?:\.\d+)?)\s*([KMGT]?i?B)",
+    re.IGNORECASE,
+)
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # yt-dlp: "at  512.00KiB/s"  aria2c: "DL:1.1MiB" / "DL:512KiB/s" / "SPD:512KiB/s"
 _SPEED_RE = re.compile(
@@ -141,13 +144,10 @@ def iter_subprocess_text_chunks(stream: Any) -> Any:
 def parse_cli_progress_line(line: str) -> dict[str, Any] | None:
     """Parse a yt-dlp or aria2c stdout progress line into hook-compatible meta.
 
-    Returns None when the line is not a progress update (no usable percent).
+    Returns None when the line is not a progress update.
     """
     line = _strip_ansi(line or "")
-    if not line or "%" not in line:
-        return None
-    pct_m = _PCT_RE.search(line)
-    if not pct_m:
+    if not line:
         return None
     lower = line.lower()
     looks_progress = (
@@ -161,7 +161,20 @@ def parse_cli_progress_line(line: str) -> dict[str, Any] | None:
     if not looks_progress:
         return None
 
-    percent = max(0.0, min(100.0, float(pct_m.group(1))))
+    percent: float | None = None
+    pct_m = _PCT_RE.search(line)
+    if pct_m:
+        percent = max(0.0, min(100.0, float(pct_m.group(1))))
+    else:
+        size_m = _SIZE_PAIR_RE.search(line)
+        if size_m:
+            cur = _speed_to_bps(float(size_m.group(1)), size_m.group(2))
+            total = _speed_to_bps(float(size_m.group(3)), size_m.group(4))
+            if total > 0:
+                percent = max(0.0, min(100.0, 100.0 * cur / total))
+    if percent is None:
+        return None
+
     speed_bps: float | None = None
     speed_m = _SPEED_RE.search(line)
     if speed_m:
@@ -230,6 +243,7 @@ class YtDlpDownloader:
         self.aria2_fallback_native: bool = False
         self.download_attempt: int = 1
         self.download_method: str = "aria2c" if use_aria2c else "native"
+        self.ignore_download_archive: bool = False
         self._settings_repo: Any | None = None
 
     def _speed_repo(self) -> Any | None:
@@ -357,7 +371,6 @@ class YtDlpDownloader:
             "retries": 5,
             "fragment_retries": 5,
             "ignoreerrors": False,
-            "download_archive": str(self.archive_file),
             "progress_hooks": [_hook],
             "postprocessors": [
                 {"key": "FFmpegMetadata", "add_metadata": True},
@@ -380,6 +393,8 @@ class YtDlpDownloader:
             opts["external_downloader_args"] = {
                 "aria2c": aria2c_opt_args(self._aria2_connections())
             }
+        if not self.ignore_download_archive:
+            opts["download_archive"] = str(self.archive_file)
         self._apply_rate_opts(opts)
         args = self._extractor_args_cli(url or "")
         if args:
@@ -491,7 +506,16 @@ class YtDlpDownloader:
                 if requested and requested[0].get("filepath"):
                     path = Path(requested[0]["filepath"])
             if not path.exists():
-                raise FileNotFoundError(f"Downloaded file not found for {url}")
+                from frameforge.download.output_path import require_download_artifact
+
+                resolved = require_download_artifact(
+                    url=url,
+                    output_dir=self.output_dir,
+                    printed=[str(path)] if path else [],
+                    archive_file=None if self.ignore_download_archive else self.archive_file,
+                )
+                path = resolved.path  # type: ignore[assignment]
+                self._record_path_recovery(resolved)
             title = str(info.get("title") or path.stem)
             return DownloadResult(path=path, title=title, info=info)
 
@@ -512,8 +536,6 @@ class YtDlpDownloader:
             "mp4",
             "-o",
             outtmpl,
-            "--download-archive",
-            str(self.archive_file),
             "--write-info-json",
             "--write-thumbnail",
             "--retries",
@@ -531,6 +553,8 @@ class YtDlpDownloader:
             "--print",
             "%(id)s",
         ]
+        if not self.ignore_download_archive:
+            cmd.extend(["--download-archive", str(self.archive_file)])
         cookie = self._valid_cookiefile()
         if cookie is not None:
             cmd.extend(["--cookies", str(cookie)])
@@ -616,6 +640,13 @@ class YtDlpDownloader:
         self.last_invocation = snap
         return snap
 
+    def _record_path_recovery(self, resolved: Any) -> None:
+        snap = self.last_invocation if isinstance(self.last_invocation, dict) else {}
+        snap["resolved_path"] = str(resolved.path) if getattr(resolved, "path", None) else None
+        snap["recovery_method"] = getattr(resolved, "recovery_method", None)
+        snap["archive_hit"] = bool(getattr(resolved, "archive_hit", False))
+        self.last_invocation = snap
+
     def _download_subprocess(
         self,
         url: str,
@@ -697,9 +728,14 @@ class YtDlpDownloader:
                             "eta_str": eta_str if eta_str != "—" else None,
                         },
                     )
-                if line and not line.startswith("[") and line not in printed:
-                    if "ETA" not in line and "at " not in line and "%" not in line:
-                        printed.append(line)
+                if line and not line.startswith("["):
+                    from frameforge.download.output_path import looks_like_filepath_line
+
+                    if looks_like_filepath_line(line) or (
+                        "ETA" not in line and "at " not in line and "%" not in line and line not in printed
+                    ):
+                        if line not in printed:
+                            printed.append(line)
             rc = proc.wait()
             err_thread.join(timeout=5)
             stderr_text = "".join(stderr_chunks)
@@ -737,49 +773,40 @@ class YtDlpDownloader:
                     pass
             process_registry.unregister(job_id)
 
-        # Resolve output path from --print lines (filepath / after_move) or scan dir
-        path: Path | None = None
+        from frameforge.download.output_path import (
+            OutputMissingError,
+            ResolvedOutput,
+            looks_like_filepath_line,
+            require_download_artifact,
+            video_id_from_url,
+        )
+
+        try:
+            resolved = require_download_artifact(
+                url=url,
+                output_dir=self.output_dir,
+                printed=printed,
+                output_tail=output_tail + stderr_chunks,
+                archive_file=None if self.ignore_download_archive else self.archive_file,
+            )
+        except OutputMissingError as exc:
+            self._record_path_recovery(
+                ResolvedOutput(None, "missing", exc.archive_hit, video_id_from_url(url))
+            )
+            raise
+        self._record_path_recovery(resolved)
+        path = resolved.path
+        assert path is not None
         title = ""
         extractor = ""
-        video_id = ""
-        for item in printed:
-            p = Path(item)
-            if p.exists() and p.is_file():
-                path = p
-            elif not title and item and not item.startswith("http"):
-                # Heuristic: first non-path print is often title; order is
-                # filepath, title, extractor_key, id — overwrite carefully
-                pass
-        # --print order: after_move filepath, filepath, title, extractor_key, id
-        # Prefer existing file paths from the end of printed list backwards
-        files = [Path(x) for x in printed if Path(x).is_file()]
-        if files:
-            path = files[-1]
-        if len(printed) >= 3:
-            # Find title as the first printed non-file string after a file
-            non_files = [x for x in printed if not Path(x).is_file()]
-            if non_files:
-                title = non_files[0]
-                if len(non_files) >= 2:
-                    extractor = non_files[1]
-                if len(non_files) >= 3:
-                    video_id = non_files[2]
-
-        if path is None or not path.exists():
-            # Fallback: newest media in output_dir modified in last few minutes
-            candidates = sorted(
-                [
-                    p
-                    for p in self.output_dir.glob("*")
-                    if p.suffix.lower() in {".mp4", ".mkv", ".webm", ".m4a"}
-                    and (time.time() - p.stat().st_mtime) < 600
-                ],
-                key=lambda p: p.stat().st_mtime,
-            )
-            if candidates:
-                path = candidates[-1]
-        if path is None or not path.exists():
-            raise FileNotFoundError(f"Downloaded file not found for {url}")
+        video_id = resolved.video_id or ""
+        non_files = [x for x in printed if not Path(x).is_file() and not looks_like_filepath_line(x)]
+        if non_files:
+            title = non_files[0]
+            if len(non_files) >= 2:
+                extractor = non_files[1]
+            if len(non_files) >= 3:
+                video_id = video_id or non_files[2]
 
         infojson = path.with_suffix(path.suffix + ".info.json")
         if not infojson.exists():

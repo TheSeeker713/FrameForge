@@ -70,19 +70,27 @@ def make_download_handler(
         )
 
         archived = repo.archive_lookup(job.url)
-        if archived is not None:
-            path = archived["output_path"]
-            title = archived["title"] or job.title
-            if title:
-                repo.set_title(job.id, title)
-            repo.set_paths(job.id, download_path=path, output_path=path)
-            repo.update_progress(job.id, 100.0)
-            repo.clear_live_progress(job.id)
-            repo.probe_and_store_resolution(job.id, path)
-            from frameforge.download.thumbnails import cache_job_thumbnail
+        force = bool(job.options().get("force_redownload") or job.options().get("ignore_download_archive"))
+        dl.ignore_download_archive = force
+        if archived is not None and not force:
+            path = Path(str(archived["output_path"] or ""))
+            if path.is_file():
+                title = archived["title"] or job.title
+                if title:
+                    repo.set_title(job.id, title)
+                repo.set_paths(job.id, download_path=str(path), output_path=str(path))
+                repo.update_progress(job.id, 100.0)
+                repo.clear_live_progress(job.id)
+                repo.probe_and_store_resolution(job.id, path)
+                from frameforge.download.thumbnails import cache_job_thumbnail
 
-            cache_job_thumbnail(repo, job.id, media_path=path)
-            return
+                cache_job_thumbnail(repo, job.id, media_path=path)
+                return
+            dl.ignore_download_archive = True
+            repo.merge_options(
+                job.id,
+                {"archive_orphan": True, "force_redownload": True, "archive_hit": True},
+            )
 
         def progress_cb(pct: float, meta: dict[str, Any] | None = None) -> None:
             current = repo.get(job.id)
@@ -138,16 +146,17 @@ def make_download_handler(
                 except Exception:  # noqa: BLE001
                     inv = None
             if inv:
-                repo.merge_options(
-                    job.id,
-                    {
-                        "ytdlp_invocation": inv,
-                        "download_method": getattr(dl, "download_method", None)
-                        or ("native" if not dl._aria2c_enabled() else "aria2c"),
-                        "aria2_fallback_native": bool(getattr(dl, "aria2_fallback_native", False)),
-                        "download_attempt": int(getattr(dl, "download_attempt", 1) or 1),
-                    },
-                )
+                extra: dict[str, Any] = {
+                    "ytdlp_invocation": inv,
+                    "download_method": getattr(dl, "download_method", None)
+                    or ("native" if not dl._aria2c_enabled() else "aria2c"),
+                    "aria2_fallback_native": bool(getattr(dl, "aria2_fallback_native", False)),
+                    "download_attempt": int(getattr(dl, "download_attempt", 1) or 1),
+                    "resolved_path": inv.get("resolved_path"),
+                    "recovery_method": inv.get("recovery_method"),
+                    "archive_hit": bool(inv.get("archive_hit")),
+                }
+                repo.merge_options(job.id, extra)
         # If cancelled mid-flight after process death, do not mark success
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")
