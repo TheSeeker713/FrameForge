@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 import flet as ft
@@ -68,7 +67,8 @@ def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]
             window.transparent = False
         if getattr(window, "ignore_mouse_events", False):
             window.ignore_mouse_events = False
-        disable_dwm_glass()
+        # Never apply Win32 DWM to whatever happens to be focused. Ticks re-run
+        # this function; foreign HWNDs (Explorer) must not be touched. See SHELL_SAFETY.md.
     return chrome_snapshot(page)
 
 
@@ -133,25 +133,30 @@ def build_custom_title_bar(
     return area
 
 
-def disable_dwm_glass() -> None:
-    """Ask DWM not to use Mica/acrylic / iconic thumbnails on the FrameForge HWND."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
+def frameforge_native_hwnd(page: Any | None) -> int | None:
+    """Return the FrameForge/Flet window HWND only.
 
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        if not hwnd:
-            return
-        dwmapi = ctypes.windll.dwmapi
-        val = ctypes.c_int(1)
-        dwmapi.DwmSetWindowAttribute(hwnd, 3, ctypes.byref(val), ctypes.sizeof(val))
-        none = ctypes.c_int(1)
-        dwmapi.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(none), ctypes.sizeof(none))
-        policy = ctypes.c_int(1)
-        dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(policy), ctypes.sizeof(policy))
-        off = ctypes.c_int(0)
-        dwmapi.DwmSetWindowAttribute(hwnd, 7, ctypes.byref(off), ctypes.sizeof(off))
-        dwmapi.DwmSetWindowAttribute(hwnd, 10, ctypes.byref(off), ctypes.sizeof(off))
-    except Exception:  # noqa: BLE001
-        return
+    Never uses the process foreground window (that is how Explorer was restyled).
+    Unknown handle → None (callers must no-op).
+    """
+    if page is None:
+        return None
+    win = getattr(page, "window", None)
+    if win is None:
+        return None
+    for attr in ("native_id", "hwnd", "handle"):
+        val = getattr(win, attr, None)
+        if isinstance(val, int) and val != 0:
+            return val
+    return None
+
+
+def disable_dwm_glass(page: Any | None = None) -> str:
+    """Do not mutate DWM, Explorer, or session themes.
+
+    Historical bug: this used the foreground window plus DWM attributes,
+    which restyled File Explorer when it was focused during chrome ticks.
+    FrameForge chrome is Flet-only (page/window properties). Returns ``noop``.
+    """
+    _ = frameforge_native_hwnd(page)
+    return "noop"

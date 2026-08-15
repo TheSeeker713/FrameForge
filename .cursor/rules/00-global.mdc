@@ -13,3 +13,4 @@ alwaysApply: true
 - SQLite WAL queue for persistence; prove with on-disk DB + restart tests.
 - Preserve original audio on upscales; keep metadata when possible.
 - Do not pollute C: with models/temp; use FrameForge output root.
+- **Never** mutate Windows shell / Explorer / session themes. No `GetForegroundWindow` + DWM. See `.cursor/rules/windows-shell-safety.mdc` and `docs/SHELL_SAFETY.md`.

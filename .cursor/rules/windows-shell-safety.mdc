@@ -1,0 +1,33 @@
+---
+description: Never mutate Windows shell / Explorer / session themes. FrameForge HWND only.
+alwaysApply: true
+---
+
+# Windows shell safety
+
+FrameForge and Cursor must **never** change Windows shell, File Explorer, or system visual themes for the user session.
+
+A past bug called `GetForegroundWindow()` then `DwmSetWindowAttribute` from `apply_page_chrome` ticks. When Explorer was focused, DWM attributes hit **Explorer’s HWND** and the shell flipped to a classic/Win95-like UI until restarted. See `docs/SHELL_SAFETY.md`.
+
+## Forbidden (app code, tests, scripts, docs “how to”, and agent actions)
+
+1. Writing HKCU/HKLM theme or Explorer personalization keys for the **system**, including:
+   - `Software\Microsoft\Windows\CurrentVersion\ThemeManager` (`ThemeActive`, etc.)
+   - `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`
+   - `Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced` (view modes, as a “fix”)
+   - DWM colorization / accent keys aimed at the shell
+2. `SetThemeAppProperties`, `SetWindowTheme` on **foreign** HWNDs, `SystemParametersInfo` theme/UI-effect toggles that affect the session
+3. `DwmSetWindowAttribute` / any Win32 chrome call on any HWND that is **not** proven to be the FrameForge window
+4. `GetForegroundWindow()` as a substitute for “our window”
+5. Killing or restarting `explorer.exe` as a “fix”
+6. Any automation that changes File Explorer UI, classic theme, high contrast, or visual styles globally
+
+## Allowed (narrow)
+
+- Flet `page` / `page.window` properties **for FrameForge only**
+- `DwmSetWindowAttribute` **only** if HWND is obtained from the FrameForge/Flet window (never the foreground window). Prefer Flet-only chrome; skip DWM if the handle is unknown
+- Opening Explorer via `explorer /select,path` for “Reveal file” only — no shell policy changes
+
+If HWND cannot be resolved safely → **no-op**. Do not touch any window.
+
+On any accidental violation: remove it, document in `docs/SHELL_SAFETY.md`, and never reintroduce.
