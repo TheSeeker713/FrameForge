@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from frameforge.errors import (
+    OUTPUT_MISSING,
     classify_error,
     human_cause,
     should_fail_pause,
@@ -21,6 +22,20 @@ MODAL_ACTIONS: tuple[tuple[str, str], ...] = (
     ("skip_resume", "Skip & resume queue"),
     ("stop", "Stop queue"),
 )
+
+OUTPUT_MISSING_ACTIONS: tuple[tuple[str, str], ...] = (
+    ("retry", "Retry this job"),
+    ("open_folder", "Open folder"),
+    ("skip_resume", "Skip & resume queue"),
+    ("stop", "Stop queue"),
+)
+
+
+def modal_actions_for(category: str | None, *, archive_hit: bool = False) -> tuple[tuple[str, str], ...]:
+    if category == OUTPUT_MISSING:
+        retry = ("retry", "Force re-download" if archive_hit else "Retry this job")
+        return (retry, *OUTPUT_MISSING_ACTIONS[1:])
+    return MODAL_ACTIONS
 
 
 def fail_pause_enabled(repo: Any) -> bool:
@@ -71,6 +86,9 @@ def fail_pause_payload(job: Any) -> dict[str, Any]:
     """Plain-language modal fields (no Tk)."""
     opts = job.options() if hasattr(job, "options") else {}
     cat = opts.get("error_category") or classify_error(getattr(job, "error", None))
+    archive_hit = bool(opts.get("archive_hit")) or "archive lists this video" in str(
+        getattr(job, "error", None) or ""
+    ).lower()
     return {
         "job_id": getattr(job, "id", None),
         "title": getattr(job, "title", None) or "",
@@ -79,5 +97,9 @@ def fail_pause_payload(job: Any) -> dict[str, Any]:
         "cause": opts.get("error_cause") or human_cause(cat),
         "error": getattr(job, "error", None) or "",
         "actions": list(opts.get("error_actions") or suggested_actions(cat)),
-        "buttons": [{"id": aid, "label": label} for aid, label in MODAL_ACTIONS],
+        "buttons": [
+            {"id": aid, "label": label}
+            for aid, label in modal_actions_for(cat, archive_hit=archive_hit)
+        ],
+        "archive_hit": archive_hit,
     }

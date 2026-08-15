@@ -21,6 +21,7 @@ ARIA2_FORBIDDEN = "aria2_forbidden"
 BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
 JS_RUNTIME = "js_runtime"
+OUTPUT_MISSING = "output_missing"
 UNKNOWN = "unknown"
 
 CATEGORIES = (
@@ -34,11 +35,14 @@ CATEGORIES = (
     BLOCKED_4K,
     CANCELLED,
     JS_RUNTIME,
+    OUTPUT_MISSING,
     UNKNOWN,
 )
 
-# Failures that should pause a bulk run (bot/auth, missing EJS, and hard unknown).
-FAIL_PAUSE_CATEGORIES = frozenset({AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, UNKNOWN})
+# Failures that should pause a bulk run (bot/auth, missing EJS, missing output, hard unknown).
+FAIL_PAUSE_CATEGORIES = frozenset(
+    {AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, OUTPUT_MISSING, UNKNOWN}
+)
 STDERR_TAIL_LINES = 12
 STDERR_TAIL_CHARS = 2000
 
@@ -149,6 +153,12 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         return JS_RUNTIME
     if is_aria2_forbidden(text):
         return ARIA2_FORBIDDEN
+    if (
+        "downloaded file not found" in lower
+        or "archive lists this video" in lower
+        or "file is missing on disk" in lower
+    ):
+        return OUTPUT_MISSING
     if _BOT_RE.search(text):
         return BOT_CHECK
     if _RATE_RE.search(text):
@@ -213,6 +223,7 @@ def human_cause(category: str) -> str:
         JS_RUNTIME: (
             "YouTube needs Deno (or Node) plus yt-dlp-ejs to solve n/signature challenges."
         ),
+        OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
 
@@ -247,6 +258,12 @@ def suggested_actions(category: str) -> list[str]:
             "Install Deno and restart FrameForge",
             'pip install -U "yt-dlp[default]" yt-dlp-ejs',
             "Retry this job",
+        ]
+    if category == OUTPUT_MISSING:
+        return [
+            "Retry this job (force re-download if the archive is stale)",
+            "Open the download folder",
+            "Skip & resume queue",
         ]
     return ["Retry failed", "Inspect the error message"]
 
@@ -324,4 +341,11 @@ def annotate_job_error(
         patch["auth_domain"] = normalize_domain_safe(url)
     else:
         patch["auth_required"] = False
+    if cat == OUTPUT_MISSING:
+        archive_hit = "archive lists this video" in str(message or "").lower() or bool(
+            (job.options() if hasattr(job, "options") else {}).get("archive_hit")
+        )
+        if archive_hit:
+            patch["archive_hit"] = True
+            patch["force_redownload"] = True
     return repo.merge_options(job_id, patch)
