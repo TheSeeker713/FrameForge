@@ -72,11 +72,35 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
-def force_kill_current_app() -> None:
-    """Kill this process and children (flet.exe), then _exit. Last-resort quit."""
-    pid = os.getpid()
+def descendant_pids(pid: int) -> list[int]:
+    """Child PIDs (flet.exe, yt-dlp, …). Empty if psutil is unavailable."""
+    if pid <= 0:
+        return []
     try:
-        kill_process_tree(pid)
+        import psutil
+
+        proc = psutil.Process(int(pid))
+        return [int(c.pid) for c in proc.children(recursive=True)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def kill_gui_children(pid: int | None = None) -> list[int]:
+    """Kill descendant processes first (flet HWND), never taskkill self first."""
+    root = int(pid or os.getpid())
+    kids = descendant_pids(root)
+    for child in kids:
+        try:
+            kill_process_tree(child)
+        except Exception:  # noqa: BLE001
+            pass
+    return kids
+
+
+def force_kill_current_app() -> None:
+    """Kill GUI children (flet.exe), then _exit this process. Last-resort quit."""
+    try:
+        kill_gui_children(os.getpid())
     except Exception:  # noqa: BLE001
         pass
     os._exit(1)

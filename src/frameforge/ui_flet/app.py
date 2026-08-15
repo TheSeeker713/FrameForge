@@ -211,6 +211,7 @@ class FrameForgeUi:
         self._action_lock = False
         self.last_chrome: dict[str, Any] | None = None
         self.last_copied_report: str | None = None
+        self.last_destroy_status: str | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -1003,7 +1004,7 @@ class FrameForgeUi:
         return self.dialogs.open("quit", self.quit_dialog)
 
     def force_quit(self) -> None:
-        """Always-available escape: release the HWND and kill the process tree."""
+        """Always-available escape: await window destroy, kill flet children, _exit."""
         self._exiting = True
         self._close_clicks = 99
         self._release_native_close()
@@ -1017,9 +1018,15 @@ class FrameForgeUi:
         except Exception:  # noqa: BLE001
             pass
         self._shutdown_complete = True
-        if self.exit_process_on_quit:
-            from frameforge.util.process_tree import force_kill_current_app
+        from frameforge.ui_flet.window_teardown import request_window_destroy
+        from frameforge.util.process_tree import force_kill_current_app, kill_gui_children
 
+        self.last_destroy_status = request_window_destroy(self.page, wait=0.4)
+        if self.exit_process_on_quit:
+            try:
+                kill_gui_children()
+            except Exception:  # noqa: BLE001
+                pass
             force_kill_current_app()
         else:
             self._release_native_close()
@@ -1310,22 +1317,14 @@ class FrameForgeUi:
             self._destroy_and_exit()
 
     def _destroy_and_exit(self) -> None:
-        page = self.page
-        if page is not None:
-            win = getattr(page, "window", None)
-            if win is not None:
-                try:
-                    win.prevent_close = False
-                except Exception:  # noqa: BLE001
-                    pass
-                for meth in ("destroy", "close"):
-                    fn = getattr(win, meth, None)
-                    if callable(fn):
-                        try:
-                            fn()
-                        except Exception:  # noqa: BLE001
-                            pass
-                        break
+        from frameforge.ui_flet.window_teardown import request_window_destroy
+        from frameforge.util.process_tree import kill_gui_children
+
+        self.last_destroy_status = request_window_destroy(self.page, wait=0.8)
+        try:
+            kill_gui_children()
+        except Exception:  # noqa: BLE001
+            pass
         os._exit(0)
 
     def attach_page(self, page: ft.Page) -> None:

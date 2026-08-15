@@ -26,7 +26,10 @@ def test_idle_close_opens_confirm_not_silent_exit(tmp_path: Path):
     assert ui.handle_window_close() == "choice"
     assert ui.dialogs.kind == "quit"
     assert ui._shutdown_complete is False
-    assert ui.quit_dialog.data.get("force") == CHOICE_FORCE_QUIT
+    action_blob = " ".join(str(getattr(a, "content", a)) for a in ui.quit_dialog.actions)
+    assert "Quit" in action_blob
+    assert "Force quit now" in action_blob
+    assert "Stay" in action_blob
     ui.quit_dialog.data["on_choice"](CHOICE_QUIT_IDLE)
     assert ui._shutdown_complete is True
     assert ui.page.window.prevent_close is False
@@ -93,9 +96,43 @@ def test_stay_resets_close_click_so_next_x_is_dialog(tmp_path: Path):
     assert ui._shutdown_complete is False
     assert ui.handle_window_close() == "choice"
     assert ui._shutdown_complete is False
-    ui.shutdown()
+def test_ctrl_q_enters_quit_flow(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.page = FakePage()
     ui._on_keyboard(SimpleNamespace(key="Q", ctrl=True))
     assert ui.dialogs.kind == "quit"
     ui.shutdown()
+
+
+def test_async_destroy_is_awaited_without_runtimewarning(tmp_path: Path):
+    import warnings
+
+    from frameforge.ui_flet.window_teardown import request_window_destroy
+
+    ui = _ui(tmp_path)
+    ui.page = FakePage()
+    called = {"n": 0}
+
+    async def adestroy() -> None:
+        called["n"] += 1
+        ui.page.window.destroyed = True
+
+    ui.page.window.destroy = adestroy
+    ui.page.window.close = adestroy
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        status = request_window_destroy(ui.page, wait=1)
+    assert called["n"] == 1
+    assert status in {"awaited", "scheduled", "sync"}
+    assert ui.page.window.destroyed is True
+    assert not any("never awaited" in str(x.message).lower() for x in rec)
+    ui.shutdown()
+
+
+def test_force_quit_invokes_window_destroy(tmp_path: Path):
+    ui = _ui(tmp_path)
+    ui.page = FakePage()
+    ui.force_quit()
+    assert ui._shutdown_complete is True
+    assert ui.page.window.destroyed is True
+    assert ui.last_destroy_status in {"awaited", "scheduled", "sync"}

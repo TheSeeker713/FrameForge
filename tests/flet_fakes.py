@@ -42,6 +42,15 @@ class FakePage:
         self.theme = None
         self.added: list[Any] = []
         self.clipboard: str | None = None
+        self.tasks: list[Any] = []
+        self.window.destroyed = False
+
+        def _sync_destroy() -> None:
+            self.window.destroyed = True
+            self.window.prevent_close = False
+
+        self.window.destroy = _sync_destroy
+        self.window.close = _sync_destroy
 
     def set_clipboard(self, text: str) -> None:
         self.clipboard = text
@@ -66,5 +75,17 @@ class FakePage:
     def add(self, *controls: Any) -> None:
         self.added.extend(controls)
 
-    def run_task(self, fn: Any, *args: Any, **kwargs: Any) -> None:
-        return None
+    def run_task(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        import asyncio
+        import inspect
+
+        self.tasks.append(fn)
+        result = fn(*args, **kwargs)
+        if inspect.iscoroutine(result):
+            asyncio.run(result)
+
+        class _Done:
+            def result(self, timeout: float | None = None) -> bool:
+                return True
+
+        return _Done()

@@ -214,6 +214,17 @@ def quit_busy_dialog(*, on_choice: Any, on_cancel: Any, busy: bool = True) -> ft
         content=ft.Column(tiles, width=460),
         actions=[
             ft.OutlinedButton(content="Stay", on_click=lambda _e: on_choice(CHOICE_STAY)),
+            *(
+                []
+                if busy
+                else [
+                    ft.FilledButton(
+                        content="Quit",
+                        bgcolor=COLORS["accent"],
+                        on_click=lambda _e: on_choice(CHOICE_QUIT_IDLE),
+                    )
+                ]
+            ),
             ft.FilledButton(
                 content="Force quit now",
                 bgcolor=COLORS["danger"],
