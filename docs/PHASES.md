@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.3 (P0 field recovery)
+## Status: v0.5.4 (P0 field: quit, fail-pause halt, yt-dlp parity, copy errors, drag)
 
-Package version is **0.5.3**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.3_COMPLETE.md](V0.5.3_COMPLETE.md), [ACCEPTANCE_V053.md](ACCEPTANCE_V053.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md).
+Package version is **0.5.4**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.4_COMPLETE.md](V0.5.4_COMPLETE.md), [ACCEPTANCE_V054.md](ACCEPTANCE_V054.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md).
 
 ## Phase 0 – Foundation
 

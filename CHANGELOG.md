@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4
+
+- Quit dialog always (idle and busy) with Stay and Force quit; watchdog still `_exit`s
+- Pause and Stop while downloading; fail-pause halt latch so bulk does not claim the next job
+- yt-dlp argv/cwd/cookies/aria2c/ffmpeg logged per job; sticky cookies and missing aria2c fixed
+- Copy full error report on fail-pause, Authenticate, and failed job cards
+- Custom Flutter `WindowDragArea` title bar (native DWM caption no longer used for drag)
+
 ## 0.5.3
 
 - Clear finished only hides completed/failed/cancelled; Undo restores visibility

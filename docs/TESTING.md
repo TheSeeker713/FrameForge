@@ -63,6 +63,11 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.5.4 P0 field (quit, fail-pause halt, yt-dlp parity, copy, drag)
+
+- **Suite:** `python -m pytest -q` → **349 passed / 0 skipped / 0 failed**
+- See [V0.5.4_COMPLETE.md](V0.5.4_COMPLETE.md), [ACCEPTANCE_V054.md](ACCEPTANCE_V054.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).
+
 ## v0.5.3 P0 field recovery
 
 - **Suite:** `python -m pytest -q` → **330 passed / 0 skipped / 0 failed**
