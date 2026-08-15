@@ -27,7 +27,7 @@ def test_flet_retry_fail_again_increments_fail_pause(tmp_path: Path):
     assert ui.fail_pause_shown == 1
     assert worker.is_armed is False
     assert repo.get(second.id).status == "pending"
-    ui.retry_failed_job(first.id)
+    ui.bridge.retry_job(first.id)
     deadline = time.time() + 8
     while time.time() < deadline and ui.fail_pause_shown < 2:
         time.sleep(0.03)

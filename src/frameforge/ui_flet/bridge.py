@@ -43,20 +43,31 @@ class UiBridge:
         return self.repo.enqueue(url, **kwargs)
 
     def retry_job(self, job_id: int) -> None:
-        """Reset one failed job to pending and arm download for that id (explicit Retry)."""
-        self.retry_failed_ids([int(job_id)])
+        """Reset one failed/cancelled job to pending and arm download for that id (fail-pause Retry)."""
+        self.retry_failed_ids([int(job_id)], arm=True)
 
-    def retry_failed_ids(self, job_ids: list[int]) -> list[int]:
-        """Reset given failed jobs to pending and arm those ids only (one arm call)."""
+    def queue_again(self, job_ids: list[int]) -> list[int]:
+        """cancelled/failed → pending. Does not start the worker."""
         ids: list[int] = []
         for raw in job_ids:
             job = self.repo.get(int(raw))
-            if job.status != "failed":
+            if job.status not in ("failed", "cancelled"):
                 continue
-            self.repo.update_status(job.id, "pending", error=None, progress=0)
-            self.repo.merge_options(job.id, {"fail_pause": False, "queue_hidden": False})
+            keep = job.progress if job.status == "cancelled" else 0.0
+            extra: dict[str, Any] = {"fail_pause": False, "queue_hidden": False}
+            opts = job.options()
+            if opts.get("error_category") == "output_missing" or opts.get("archive_hit"):
+                extra["force_redownload"] = True
+                extra["ignore_download_archive"] = True
+            self.repo.update_status(job.id, "pending", error=None, progress=keep)
+            self.repo.merge_options(job.id, extra)
             ids.append(job.id)
-        if ids:
+        return ids
+
+    def retry_failed_ids(self, job_ids: list[int], *, arm: bool = True) -> list[int]:
+        """Reset given failed/cancelled jobs to pending; optionally arm those ids."""
+        ids = self.queue_again(job_ids)
+        if arm and ids:
             self.worker.request_download_ids(ids)
         return ids
 
@@ -192,6 +203,16 @@ class UiBridge:
             self.worker.request_download_all()
             return {"action": "skip_resume"}
         if action_id == "retry":
+            try:
+                job = self.repo.get(int(job_id))
+                if job.options().get("error_category") == "output_missing" or job.options().get(
+                    "archive_hit"
+                ):
+                    self.repo.merge_options(
+                        job.id, {"force_redownload": True, "ignore_download_archive": True}
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             self.retry_job(job_id)
             return {"action": "retry", "job_id": job_id}
         if action_id == "authenticate":

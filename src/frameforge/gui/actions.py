@@ -10,6 +10,11 @@ def can_download(job: Any) -> bool:
     return getattr(job, "status", None) == "pending"
 
 
+def can_retry_download(job: Any) -> bool:
+    """Failed or cancelled rows can be returned to pending (does not auto-start)."""
+    return getattr(job, "status", None) in {"failed", "cancelled"}
+
+
 def can_upscale(job: Any) -> bool:
     if getattr(job, "status", None) != "completed":
         return False

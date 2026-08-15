@@ -212,11 +212,13 @@ class FrameForgeUi:
         self.last_more_action: str | None = None
         self.more_invocations: list[str] = []
         self._activity_note: str | None = None
+        self._idle_reason: str | None = None
         self._action_lock = False
         self.last_chrome: dict[str, Any] | None = None
         self.last_copied_report: str | None = None
         self.last_clipboard_status: str | None = None
         self.last_destroy_status: str | None = None
+        self.last_toast: str | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -225,6 +227,11 @@ class FrameForgeUi:
     def _on_fail_pause(self, job: Any, payload: dict[str, Any]) -> None:
         self.fail_pause_payload = payload
         self.fail_pause_shown += 1
+        pending = self.repo.count_by_status("pending")
+        self._idle_reason = "fail_pause"
+        self._activity_note = (
+            f"Idle • {pending} ready — queue paused after failure" if pending else "Queue paused after failure"
+        )
         if self.page is not None:
             self.dialogs.open("fail_pause", self._fail_pause_dialog(payload))
 
@@ -241,6 +248,8 @@ class FrameForgeUi:
         resume_btn.visible = False
         cat = str(payload.get("category") or "")
         js_runtime = cat == "js_runtime"
+        output_missing = cat == "output_missing"
+        hide_auth = js_runtime or output_missing
         browser_pick = ft.Dropdown(
             label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
             value="firefox",
@@ -250,7 +259,7 @@ class FrameForgeUi:
                 ft.dropdown.Option("chrome", text="Chrome (often blocked by DPAPI)"),
             ],
             width=360,
-            visible=not js_runtime,
+            visible=not hide_auth,
         )
 
         def act(aid: str):
@@ -276,6 +285,9 @@ class FrameForgeUi:
                     if self.page is not None:
                         self.page.update()
                     return
+                if aid == "open_folder":
+                    self._open_fail_pause_folder(jid)
+                    return
                 self.bridge.handle_fail_pause_action(aid, jid)
                 self.close_dialog()
                 self.refresh_queue()
@@ -294,8 +306,13 @@ class FrameForgeUi:
                         "YouTube n-challenge failed: install Deno + yt-dlp-ejs and restart FrameForge. "
                         "This is not a cookie/login problem."
                         if js_runtime
-                        else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
-                        "cannot be fixed by FrameForge. Import cookies, then retry only after they validate.",
+                        else (
+                            "The file is missing on disk. Retry (force if the archive is stale), "
+                            "open the folder, or skip this job. This is not a cookie/login problem."
+                            if output_missing
+                            else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
+                            "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                        ),
                         color=COLORS["text_secondary"],
                         size=12,
                     ),
@@ -310,13 +327,21 @@ class FrameForgeUi:
                 elevated_outlined_button("Copy full report", on_click=self._copy_fail_pause_report),
                 *(
                     []
-                    if js_runtime
+                    if hide_auth
                     else [
                         elevated_filled_button("Import from Firefox / browser", on_click=act("import_browser")),
                         elevated_outlined_button("Import cookies.txt", on_click=act("authenticate")),
                     ]
                 ),
-                elevated_outlined_button("Retry this job", on_click=act("retry")),
+                elevated_outlined_button(
+                    "Force re-download" if payload.get("archive_hit") and output_missing else "Retry this job",
+                    on_click=act("retry"),
+                ),
+                *(
+                    [elevated_outlined_button("Open folder", on_click=act("open_folder"))]
+                    if output_missing
+                    else []
+                ),
                 elevated_outlined_button("Skip & resume queue", on_click=act("skip_resume")),
                 elevated_outlined_button("Stop queue", on_click=act("stop")),
             ],
@@ -522,6 +547,7 @@ class FrameForgeUi:
                     on_expand=self.toggle_failed_expand,
                     on_overflow=self.handle_overflow,
                     on_copy_error=self.copy_job_error,
+                    on_play=self.play_job,
                 )
                 for job in jobs
             ]
@@ -584,7 +610,9 @@ class FrameForgeUi:
     def _sync_header(self) -> None:
         if self.header is None:
             return
-        text = self._activity_note or status_from_repo(self.repo, self.worker)
+        text = self._activity_note or status_from_repo(
+            self.repo, self.worker, idle_reason=self._idle_reason
+        )
         data = self.header.data or {}
         status_ctrl = data.get("status")
         if status_ctrl is not None and getattr(status_ctrl, "content", None) is not None:
@@ -619,7 +647,9 @@ class FrameForgeUi:
     def stop_active(self) -> None:
         """Cancel the in-flight job and disarm. Remaining stay pending."""
         self.worker.stop_run()
-        self._activity_note = "Stopped"
+        pending = self.repo.count_by_status("pending")
+        self._idle_reason = "stopped"
+        self._activity_note = f"Idle • {pending} ready — stopped" if pending else "Stopped"
         self.refresh_queue(force=True)
 
     def tick(self) -> None:
@@ -634,6 +664,7 @@ class FrameForgeUi:
         )
         if active is not None:
             self._activity_note = None
+            self._idle_reason = None
         self.refresh_queue()
         self._sync_header()
         if self.page is not None:
@@ -642,16 +673,40 @@ class FrameForgeUi:
     def _schedule_tick(self) -> None:
         if self._exiting or self._shutdown_complete or not self.exit_process_on_quit:
             return
-        try:
-            self.tick()
-        except Exception:  # noqa: BLE001
-            pass
-        if self._exiting or self._shutdown_complete:
-            return
-        delay = 0.4 if getattr(self.worker, "is_armed", False) else 1.5
-        timer = threading.Timer(delay, self._schedule_tick)
-        timer.daemon = True
-        timer.start()
+
+        def _arm_next() -> None:
+            if self._exiting or self._shutdown_complete:
+                return
+            active = False
+            try:
+                active = any(
+                    j.status in {"downloading", "upscaling", "converting"} for j in self.queue_jobs()
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            delay = 0.5 if (active or getattr(self.worker, "is_armed", False)) else 1.5
+            timer = threading.Timer(delay, self._schedule_tick)
+            timer.daemon = True
+            timer.start()
+
+        def _run() -> None:
+            try:
+                self.tick()
+            except Exception:  # noqa: BLE001
+                pass
+            _arm_next()
+
+        runner = getattr(self.page, "run_task", None) if self.page is not None else None
+        if callable(runner):
+            async def _on_loop() -> None:
+                _run()
+
+            try:
+                runner(_on_loop)
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        _run()
 
     def toggle_failed_expand(self, job_id: int) -> None:
         if job_id in self.expanded_failed:
@@ -660,20 +715,33 @@ class FrameForgeUi:
             self.expanded_failed.add(job_id)
         self.refresh_queue(force=True)
 
+    def play_job(self, job_id: int) -> None:
+        from frameforge.util.reveal import RevealError, open_in_default_player, resolve_job_media_path
+
+        try:
+            path = resolve_job_media_path(self.repo.get(job_id))
+            open_in_default_player(path, launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found — cannot play")
+
     def retry_failed_job(self, job_id: int) -> None:
-        self._activity_note = "Retrying…"
-        self.bridge.retry_job(job_id)
-        if not self.worker.is_armed:
-            self._activity_note = "Retry did not start — worker is not armed."
+        self.bridge.queue_again([job_id])
+        self._idle_reason = None
+        self._activity_note = "Queued — press Download selected or Download all pending"
         self.refresh_queue(force=True)
 
     def retry_all_failed(self) -> list[int]:
-        self._activity_note = "Retrying failed jobs…"
-        ids = self.bridge.retry_all_failed()
-        if ids and not self.worker.is_armed:
-            self._activity_note = "Retry did not start — worker is not armed."
-        elif not ids:
-            self._activity_note = "No failed jobs to retry."
+        ids = self.bridge.retry_failed_ids(
+            [j.id for j in self.repo.list_jobs("failed")]
+            + [j.id for j in self.repo.list_jobs("cancelled")],
+            arm=False,
+        )
+        self._idle_reason = None
+        self._activity_note = (
+            "Queued — press Download selected or Download all pending"
+            if ids
+            else "No cancelled or failed jobs to resume."
+        )
         self.refresh_queue(force=True)
         return ids
 
@@ -682,12 +750,13 @@ class FrameForgeUi:
             return []
         self._action_lock = True
         try:
-            self._activity_note = "Retrying selected…"
-            ids = self.bridge.retry_failed_ids(sorted(self.selected_ids))
-            if ids and not self.worker.is_armed:
-                self._activity_note = "Retry did not start — worker is not armed."
-            elif not ids:
-                self._activity_note = "Nothing to retry in the selection."
+            ids = self.bridge.retry_failed_ids(sorted(self.selected_ids), arm=False)
+            self._idle_reason = None
+            self._activity_note = (
+                "Queued — press Download selected or Download all pending"
+                if ids
+                else "Nothing to resume in the selection."
+            )
             self.refresh_queue(force=True)
             return ids
         finally:
@@ -703,6 +772,7 @@ class FrameForgeUi:
                 self._activity_note = "No pending jobs to download."
                 self.refresh_queue(force=True)
                 return
+            self._idle_reason = None
             self._activity_note = f"Starting {pending_n} pending download(s)…"
             self.bridge.download_all_pending()
             if not self.worker.is_armed:
@@ -775,6 +845,39 @@ class FrameForgeUi:
         if hasattr(self.worker, "request_convert_ids"):
             self.worker.request_convert_ids(sorted(self.selected_ids))
         self.refresh_queue(force=True)
+
+    def _show_toast(self, message: str) -> None:
+        self.last_toast = message
+        page = self.page
+        if page is None:
+            return
+        try:
+            import flet as ft
+
+            bar = ft.SnackBar(content=ft.Text(message), open=True)
+            opener = getattr(page, "open", None)
+            if callable(opener):
+                opener(bar)
+            else:
+                page.snack_bar = bar
+                page.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _open_fail_pause_folder(self, job_id: int) -> None:
+        from pathlib import Path
+
+        from frameforge.util.reveal import RevealError, open_folder, open_job_folder
+
+        job = self.repo.get(job_id)
+        dest = job.options().get("download_output_dir")
+        try:
+            if dest and Path(dest).is_dir():
+                open_folder(Path(dest), launch=self.reveal_launch)
+                return
+            open_job_folder(job, launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("Download folder not found")
 
     def open_folder_selected(self) -> None:
         from frameforge.util.reveal import RevealError, open_job_folder
@@ -870,6 +973,7 @@ class FrameForgeUi:
                 expanded=False,
                 show_progress=False,
                 on_toggle=self.toggle_select,
+                on_play=self.play_job,
             )
             for job in jobs
         ]

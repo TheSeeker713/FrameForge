@@ -280,7 +280,8 @@ def test_queue_chrome_visibility_and_handlers(tmp_path: Path):
     ui.worker.request_download_ids = lambda ids: armed.append(list(ids))  # type: ignore[method-assign]
     ui.retry_selected_failed()
     assert ui.repo.get(failed.id).status == "pending"
-    assert armed == [[failed.id]]
+    assert armed == []
+    assert "Download" in (ui._activity_note or "")
     ui.selected_ids = {done.id}
     ui.clear_selected()
     assert ui.repo.get(done.id).options().get("queue_hidden") or done.id not in {
@@ -291,7 +292,8 @@ def test_queue_chrome_visibility_and_handlers(tmp_path: Path):
     ui.worker.request_download_ids = lambda ids: requested.append(list(ids))  # type: ignore[method-assign]
     annotate_job_error(ui.repo, pending.id, "fail")
     ui.retry_all_failed()
-    assert pending.id in requested[0]
+    assert requested == []
+    assert ui.repo.get(pending.id).status == "pending"
     ui.shutdown()
 
 

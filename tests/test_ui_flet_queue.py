@@ -104,7 +104,7 @@ def test_failed_expand_retry_uses_bridge(tmp_path: Path):
     requested: list[list[int]] = []
     ui.worker.request_download_ids = lambda ids: requested.append(list(ids))  # type: ignore[method-assign]
     ui.retry_failed_job(job.id)
-    assert requested == [[job.id]]
+    assert requested == []
     assert ui.repo.get(job.id).status == "pending"
     ui.shutdown()
 

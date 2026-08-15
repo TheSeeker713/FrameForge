@@ -7,7 +7,7 @@ from typing import Any
 
 from frameforge.errors import human_cause
 from frameforge.errors import AUTH_REQUIRED, BOT_CHECK
-from frameforge.gui.actions import can_convert, can_download, can_upscale
+from frameforge.gui.actions import can_convert, can_download, can_retry_download, can_upscale
 
 STATUS_PILL = {
     "pending": "Queued",
@@ -40,7 +40,7 @@ MORE_LABELS = {
     "convert": "Convert to MP3",
     "set_format": "Set format",
     "clear_selected": "Clear selected",
-    "retry_selected": "Retry selected",
+    "retry_selected": "Retry / Resume selected",
     "open_folder": "Open folder",
     "reveal_file": "Reveal file",
     "select_recommended": "Select recommended",
@@ -51,7 +51,7 @@ MORE_LABELS = {
 }
 
 OVERFLOW_LABELS = {
-    "retry": "Retry",
+    "retry": "Retry / Resume download",
     "upscale": "Upscale 2x",
     "convert": "Convert to MP3",
     "set_format": "Set format",
@@ -114,6 +114,11 @@ def card_view(
         "error": job.error or "",
         "recommended": bool(getattr(job, "upscale_recommended", False) and job.status == "completed"),
         "blocked_4k": bool(getattr(job, "upscale_blocked", False)),
+        "blocked_4k_hint": (
+            "Upscale blocked (≥2160p); download may still be completed"
+            if getattr(job, "upscale_blocked", False)
+            else ""
+        ),
         "can_upscale": can_upscale(job) and not getattr(job, "upscale_blocked", False),
         "can_convert": can_convert(job),
         "can_download": can_download(job),
@@ -126,7 +131,7 @@ def card_view(
 
 def overflow_actions(job: Any) -> list[str]:
     actions = ["set_format", "open_folder", "reveal_file", "remove_from_queue"]
-    if job.status == "failed":
+    if can_retry_download(job):
         actions.insert(0, "retry")
     if can_upscale(job) and not getattr(job, "upscale_blocked", False):
         actions.insert(0, "upscale")
@@ -154,7 +159,7 @@ def more_menu_items(jobs: list[Any], selected_ids: set[int]) -> list[str]:
         items.append("convert")
     items.append("set_format")
     items.append("clear_selected")
-    if any(getattr(j, "status", None) == "failed" for j in selected):
+    if any(can_retry_download(j) for j in selected):
         items.append("retry_selected")
     if len(selected) == 1 and _has_local_file(selected[0]):
         items.append("open_folder")
@@ -176,7 +181,7 @@ def floating_bar_view(jobs: list[Any], selected_ids: set[int]) -> dict[str, Any]
         "show_upscale": any(can_upscale(j) and not getattr(j, "upscale_blocked", False) for j in selected),
         "show_convert": any(can_convert(j) for j in selected),
         "show_clear": True,
-        "show_retry": any(getattr(j, "status", None) == "failed" for j in selected),
+        "show_retry": any(can_retry_download(j) for j in selected),
         "ids": [j.id for j in selected],
         "more_items": more_menu_items(jobs, selected_ids),
     }
