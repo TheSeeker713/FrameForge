@@ -37,13 +37,18 @@ class DialogHost:
             if dlg is not None:
                 dlg.open = False
             page = getattr(self.ui, "page", None)
-            if page is not None:
+            if page is not None and not getattr(self.ui, "_exiting", False):
                 try:
                     page.pop_dialog()
                 except Exception:  # noqa: BLE001
                     pass
                 try:
                     page.update()
+                except Exception:  # noqa: BLE001
+                    pass
+            elif page is not None:
+                try:
+                    page.pop_dialog()
                 except Exception:  # noqa: BLE001
                     pass
         finally:

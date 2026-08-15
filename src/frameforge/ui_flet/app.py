@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -35,6 +36,7 @@ from frameforge.ui_flet.theme import (
 )
 
 _GUI_RUNNING = False
+SHUTDOWN_WATCHDOG_SEC = 3.0
 
 
 def apply_page_chrome(page: ft.Page) -> None:
@@ -208,6 +210,10 @@ class FrameForgeUi:
         self.reveal_launch = True
         self.exit_process_on_quit = False
         self._shutdown_complete = False
+        self._exiting = False
+        self._close_clicks = 0
+        self._watchdog_armed = False
+        self._watchdog_seconds = SHUTDOWN_WATCHDOG_SEC
         self._import_preview: Any | None = None
         self._pending_import = False
         self._browser_cookie_runner: Any | None = None
@@ -954,22 +960,69 @@ class FrameForgeUi:
 
     def _on_disconnect(self, _e: Any = None) -> None:
         if not self._shutdown_complete:
+            self._release_native_close()
             self._finish_exit()
+
+    def _release_native_close(self) -> None:
+        page = self.page
+        win = getattr(page, "window", None) if page is not None else None
+        if win is None:
+            return
+        try:
+            win.prevent_close = False
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _arm_exit_watchdog(self, seconds: float = SHUTDOWN_WATCHDOG_SEC) -> None:
+        """If teardown hangs, kill the process. Never starts a timer in pytest."""
+        self._watchdog_armed = True
+        self._watchdog_seconds = seconds
+        if not self.exit_process_on_quit:
+            return
+        timer = threading.Timer(max(0.2, float(seconds)), lambda: os._exit(1))
+        timer.daemon = True
+        timer.start()
 
     def handle_window_close(self, _e: Any = None) -> str:
         from frameforge.gui.exit_policy import NEEDS_CHOICE, classify_exit
 
+        self._close_clicks += 1
+        force = self._close_clicks >= 2 or self._exiting
+        if force:
+            self._release_native_close()
+            self._finish_exit()
+            return "force"
         kind = classify_exit(self.repo, self.worker)
-        if kind == NEEDS_CHOICE:
-            self.open_quit_busy()
+        if kind != NEEDS_CHOICE:
+            self._release_native_close()
+            self._finish_exit()
+            return "exit"
+        try:
+            dlg = self.open_quit_busy()
+            opened = dlg is not None and (
+                bool(getattr(dlg, "open", False)) or self.dialogs.kind == "quit"
+            )
+            if not opened:
+                self._release_native_close()
+                self._finish_exit()
+                return "exit"
             return "choice"
-        self._finish_exit()
-        return "exit"
+        except Exception:  # noqa: BLE001
+            self._release_native_close()
+            self._finish_exit()
+            return "exit"
 
     def _finish_exit(self) -> None:
         if self._shutdown_complete:
+            if self.exit_process_on_quit:
+                os._exit(0)
             return
-        self.close_dialog()
+        self._exiting = True
+        self._arm_exit_watchdog()
+        try:
+            self.close_dialog()
+        except Exception:  # noqa: BLE001
+            pass
         self.shutdown()
         self._shutdown_complete = True
         if self.exit_process_on_quit:
@@ -1010,7 +1063,7 @@ class FrameForgeUi:
 
     def shutdown(self) -> None:
         try:
-            self.worker.stop(timeout=5)
+            self.worker.stop(timeout=2)
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -1058,4 +1111,9 @@ def run_gui(**kwargs: Any) -> None:
     finally:
         _GUI_RUNNING = False
         if not ui._shutdown_complete:
+            ui._exiting = True
+            ui._arm_exit_watchdog()
             ui.shutdown()
+            ui._shutdown_complete = True
+        if ui.exit_process_on_quit:
+            os._exit(0)
