@@ -53,6 +53,10 @@ def build_header(
     status_text: str = "Idle • 0 ready",
     on_settings: Any | None = None,
     on_authenticate: Any | None = None,
+    show_pause: bool = False,
+    show_stop: bool = False,
+    on_pause: Any | None = None,
+    on_stop: Any | None = None,
 ) -> ft.Row:
     status_ctrl = ft.Container(
         padding=ft.Padding.symmetric(horizontal=12, vertical=6),
@@ -62,6 +66,10 @@ def build_header(
         content=ft.Text(status_text, color=COLORS["text_secondary"], size=13),
         data={"kind": "status"},
     )
+    pause_btn = elevated_outlined_button("Pause", on_click=lambda _e: on_pause and on_pause())
+    pause_btn.visible = show_pause
+    stop_btn = elevated_outlined_button("Stop", on_click=lambda _e: on_stop and on_stop())
+    stop_btn.visible = show_stop
     row = ft.Row(
         [
             ft.Text(
@@ -73,6 +81,8 @@ def build_header(
             ft.Container(expand=True),
             status_ctrl,
             ft.Container(expand=True),
+            pause_btn,
+            stop_btn,
             ft.IconButton(
                 icon=ft.Icons.SETTINGS_OUTLINED,
                 tooltip="Settings",
@@ -88,7 +98,7 @@ def build_header(
         ],
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
-    row.data = {"status": status_ctrl}
+    row.data = {"status": status_ctrl, "pause": pause_btn, "stop": stop_btn}
     return row
 
 
@@ -298,6 +308,8 @@ class FrameForgeUi:
             status_text=status,
             on_settings=lambda _e=None: self.open_settings(),
             on_authenticate=lambda _e=None: self.open_authenticate(),
+            on_pause=self.pause_active,
+            on_stop=self.stop_active,
         )
         self.hero = build_hero(
             on_add=lambda _e=None: self.add_url(),
@@ -358,6 +370,7 @@ class FrameForgeUi:
             self.queue_jobs(),
             self.selected_ids,
             undo_available=bool(self.bridge.clear_undo),
+            armed=bool(getattr(self.worker, "is_armed", False)),
         )
         if self.queue_chrome is None:
             return
@@ -368,6 +381,8 @@ class FrameForgeUi:
             on_clear_finished=self.clear_finished,
             on_clear_selected=self.clear_selected,
             on_undo=self.undo_clear,
+            on_pause=self.pause_active,
+            on_stop=self.stop_active,
         )
         self.queue_chrome.visible = built.visible
         self.queue_chrome.content = built.content
@@ -470,11 +485,42 @@ class FrameForgeUi:
         if self.header is None:
             return
         text = self._activity_note or status_from_repo(self.repo, self.worker)
-        status_ctrl = (self.header.data or {}).get("status")
+        data = self.header.data or {}
+        status_ctrl = data.get("status")
         if status_ctrl is not None and getattr(status_ctrl, "content", None) is not None:
             status_ctrl.content.value = text
+        spec = queue_chrome_spec(
+            self.queue_jobs(),
+            self.selected_ids,
+            armed=bool(getattr(self.worker, "is_armed", False)),
+        )
+        pause_btn = data.get("pause")
+        stop_btn = data.get("stop")
+        if pause_btn is not None:
+            pause_btn.visible = bool(spec.get("show_pause"))
+        if stop_btn is not None:
+            stop_btn.visible = bool(spec.get("show_stop"))
         if self.page is not None:
             self.page.update()
+
+    def pause_active(self) -> None:
+        """Pause the in-flight job (or disarm if between jobs). Remaining stay pending."""
+        for status in ("downloading", "upscaling", "converting"):
+            jobs = list(self.repo.list_jobs(status))
+            if jobs:
+                self.worker.pause_job(jobs[0].id)
+                self._activity_note = "Paused"
+                self.refresh_queue(force=True)
+                return
+        self.worker.disarm()
+        self._activity_note = "Queue paused"
+        self.refresh_queue(force=True)
+
+    def stop_active(self) -> None:
+        """Cancel the in-flight job and disarm. Remaining stay pending."""
+        self.worker.stop_run()
+        self._activity_note = "Stopped"
+        self.refresh_queue(force=True)
 
     def tick(self) -> None:
         """Poll SQLite into the cards. Tests call this; the live window schedules it."""

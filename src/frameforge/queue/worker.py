@@ -41,6 +41,7 @@ class SequentialWorker:
     _stop: threading.Event = field(default_factory=threading.Event)
     _armed: threading.Event = field(default_factory=threading.Event)
     _wait_to_quit: threading.Event = field(default_factory=threading.Event)
+    _fail_pause_halt: threading.Event = field(default_factory=threading.Event)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _only_ids: set[int] | None = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -93,12 +94,14 @@ class SequentialWorker:
         if job.status == "download_completed":
             with self._lock:
                 self._only_ids = set()
+                self._fail_pause_halt.clear()
                 self._armed.set()
             self.start(armed=True)
             return job
         if job.status == "convert_pending":
             with self._lock:
                 self._only_ids = set()
+                self._fail_pause_halt.clear()
                 self._armed.set()
             self.start(armed=True)
             return job
@@ -108,6 +111,32 @@ class SequentialWorker:
     @property
     def is_armed(self) -> bool:
         return self._armed.is_set()
+
+    @property
+    def is_fail_paused(self) -> bool:
+        return self._fail_pause_halt.is_set()
+
+    def halt_after_fail(self) -> None:
+        """Disarm and refuse further claims until the user explicitly resumes."""
+        with self._lock:
+            self._armed.clear()
+            self._only_ids = None
+            self._fail_pause_halt.set()
+
+    def clear_fail_pause_halt(self) -> None:
+        self._fail_pause_halt.clear()
+
+    def _claims_allowed(self) -> bool:
+        with self._lock:
+            return self._armed.is_set() and not self._fail_pause_halt.is_set()
+
+    def stop_run(self) -> None:
+        """Cancel the in-flight stage, disarm, leave remaining jobs pending."""
+        self.clear_wait_to_quit()
+        self.disarm()
+        for status in ("downloading", "upscaling", "converting"):
+            for job in list(self.repo.list_jobs(status)):
+                self.cancel_job(job.id)
 
     @property
     def is_running(self) -> bool:
@@ -155,6 +184,7 @@ class SequentialWorker:
         """Arm worker to process all pending jobs sequentially until drained."""
         with self._lock:
             self._only_ids = None
+            self._fail_pause_halt.clear()
             self._armed.set()
         self.recover()
         self.start(armed=True)
@@ -164,6 +194,7 @@ class SequentialWorker:
         ids = {int(i) for i in job_ids}
         with self._lock:
             self._only_ids = ids
+            self._fail_pause_halt.clear()
             self._armed.set()
         self.recover()
         self.start(armed=True)
@@ -193,6 +224,7 @@ class SequentialWorker:
         with self._lock:
             # Empty set: do not claim pending downloads; only process upscale stage
             self._only_ids = set()
+            self._fail_pause_halt.clear()
             self._armed.set()
         if start_loop:
             self.start(armed=True)
@@ -214,6 +246,7 @@ class SequentialWorker:
             )
         with self._lock:
             self._only_ids = set()
+            self._fail_pause_halt.clear()
             self._armed.set()
         if start_loop:
             self.start(armed=True)
@@ -227,6 +260,7 @@ class SequentialWorker:
         self.recover()
         with self._lock:
             self._only_ids = None
+            self._fail_pause_halt.clear()
             self._armed.set()
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -250,7 +284,7 @@ class SequentialWorker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            if not self._armed.is_set():
+            if not self._claims_allowed():
                 time.sleep(self.poll_interval)
                 continue
             try:
@@ -279,6 +313,7 @@ class SequentialWorker:
         for status in ("downloading", "upscaling", "converting"):
             for job in list(self.repo.list_jobs(status)):
                 annotate_job_error(self.repo, job.id, reason, url=job.url)
+                self._maybe_fail_pause(job.id)
 
     def _eligible_pending_count(self) -> int:
         with self._lock:
@@ -294,7 +329,7 @@ class SequentialWorker:
             return list(self._only_ids)
 
     def _process_one(self) -> bool:
-        if not self._armed.is_set():
+        if not self._claims_allowed():
             return False
 
         claimed_convert = self.repo.claim_next_convert()
@@ -371,6 +406,10 @@ class SequentialWorker:
             job = self.repo.get(job.id)
             if job.status in ("cancelled", "paused", "pending"):
                 return True
+            if job.status == "failed":
+                self._record_event(job.id, "download_fail")
+                self._maybe_fail_pause(job.id)
+                return True
             if job.upscale:
                 self.repo.update_status(job.id, "download_completed", progress=100.0)
             else:
@@ -402,6 +441,10 @@ class SequentialWorker:
                 raise RuntimeError("Upscale requested but no upscale_handler configured")
             self.upscale_handler(job, self.repo)
             job = self.repo.get(job.id)
+            if job.status == "failed":
+                self._record_event(job.id, "upscale_fail")
+                self._maybe_fail_pause(job.id)
+                return True
             if job.status not in ("cancelled", "paused"):
                 self.repo.update_status(job.id, "completed", progress=100.0)
             self._record_event(job.id, "upscale_end")
@@ -430,6 +473,10 @@ class SequentialWorker:
                 raise RuntimeError("Convert requested but no convert_handler configured")
             self.convert_handler(job, self.repo)
             job = self.repo.get(job.id)
+            if job.status == "failed":
+                self._record_event(job.id, "convert_fail")
+                self._maybe_fail_pause(job.id)
+                return True
             if job.status not in ("cancelled", "paused"):
                 self.repo.update_status(job.id, "completed", progress=100.0)
             self._record_event(job.id, "convert_end")

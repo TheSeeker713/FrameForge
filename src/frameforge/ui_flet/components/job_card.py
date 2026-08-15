@@ -243,10 +243,20 @@ def build_queue_chrome(
     on_clear_finished: Callable[[], None] | None = None,
     on_clear_selected: Callable[[], None] | None = None,
     on_undo: Callable[[], None] | None = None,
+    on_pause: Callable[[], None] | None = None,
+    on_stop: Callable[[], None] | None = None,
 ) -> ft.Container:
     if not spec.get("visible"):
         return ft.Container(visible=False, data=spec)
     buttons: list[ft.Control] = []
+    if spec.get("show_pause"):
+        buttons.append(
+            elevated_outlined_button("Pause", on_click=lambda _e: on_pause and on_pause())
+        )
+    if spec.get("show_stop"):
+        buttons.append(
+            elevated_outlined_button("Stop", on_click=lambda _e: on_stop and on_stop())
+        )
     if spec.get("show_download_all"):
         buttons.append(
             elevated_filled_button(

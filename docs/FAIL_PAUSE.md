@@ -24,11 +24,18 @@ Suggested next steps are listed on the error panel (cookies / retry / wait / ski
 
 Setting **Pause queue on bot-check / login failures** (`fail_pause_on_auth`, default **ON**).
 
-When a job fails with `auth_required` or `bot_check`:
+When a job fails with `auth_required`, `bot_check`, or hard `unknown`:
 
-1. The worker **disarms** on the worker thread (does not claim the next pending).
+1. The worker **halts** (`halt_after_fail`): disarms **and** latches so a stale
+   `_armed` flag cannot claim the next pending.
 2. Remaining pending jobs stay pending.
 3. A modal appears immediately with title, URL, cause, and raw error.
+
+`_process_one` refuses to claim while the halt latch is set. Only an explicit
+user action (`Download all`, Retry, Skip & resume, Resume paused) clears it.
+
+If the download handler marks a job `failed` without raising, the worker still
+runs fail-pause instead of promoting that row to `completed`.
 
 Optional `fail_pause_on_any=1` pauses on every failure (not exposed as a checkbox; default off).
 

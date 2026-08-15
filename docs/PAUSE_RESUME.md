@@ -9,6 +9,9 @@ yt-dlp has **resume**, not a cooperative pause API. FrameForge pause is a hard s
 - Sets status **`paused`** (not failed, not cancelled). Progress and paths are kept.
 - `.part`, aria2c control files, and yt-dlp fragment bookkeeping are **not** deleted.
 - The worker **disarms** (idle). Other pending jobs do not start until you press Download or Resume.
+- v0.5.4: **Pause** and **Stop** are visible in the header and queue chrome whenever a
+  download/upscale/convert is active or the worker is armed. Stop cancels the
+  in-flight job and disarms; remaining rows stay pending.
 
 ## Resume
 

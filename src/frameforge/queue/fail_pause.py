@@ -56,7 +56,11 @@ def maybe_fail_pause(worker: Any, repo: Any, job: Any) -> bool:
     opts = job.options() if hasattr(job, "options") else {}
     cat = opts.get("error_category") or classify_error(getattr(job, "error", None))
     if fail_pause_on_any(repo) or should_fail_pause(cat):
-        worker.disarm()
+        halt = getattr(worker, "halt_after_fail", None)
+        if callable(halt):
+            halt()
+        else:
+            worker.disarm()
         if hasattr(repo, "merge_options"):
             repo.merge_options(job.id, {"fail_pause": True})
         return True
