@@ -16,6 +16,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `ffmpeg` | ffmpeg/ffprobe errors | Mux / probe failed. |
 | `blocked_4k` | 4K / ≥2160 blocked for upscale | Pick a lower source resolution. |
 | `cancelled` | user cancel | Job was cancelled. |
+| `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
 | `unknown` | anything else | Unclassified failure. |
 
 Suggested next steps are listed on the error panel (cookies / retry / wait / skip).
@@ -24,7 +25,7 @@ Suggested next steps are listed on the error panel (cookies / retry / wait / ski
 
 Setting **Pause queue on bot-check / login failures** (`fail_pause_on_auth`, default **ON**).
 
-When a job fails with `auth_required`, `bot_check`, or hard `unknown`:
+When a job fails with `auth_required`, `bot_check`, `js_runtime`, or hard `unknown`:
 
 1. The worker **halts** (`halt_after_fail`): disarms **and** latches so a stale
    `_armed` flag cannot claim the next pending.
@@ -45,11 +46,13 @@ Turn the default policy off in Settings if you want the bulk run to keep going a
 
 | Button | Effect |
 |--------|--------|
-| **Import from browser** | Firefox cookie import for the failed job’s URL. On success, offers **Retry this job and resume the queue**. |
-| **Authenticate site** | Opens the existing authenticate / cookies.txt flow, prefilled with the job URL. |
+| **Import from Firefox / browser** | Firefox-first cookie import. Chrome DPAPI is not a FrameForge fix. |
+| **Import cookies.txt** | Opens authenticate / Netscape file import, prefilled with the job URL. |
 | **Retry this job** | Resets that job to pending and arms download for that id only. |
 | **Skip & resume queue** | Leaves the failed job failed; arms **Download all** for remaining pending. |
 | **Stop queue** | Keeps the worker disarmed. |
+
+`js_runtime` pauses omit cookie import and tell you to install Deno + yt-dlp-ejs instead.
 
 You must choose an action. The worker does not silently continue failing the rest of the list.
 

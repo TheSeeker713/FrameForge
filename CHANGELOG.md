@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.6
+
+- Shell safety: never `GetForegroundWindow` + DWM on foreign HWNDs (Explorer incident)
+- YouTube Innertube `player_client` rotation for anonymous public downloads
+- Worker passes `--js-runtimes deno[:path]`; EJS failures classified as `js_runtime` (not Re-authenticate)
+- Auth UX leads with Firefox / cookies.txt; Chrome App-Bound Encryption is an honest limit
+- ffmpeg discovery (PATH + WinGet Gyan); Flet Clipboard.set for Copy error; Download selected on pending
+- Inter-job delay default 3s; thumbnails on completed cards; cancel during Starting; awaited window destroy
+
 ## 0.5.4
 
 - Quit dialog always (idle and busy) with Stay and Force quit; watchdog still `_exit`s

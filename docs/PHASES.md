@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.4 (P0 field: quit, fail-pause halt, yt-dlp parity, copy errors, drag)
+## Status: v0.5.6 (shell safety, Innertube clients, Deno/EJS worker, honest Chrome DPAPI)
 
-Package version is **0.5.4**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.4_COMPLETE.md](V0.5.4_COMPLETE.md), [ACCEPTANCE_V054.md](ACCEPTANCE_V054.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md).
+Package version is **0.5.6**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.6_COMPLETE.md](V0.5.6_COMPLETE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md), [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md), [COOKIES.md](COOKIES.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
 ## Phase 0 – Foundation
 

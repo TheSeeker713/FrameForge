@@ -66,7 +66,9 @@ These are still present and logged:
 - `python -m yt_dlp` (venv package) instead of the PATH `yt-dlp.exe`
 - `-f bv*+ba/b` instead of yt-dlp’s default format
 - `--download-archive` (FrameForge archive file)
-- `--no-playlist`, `--merge-output-format mp4`, `--write-info-json`
+- `--no-playlist`, `--merge-output-format mp4`, `--write-info-json`, `--write-thumbnail`
+- YouTube `--extractor-args youtube:player_client=android_vr,tv_downgraded,web_embedded,web_safari` (Settings can restore yt-dlp defaults)
+- `--js-runtimes deno:<path>` or `node:<path>` when a JS runtime is found
 - aria2c **when installed** (`-x 8 -s 8 …`) — CLI usually has none
 
 If a URL still fails only in the app, copy the job’s invocation snapshot and

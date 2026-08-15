@@ -63,6 +63,10 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.5.6 (shell safety, Innertube, Deno/EJS, honest Chrome DPAPI)
+
+- See [V0.5.6_COMPLETE.md](V0.5.6_COMPLETE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md), [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md).
+
 ## v0.5.4 P0 field (quit, fail-pause halt, yt-dlp parity, copy, drag)
 
 - **Suite:** `python -m pytest -q` → **349 passed / 0 skipped / 0 failed**
