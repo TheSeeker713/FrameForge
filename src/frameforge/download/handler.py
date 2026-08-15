@@ -104,6 +104,10 @@ def make_download_handler(
                 eta_str=meta.get("eta_str"),
             )
 
+        from frameforge.download.js_runtime import require_js_runtime_for_url
+
+        require_js_runtime_for_url(job.url)
+
         dl.format_preference = job.format_preference or "best"
         from frameforge.download.cookie_validate import consume_gentle_job
 

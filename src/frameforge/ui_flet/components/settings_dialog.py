@@ -67,6 +67,16 @@ def build_settings_dialog(
         label="Pause queue on bot-check / login failures",
         value=repo.get_setting("fail_pause_on_auth", "1") == "1",
     )
+    from frameforge.download.js_runtime import js_runtime_status
+
+    js = js_runtime_status()
+    js_tip = ft.Text(
+        f"YouTube JS runtime: {js['runtime']} ({js['path']})"
+        if js.get("ok")
+        else (js.get("tip") or "Deno not found — YouTube n-challenge will fail."),
+        color=COLORS["text_secondary"] if js.get("ok") else COLORS["warn"],
+        size=12,
+    )
 
     def save(_e=None) -> None:
         repo.set_setting("format_preference", (fmt.value or "Best").strip() or "best")
@@ -117,6 +127,7 @@ def build_settings_dialog(
                 "System Behavior",
                 tray,
                 fail_pause,
+                js_tip,
             ),
         ],
         spacing=12,

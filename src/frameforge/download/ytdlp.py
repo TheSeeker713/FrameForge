@@ -465,6 +465,9 @@ class YtDlpDownloader:
             cmd.extend(["--max-sleep-interval", str(self.max_sleep_interval)])
         if self.limit_rate_bps:
             cmd.extend(["--limit-rate", str(int(self.limit_rate_bps))])
+        from frameforge.download.js_runtime import js_runtime_cli_args
+
+        cmd.extend(js_runtime_cli_args())
         cmd.append(url)
         return cmd
 

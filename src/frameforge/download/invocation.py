@@ -71,17 +71,23 @@ def ffmpeg_location() -> str | None:
 
 
 def download_subprocess_env() -> tuple[dict[str, str], dict[str, str]]:
-    """Copy os.environ and prepend directories of ffmpeg/aria2c if found.
+    """Copy os.environ (never wipe PATH) and prepend ffmpeg/aria2c/Deno/Node dirs.
 
     Returns (env, overrides) where overrides are only the keys we changed.
     """
+    from frameforge.download.js_runtime import extra_tool_dirs, which_on_augmented_path
+
     env = os.environ.copy()
+    if not env.get("PATH"):
+        env["PATH"] = os.environ.get("PATH", "")
     overrides: dict[str, str] = {}
     extra: list[str] = []
-    for tool in ("ffmpeg", "ffprobe", "aria2c"):
-        loc = shutil.which(tool)
+    for tool in ("ffmpeg", "ffprobe", "aria2c", "deno", "node"):
+        loc = which_on_augmented_path(tool) if tool in {"deno", "node"} else shutil.which(tool)
         if loc:
             extra.append(str(Path(loc).resolve().parent))
+    for folder in extra_tool_dirs():
+        extra.append(str(folder))
     if extra:
         seen: list[str] = []
         for item in extra:
@@ -90,6 +96,15 @@ def download_subprocess_env() -> tuple[dict[str, str], dict[str, str]]:
         old = env.get("PATH", "")
         env["PATH"] = os.pathsep.join(seen + ([old] if old else []))
         overrides["PATH_prepend"] = os.pathsep.join(seen)
+    runtime = None
+    from frameforge.download.js_runtime import detect_js_runtime, js_runtime_path
+
+    runtime = detect_js_runtime()
+    if runtime:
+        overrides["js_runtime"] = runtime
+        path = js_runtime_path()
+        if path:
+            overrides["js_runtime_path"] = path
     return env, overrides
 
 
@@ -115,6 +130,7 @@ def snapshot_invocation(
         "format": format_selector,
         "env_overrides": dict(env_overrides or {}),
         "ffmpeg_location": ffmpeg,
+        "js_runtime": (env_overrides or {}).get("js_runtime"),
         "yt_dlp_version": bundled_yt_dlp_version(),
         "yt_dlp_path_version": path_yt_dlp_version(),
         "python": sys.executable,

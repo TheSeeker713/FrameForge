@@ -54,6 +54,12 @@ def format_full_error_report(
         lines.append(f"aria2c: {inv.get('aria2c')}")
         lines.append(f"format: {inv.get('format') or ''}")
         lines.append(f"yt_dlp_version: {inv.get('yt_dlp_version') or ''}")
+        runtime = inv.get("js_runtime") or (inv.get("env_overrides") or {}).get("js_runtime")
+        lines.append(f"js_runtime: {runtime or '(none — Deno/Node not detected)'}")
+        if not runtime:
+            from frameforge.download.js_runtime import JS_RUNTIME_FIX
+
+            lines.append(f"js_runtime_fix: {JS_RUNTIME_FIX}")
         if inv.get("returncode") is not None:
             lines.append(f"returncode: {inv.get('returncode')}")
         if inv.get("stderr_empty"):

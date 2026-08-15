@@ -95,11 +95,17 @@ def check_environment() -> dict[str, Any]:
         "psutil": _try_import("psutil"),
         "sqlite3": _try_import("sqlite3"),
     }
+    from frameforge.download.js_runtime import js_runtime_status
+
     tools = {
         "ffmpeg": _tool_version(["ffmpeg", "-version"]),
         "aria2c": _tool_version(["aria2c", "--version"]),
         "yt-dlp": _tool_version(["yt-dlp", "--version"]),
+        "deno": _tool_version(["deno", "--version"]),
+        "node": _tool_version(["node", "--version"]),
     }
+    js = js_runtime_status()
+    ejs = _try_import("yt_dlp_ejs")
     onnx = check_onnx_providers()
     ok = (
         python["ok"]
@@ -115,10 +121,13 @@ def check_environment() -> dict[str, Any]:
         "packages": packages,
         "tools": tools,
         "onnx": onnx,
+        "js_runtime": js,
+        "yt_dlp_ejs": ejs,
         "notes": [
             "Sequential downloads only",
             "SQLite WAL queue",
             "Bulk TXT/MD import",
             "DirectML preferred",
+            js.get("tip") or f"JS runtime: {js.get('runtime')} ({js.get('path')})",
         ],
     }

@@ -19,6 +19,7 @@ NETWORK = "network"
 FFMPEG = "ffmpeg"
 BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
+JS_RUNTIME = "js_runtime"
 UNKNOWN = "unknown"
 
 CATEGORIES = (
@@ -30,11 +31,12 @@ CATEGORIES = (
     FFMPEG,
     BLOCKED_4K,
     CANCELLED,
+    JS_RUNTIME,
     UNKNOWN,
 )
 
-# Failures that should pause a bulk run (bot/auth and hard unknown).
-FAIL_PAUSE_CATEGORIES = frozenset({AUTH_REQUIRED, BOT_CHECK, UNKNOWN})
+# Failures that should pause a bulk run (bot/auth, missing EJS, and hard unknown).
+FAIL_PAUSE_CATEGORIES = frozenset({AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, UNKNOWN})
 STDERR_TAIL_LINES = 12
 STDERR_TAIL_CHARS = 2000
 
@@ -94,6 +96,18 @@ _FFMPEG_RE = re.compile(
     re.IGNORECASE,
 )
 _BLOCKED_4K_RE = re.compile(r"blocked:.*(?:4k|2160)|height\s*=\s*2[1-9]\d{2}", re.IGNORECASE)
+_JS_RUNTIME_RE = re.compile(
+    r"n challenge solving failed"
+    r"|signature solving failed"
+    r"|only images are available"
+    r"|challenge solver script"
+    r"|yt-dlp/ejs"
+    r"|yt-dlp-ejs"
+    r"|github\.com/yt-dlp/yt-dlp/wiki/ejs"
+    r"|no js runtime"
+    r"|js runtime",
+    re.IGNORECASE,
+)
 
 
 def classify_error(message: str | None, *, status: str | None = None) -> str:
@@ -104,6 +118,10 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
     lower = text.lower()
     if "cancelled" in lower and not is_auth_failure(text) and not _BOT_RE.search(text):
         return CANCELLED
+    if _JS_RUNTIME_RE.search(text) or (
+        "requested format" in lower and "not available" in lower and "image" in lower
+    ):
+        return JS_RUNTIME
     if _BOT_RE.search(text):
         return BOT_CHECK
     if _RATE_RE.search(text):
@@ -162,6 +180,9 @@ def human_cause(category: str) -> str:
         FFMPEG: "FFmpeg/ffprobe failed while processing the file.",
         BLOCKED_4K: "This source is 4K/≥2160p and cannot be upscaled here.",
         CANCELLED: "The job was cancelled.",
+        JS_RUNTIME: (
+            "YouTube needs Deno (or Node) plus yt-dlp-ejs to solve n/signature challenges."
+        ),
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
 
@@ -189,6 +210,12 @@ def suggested_actions(category: str) -> list[str]:
         return ["Select a lower-resolution source (≤1080p)"]
     if category == CANCELLED:
         return ["Re-download or Download selected if you still want this item"]
+    if category == JS_RUNTIME:
+        return [
+            "Install Deno and restart FrameForge",
+            'pip install -U "yt-dlp[default]" yt-dlp-ejs',
+            "Retry this job",
+        ]
     return ["Retry failed", "Inspect the error message"]
 
 
