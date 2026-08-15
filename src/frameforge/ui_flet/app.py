@@ -82,7 +82,15 @@ def build_header(
     on_settings: Any | None = None,
     on_authenticate: Any | None = None,
 ) -> ft.Row:
-    return ft.Row(
+    status_ctrl = ft.Container(
+        padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+        bgcolor=COLORS["surface"],
+        border=ft.Border.all(1, COLORS["border"]),
+        border_radius=999,
+        content=ft.Text(status_text, color=COLORS["text_secondary"], size=13),
+        data={"kind": "status"},
+    )
+    row = ft.Row(
         [
             ft.Text(
                 "FrameForge",
@@ -91,13 +99,7 @@ def build_header(
                 color=COLORS["text_primary"],
             ),
             ft.Container(expand=True),
-            ft.Container(
-                padding=ft.Padding.symmetric(horizontal=12, vertical=6),
-                bgcolor=COLORS["surface"],
-                border=ft.Border.all(1, COLORS["border"]),
-                border_radius=999,
-                content=ft.Text(status_text, color=COLORS["text_secondary"], size=13),
-            ),
+            status_ctrl,
             ft.Container(expand=True),
             ft.IconButton(
                 icon=ft.Icons.SETTINGS_OUTLINED,
@@ -114,6 +116,8 @@ def build_header(
         ],
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
+    row.data = {"status": status_ctrl}
+    return row
 
 
 def build_hero(*, on_add: Any | None = None, on_import: Any | None = None) -> ft.Row:
@@ -220,6 +224,8 @@ class FrameForgeUi:
         self.import_browser_fn: Any | None = None
         self.last_more_action: str | None = None
         self.more_invocations: list[str] = []
+        self._activity_note: str | None = None
+        self._action_lock = False
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -406,11 +412,16 @@ class FrameForgeUi:
 
     def refresh_queue(self, *, force: bool = False) -> None:
         jobs = self.queue_jobs()
-        sig = structural_sig(jobs)
+        armed = bool(getattr(self.worker, "is_armed", False))
+        sig = (structural_sig(jobs), armed, self._activity_note)
         active = next((j for j in jobs if j.status in {"downloading", "upscaling", "converting"}), None)
+        waiting = None
+        if armed and active is None:
+            waiting = next((j for j in jobs if j.status == "pending"), None)
         if not force and sig == self._queue_sig and self.queue_list is not None:
             if active is not None:
                 self.update_active_progress(active)
+            self._sync_header()
             return
         self._queue_sig = sig
         if self.queue_list is None:
@@ -423,7 +434,8 @@ class FrameForgeUi:
                     job,
                     selected=job.id in self.selected_ids,
                     expanded=job.id in self.expanded_failed,
-                    show_progress=active is not None and job.id == active.id,
+                    show_progress=(active is not None and job.id == active.id)
+                    or (waiting is not None and job.id == waiting.id),
                     on_toggle=self.toggle_select,
                     on_retry=self.retry_failed_job,
                     on_reauth=self.reauthenticate_job,
@@ -434,18 +446,78 @@ class FrameForgeUi:
             ]
         self._sync_queue_chrome()
         self._sync_floating()
+        self._sync_header()
         if self.page is not None:
             self.page.update()
 
     def update_active_progress(self, job: Any) -> None:
         if self.queue_list is None:
             return
+        pct = float(getattr(job, "progress", 0) or 0)
+        opts = job.options() if hasattr(job, "options") else {}
+        speed = opts.get("speed_str") or ""
+        eta = opts.get("eta_str") or ""
         for card in self.queue_list.controls:
             data = getattr(card, "data", None) or {}
-            if data.get("job_id") == job.id:
-                data["view"] = {**(data.get("view") or {}), "progress": float(job.progress)}
-                card.data = data
-                return
+            if data.get("job_id") != job.id:
+                continue
+            bar = data.get("progress_bar")
+            if bar is not None:
+                bar.value = None if pct <= 0 else min(1.0, max(0.0, pct / 100.0))
+            label = data.get("progress_label")
+            if label is not None:
+                bits = [f"{int(pct)}%"] if pct > 0 else ["Starting…"]
+                if speed:
+                    bits.append(str(speed))
+                if eta:
+                    bits.append(str(eta))
+                label.value = "  ".join(bits)
+            view = dict(data.get("view") or {})
+            view["progress"] = pct
+            view["speed"] = speed
+            view["eta"] = eta
+            data["view"] = view
+            card.data = data
+            if self.page is not None:
+                self.page.update()
+            return
+
+    def _sync_header(self) -> None:
+        if self.header is None:
+            return
+        text = self._activity_note or status_from_repo(self.repo, self.worker)
+        status_ctrl = (self.header.data or {}).get("status")
+        if status_ctrl is not None and getattr(status_ctrl, "content", None) is not None:
+            status_ctrl.content.value = text
+        if self.page is not None:
+            self.page.update()
+
+    def tick(self) -> None:
+        """Poll SQLite into the cards. Tests call this; the live window schedules it."""
+        if self._exiting or self._shutdown_complete:
+            return
+        active = next(
+            (j for j in self.queue_jobs() if j.status in {"downloading", "upscaling", "converting"}),
+            None,
+        )
+        if active is not None:
+            self._activity_note = None
+        self.refresh_queue()
+        self._sync_header()
+
+    def _schedule_tick(self) -> None:
+        if self._exiting or self._shutdown_complete or not self.exit_process_on_quit:
+            return
+        try:
+            self.tick()
+        except Exception:  # noqa: BLE001
+            pass
+        if self._exiting or self._shutdown_complete:
+            return
+        delay = 0.4 if getattr(self.worker, "is_armed", False) else 1.5
+        timer = threading.Timer(delay, self._schedule_tick)
+        timer.daemon = True
+        timer.start()
 
     def toggle_failed_expand(self, job_id: int) -> None:
         if job_id in self.expanded_failed:
@@ -455,22 +527,55 @@ class FrameForgeUi:
         self.refresh_queue(force=True)
 
     def retry_failed_job(self, job_id: int) -> None:
+        self._activity_note = "Retrying…"
         self.bridge.retry_job(job_id)
+        if not self.worker.is_armed:
+            self._activity_note = "Retry did not start — worker is not armed."
         self.refresh_queue(force=True)
 
     def retry_all_failed(self) -> list[int]:
+        self._activity_note = "Retrying failed jobs…"
         ids = self.bridge.retry_all_failed()
+        if ids and not self.worker.is_armed:
+            self._activity_note = "Retry did not start — worker is not armed."
+        elif not ids:
+            self._activity_note = "No failed jobs to retry."
         self.refresh_queue(force=True)
         return ids
 
     def retry_selected_failed(self) -> list[int]:
-        ids = self.bridge.retry_failed_ids(sorted(self.selected_ids))
-        self.refresh_queue(force=True)
-        return ids
+        if self._action_lock:
+            return []
+        self._action_lock = True
+        try:
+            self._activity_note = "Retrying selected…"
+            ids = self.bridge.retry_failed_ids(sorted(self.selected_ids))
+            if ids and not self.worker.is_armed:
+                self._activity_note = "Retry did not start — worker is not armed."
+            elif not ids:
+                self._activity_note = "Nothing to retry in the selection."
+            self.refresh_queue(force=True)
+            return ids
+        finally:
+            self._action_lock = False
 
     def download_all_pending(self) -> None:
-        self.bridge.download_all_pending()
-        self.refresh_queue(force=True)
+        if self._action_lock:
+            return
+        self._action_lock = True
+        try:
+            pending_n = self.repo.count_by_status("pending")
+            if pending_n <= 0:
+                self._activity_note = "No pending jobs to download."
+                self.refresh_queue(force=True)
+                return
+            self._activity_note = f"Starting {pending_n} pending download(s)…"
+            self.bridge.download_all_pending()
+            if not self.worker.is_armed:
+                self._activity_note = "Download all did not start — worker is not armed."
+            self.refresh_queue(force=True)
+        finally:
+            self._action_lock = False
 
     def clear_finished(self) -> None:
         self.bridge.clear_finished()
@@ -1060,6 +1165,7 @@ class FrameForgeUi:
         page.on_close = self.handle_window_close
         self._ensure_file_picker()
         page.add(self.build())
+        self._schedule_tick()
 
     def shutdown(self) -> None:
         try:

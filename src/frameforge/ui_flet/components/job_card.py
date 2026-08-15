@@ -28,9 +28,11 @@ def _pill(text: str, *, bg: str, fg: str) -> ft.Container:
 def status_colors(status: str) -> tuple[str, str]:
     if status in {"Completed"}:
         return COLORS["success_bg"], COLORS["success"]
-    if status in {"Failed", "BLOCKED 4K+"}:
+    if status == "Failed":
         return COLORS["danger_bg"], COLORS["danger"]
-    if status in {"Downloading", "Upscaling", "Converting"}:
+    if status == "BLOCKED 4K+":
+        return COLORS["warn_bg"], COLORS["warn"]
+    if status in {"Downloading", "Upscaling", "Converting", "Starting"}:
         return COLORS["select"], COLORS["accent"]
     if status == "Paused":
         return COLORS["warn_bg"], COLORS["warn"]
@@ -54,6 +56,15 @@ def build_job_card(
     view = card_view(job, selected=selected, expanded=expanded, show_progress=show_progress)
     bg, fg = status_colors(view["status"])
     fill = COLORS["select"] if selected else COLORS["surface"]
+    if view["failed"] and not selected:
+        fill = COLORS["danger_bg"]
+    elif view["blocked_4k"] and not selected:
+        fill = COLORS["warn_bg"]
+    elif view.get("active") and not selected:
+        fill = COLORS["select"]
+    border_c = COLORS["danger"] if view["failed"] else (
+        COLORS["warn"] if view["blocked_4k"] else (COLORS["accent"] if (selected or view.get("active")) else COLORS["border"])
+    )
     checks = ft.Checkbox(
         value=selected,
         on_change=lambda _e, jid=job.id: on_toggle(jid) if on_toggle else None,
@@ -88,9 +99,21 @@ def build_job_card(
             data={"kind": "overflow"},
         )
     )
-    progress = None
+    progress_bar = None
+    progress_label = None
     if view["progress"] is not None:
-        progress = ft.ProgressBar(value=min(1.0, max(0.0, view["progress"] / 100.0)), color=COLORS["progress"], bgcolor="#E2E8F0")
+        pct = float(view["progress"])
+        progress_bar = ft.ProgressBar(
+            value=None if pct <= 0 else min(1.0, max(0.0, pct / 100.0)),
+            color=COLORS["progress"],
+            bgcolor="#E2E8F0",
+        )
+        bits = [f"{int(pct)}%"] if pct > 0 else ["Starting…"]
+        if view.get("speed"):
+            bits.append(str(view["speed"]))
+        if view.get("eta"):
+            bits.append(str(view["eta"]))
+        progress_label = ft.Text("  ".join(bits), size=11, color=COLORS["text_secondary"])
     fail_row = None
     if view["failed"]:
         cause_btn = ft.TextButton(
@@ -114,6 +137,7 @@ def build_job_card(
             )
         fail_row = ft.Container(
             bgcolor=COLORS["danger_bg"],
+            border=ft.Border.all(1, COLORS["danger"]),
             border_radius=8,
             padding=8,
             content=ft.Column([cause_btn] + ([actions] if actions else []), spacing=6),
@@ -125,16 +149,24 @@ def build_job_card(
             spacing=10,
         )
     ]
-    if progress is not None:
-        body_controls.append(progress)
+    if progress_bar is not None:
+        body_controls.append(progress_bar)
+        if progress_label is not None:
+            body_controls.append(progress_label)
     if fail_row is not None:
         body_controls.append(fail_row)
     card = ft.Container(
         bgcolor=fill,
-        border=ft.Border.all(1, COLORS["accent"] if selected else COLORS["border"]),
+        border=ft.Border.all(1, border_c),
         border_radius=RADIUS_CARD,
         padding=12,
-        data={"job_id": job.id, "view": view},
+        data={
+            "job_id": job.id,
+            "view": view,
+            "progress_bar": progress_bar,
+            "progress_label": progress_label,
+            "failed": view["failed"],
+        },
         content=ft.Column(body_controls, spacing=8),
     )
     return bind_hover_elevation(card, selected=selected)

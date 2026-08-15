@@ -21,6 +21,8 @@ STATUS_PILL = {
     "cancelled": "Cancelled",
 }
 
+ACTIVE_CARD_STATUSES = frozenset({"downloading", "upscaling", "converting"})
+
 OVERFLOW_IDS = (
     "retry",
     "upscale",
@@ -84,6 +86,9 @@ def card_view(
     cause = opts.get("error_cause") or (
         human_cause(opts["error_category"]) if opts.get("error_category") else None
     )
+    active = job.status in ACTIVE_CARD_STATUSES
+    show_bar = bool(show_progress or active)
+    progress_val = float(getattr(job, "progress", 0) or 0) if show_bar else None
     return {
         "id": job.id,
         "title": job.title or job.url,
@@ -92,7 +97,9 @@ def card_view(
         "status": status_pill(job),
         "raw_status": job.status,
         "selected": selected,
-        "progress": float(job.progress) if show_progress else None,
+        "progress": progress_val,
+        "speed": opts.get("speed_str") or "",
+        "eta": opts.get("eta_str") or "",
         "failed": job.status == "failed",
         "expanded": expanded and job.status == "failed",
         "cause": cause or (job.error or ""),
@@ -104,6 +111,7 @@ def card_view(
         "can_download": can_download(job),
         "resolution": resolution_label(job),
         "thumbnail_path": getattr(job, "thumbnail_path", None),
+        "active": active,
     }
 
 
