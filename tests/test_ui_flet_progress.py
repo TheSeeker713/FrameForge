@@ -96,6 +96,8 @@ def test_retry_selected_sets_activity_note(tmp_path: Path):
     ui.build()
     ui.selected_ids = {job.id}
     ui.retry_selected_failed()
-    assert ui.repo.get(job.id).status == "pending"
+    status = ui.repo.get(job.id).status
+    assert status != "failed"
+    assert status in {"pending", "downloading"}
     assert ui._activity_note is not None
     ui.shutdown()

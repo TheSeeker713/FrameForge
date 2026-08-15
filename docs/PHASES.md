@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.6 (shell safety, Innertube clients, Deno/EJS worker, honest Chrome DPAPI)
+## Status: v0.5.7 (native title bar drag, YouTube throughput, cookies folder UX)
 
-Package version is **0.5.6**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.6_COMPLETE.md](V0.5.6_COMPLETE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md), [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md), [COOKIES.md](COOKIES.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
+Package version is **0.5.7**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.7_COMPLETE.md](V0.5.7_COMPLETE.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md), [SPEED.md](SPEED.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [COOKIES.md](COOKIES.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
 
 ## Phase 0 – Foundation
 

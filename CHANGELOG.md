@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.7
+
+- Native Windows title bar for window drag (`title_bar_hidden=False`); custom `WindowDragArea` is not default chrome
+- YouTube throughput: `-N 8`, aria2c `-x 16 -s 16`, `--throttled-rate 100K`, `--http-chunk-size 10M`; no silent `--limit-rate`
+- Authenticate/Settings show the cookies folder and domain files, with Open cookies folder
+
 ## 0.5.6
 
 - Shell safety: never `GetForegroundWindow` + DWM on foreign HWNDs (Explorer incident)

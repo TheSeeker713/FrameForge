@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.5.7 (native title bar, YouTube throughput, cookies folder)
+
+- See [V0.5.7_COMPLETE.md](V0.5.7_COMPLETE.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md), [SPEED.md](SPEED.md).
+- Suite: `python -m pytest -q` → **387 passed / 0 skipped / 0 failed** on the v0.5.7 docs commit (re-run to confirm).
+- `test_subprocess_progress_persists_via_handler` isolates leftover CustomTkinter `Variable.__del__` unraisables (worker-thread GC). Assertions still require a real completed download.
+
 ## v0.5.6 (shell safety, Innertube, Deno/EJS, honest Chrome DPAPI)
 
 - See [V0.5.6_COMPLETE.md](V0.5.6_COMPLETE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md), [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md).

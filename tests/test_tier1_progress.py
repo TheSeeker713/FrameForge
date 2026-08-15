@@ -252,8 +252,20 @@ def test_subprocess_download_emits_speed_or_eta(tmp_path: Path):
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.filterwarnings(
+    "ignore:Exception ignored in:pytest.PytestUnraisableExceptionWarning"
+)
 def test_subprocess_progress_persists_via_handler(tmp_path: Path):
-    """Worker download handler + killable subprocess writes speed/ETA to SQLite."""
+    """Worker download handler + killable subprocess writes speed/ETA to SQLite.
+
+    Isolation: earlier CustomTkinter tests can leave Tk ``Variable`` objects.
+    If those finalize on the worker thread, pytest emits an unraisable
+    ``main thread is not in main loop``. Collect on the main thread first.
+    The warning filter is this test only — it does not hide assertion failures.
+    """
+    import gc
+
+    gc.collect()
     from frameforge.download.handler import make_download_handler
     from frameforge.queue.worker import SequentialWorker
 
@@ -305,3 +317,4 @@ def test_subprocess_progress_persists_via_handler(tmp_path: Path):
     assert saw_live, "handler never persisted non-placeholder speed/ETA"
     worker.stop(timeout=5)
     repo.close()
+    gc.collect()
