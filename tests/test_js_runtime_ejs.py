@@ -43,16 +43,23 @@ def test_url_needs_js_runtime():
 
 def test_js_runtime_args_node_and_deno(monkeypatch):
     monkeypatch.setattr("frameforge.download.js_runtime.detect_js_runtime", lambda: "node")
-    assert js_runtime_cli_args("node") == ["--js-runtimes", "node"]
+    monkeypatch.setattr("frameforge.download.js_runtime.which_on_augmented_path", lambda n: r"C:\n\node.exe" if n == "node" else None)
+    args = js_runtime_cli_args("node")
+    assert args[0] == "--js-runtimes"
+    assert args[1] in {"node", r"node:C:\n\node.exe"} or args[1].startswith("node:")
     dl = YtDlpDownloader(output_dir=Path("."), use_aria2c=False)
     cmd = dl._build_cli_cmd("https://www.youtube.com/watch?v=x")
     assert "--js-runtimes" in cmd
-    assert cmd[cmd.index("--js-runtimes") + 1] == "node"
+    spec = cmd[cmd.index("--js-runtimes") + 1]
+    assert spec == "node" or spec.startswith("node:")
 
     monkeypatch.setattr("frameforge.download.js_runtime.detect_js_runtime", lambda: "deno")
+    monkeypatch.setattr("frameforge.download.js_runtime.which_on_augmented_path", lambda n: r"C:\d\deno.exe" if n == "deno" else None)
     cmd2 = dl._build_cli_cmd("https://www.youtube.com/watch?v=x")
-    assert "--js-runtimes" not in cmd2
-    assert js_runtime_cli_args("deno") == []
+    assert "--js-runtimes" in cmd2
+    spec2 = cmd2[cmd2.index("--js-runtimes") + 1]
+    assert spec2 == "deno" or spec2.startswith("deno:")
+    assert js_runtime_cli_args("deno")[0] == "--js-runtimes"
 
 
 def test_classify_ejs_stderr_is_js_runtime_not_unknown():

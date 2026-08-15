@@ -79,10 +79,16 @@ def js_runtime_path() -> str | None:
 
 
 def js_runtime_cli_args(runtime: str | None = None) -> list[str]:
-    """yt-dlp default already finds Deno. Node must be passed explicitly."""
+    """Pass an explicit runtime so a GUI-launched worker does not miss Deno."""
     name = detect_js_runtime() if runtime is None else runtime
+    if name == "deno":
+        path = which_on_augmented_path("deno")
+        spec = f"deno:{path}" if path else "deno"
+        return ["--js-runtimes", spec]
     if name == "node":
-        return ["--js-runtimes", "node"]
+        path = which_on_augmented_path("node")
+        spec = f"node:{path}" if path else "node"
+        return ["--js-runtimes", spec]
     return []
 
 
