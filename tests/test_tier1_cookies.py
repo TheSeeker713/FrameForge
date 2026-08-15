@@ -143,3 +143,35 @@ def test_header_only_stub_is_not_reusable_cookies(tmp_path: Path, monkeypatch):
     assert cookie_mod.should_skip_auth_prompt("stub.example") is True
     cookie_mod.clear_session_prompts()
     assert cookie_mod.should_skip_auth_prompt("stub.example") is False
+
+
+def test_cookie_store_status_lists_domain_files(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    cookie_mod.clear_session_prompts()
+    ensure_output_tree()
+    src = tmp_path / "yt.txt"
+    src.write_text(
+        "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tx\n",
+        encoding="utf-8",
+    )
+    cookie_mod.import_netscape_cookies("youtube.com", src)
+    status = cookie_mod.cookie_store_status()
+    assert Path(str(status["directory"])).name == "cookies"
+    assert "youtube.com.txt" in str(status["label"])
+    names = [item["name"] for item in status["files"]]  # type: ignore[index]
+    assert "youtube.com.txt" in names
+
+
+def test_open_cookies_folder_is_cookies_dir_only(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    ensure_output_tree()
+    from frameforge.paths import cookies_dir
+    from frameforge.util.reveal import explorer_open_folder_command
+
+    folder = cookies_dir().resolve()
+    cmd = explorer_open_folder_command(folder)
+    assert cmd[0] == "explorer"
+    assert cmd[1] == str(folder)
+    opened = cookie_mod.open_cookies_folder(launch=False)
+    assert opened.resolve() == folder
+    assert opened.name.lower() == "cookies"

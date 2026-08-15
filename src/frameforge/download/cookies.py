@@ -145,3 +145,45 @@ def resolve_cookiefile_for_url(url: str) -> Path | None:
     if has_cookies(url):
         return path
     return None
+
+
+def list_cookie_files() -> list[dict[str, object]]:
+    """Domain ``*.txt`` files in the FrameForge cookies directory."""
+    ensure_output_tree()
+    folder = cookies_dir()
+    items: list[dict[str, object]] = []
+    if not folder.is_dir():
+        return items
+    for path in sorted(folder.glob("*.txt")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            valid = is_netscape_cookie_text(text)
+        except OSError:
+            valid = False
+        items.append({"name": path.name, "path": str(path), "valid": valid})
+    return items
+
+
+def cookie_store_status() -> dict[str, object]:
+    """Resolved cookies directory plus filenames for Settings / Authenticate."""
+    ensure_output_tree()
+    folder = cookies_dir()
+    files = list_cookie_files()
+    names = [str(item["name"]) for item in files]
+    return {
+        "directory": str(folder),
+        "files": files,
+        "label": ", ".join(names) if names else "No domain cookie files yet",
+    }
+
+
+def open_cookies_folder(*, launch: bool = True) -> Path:
+    """Open only ``<FrameForge>/cookies`` in Explorer (no theme / DWM)."""
+    from frameforge.util.reveal import open_folder
+
+    ensure_output_tree()
+    folder = cookies_dir().resolve()
+    if folder.name.lower() != "cookies":
+        raise ValueError("refusing to open a path that is not the cookies directory")
+    folder.mkdir(parents=True, exist_ok=True)
+    return open_folder(folder, launch=launch)

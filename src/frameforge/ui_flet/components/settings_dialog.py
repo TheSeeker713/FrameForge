@@ -29,6 +29,7 @@ def build_settings_dialog(
     *,
     on_save: Any | None = None,
     on_close: Any | None = None,
+    on_open_cookies: Any | None = None,
 ) -> ft.AlertDialog:
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
@@ -103,6 +104,25 @@ def build_settings_dialog(
         color=COLORS["text_secondary"] if js.get("ok") else COLORS["warn"],
         size=12,
     )
+    from frameforge.download.cookies import cookie_store_status
+
+    store = cookie_store_status()
+    cookies_path = ft.Text(
+        f"Cookies folder: {store['directory']}",
+        color=COLORS["text_secondary"],
+        size=12,
+        selectable=True,
+    )
+    cookies_list = ft.Text(
+        f"Domain files: {store['label']}",
+        color=COLORS["text_secondary"],
+        size=12,
+        selectable=True,
+    )
+
+    def _open_cookies(_e=None) -> None:
+        if on_open_cookies:
+            on_open_cookies()
 
     def save(_e=None) -> None:
         repo.set_setting("format_preference", (fmt.value or "Best").strip() or "best")
@@ -166,6 +186,12 @@ def build_settings_dialog(
                 clients,
             ),
             _card(
+                "Cookies",
+                cookies_path,
+                cookies_list,
+                ft.OutlinedButton(content="Open cookies folder", on_click=_open_cookies),
+            ),
+            _card(
                 "AI and Upscaling",
                 upscale,
                 ft.Text("Pause AI tasks under RAM pressure.", color=COLORS["text_secondary"], size=12),
@@ -181,7 +207,7 @@ def build_settings_dialog(
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         width=480,
-        height=580,
+        height=640,
     )
     dlg = ft.AlertDialog(
         modal=False,
@@ -206,5 +232,10 @@ def build_settings_dialog(
         "fail_pause": fail_pause,
         "save": save,
         "cancel": cancel,
+        "cookies_path": cookies_path,
+        "cookies_list": cookies_list,
+        "cookies_dir": store["directory"],
+        "cookie_files": store["label"],
+        "on_open_cookies": on_open_cookies,
     }
     return dlg

@@ -794,6 +794,11 @@ class FrameForgeUi:
         except RevealError:
             pass
 
+    def open_cookies_folder(self, _e=None) -> None:
+        from frameforge.download.cookies import open_cookies_folder as _open
+
+        _open(launch=self.reveal_launch)
+
     def select_recommended(self) -> None:
         self.selected_ids = {
             j.id for j in self.queue_jobs() if j.upscale_recommended and j.status == "completed"
@@ -1243,6 +1248,7 @@ class FrameForgeUi:
             on_firefox=self._auth_firefox,
             on_txt=self._auth_choose_txt,
             on_copy=self._copy_auth_error,
+            on_open_cookies=self.open_cookies_folder,
             on_close=self.close_dialog,
         )
         return self.dialogs.open("auth", self.auth_dialog)
@@ -1256,6 +1262,7 @@ class FrameForgeUi:
         self.settings_dialog = build_settings_dialog(
             self.repo,
             on_close=self.close_dialog,
+            on_open_cookies=self.open_cookies_folder,
         )
         return self.dialogs.open("settings", self.settings_dialog)
 

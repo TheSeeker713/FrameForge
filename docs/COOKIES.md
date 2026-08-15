@@ -4,6 +4,8 @@ FrameForge stores per-domain Netscape cookie files under:
 
 `%USERPROFILE%\Downloads\FrameForge\cookies\<domain>.txt`
 
+Authenticate and Settings show that resolved folder and list domain `*.txt` files found. **Open cookies folder** launches Explorer on that directory only (no theme or DWM changes).
+
 ## Import from browser (v0.5.6)
 
 User-triggered only — FrameForge never auto-opens a browser loop.

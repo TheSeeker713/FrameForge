@@ -37,6 +37,11 @@ def test_modals_have_locked_actions(tmp_path: Path):
     assert "Force quit now" in action_blob
     auth = ui.open_authenticate("https://www.youtube.com/watch?v=x")
     assert "Authenticate" in str(auth.title.value)
+    from frameforge.paths import cookies_dir
+
+    assert "cookies" in str(auth.data["cookies_dir"]).lower()
+    assert Path(auth.data["cookies_dir"]).name == "cookies"
+    assert cookies_dir().name == "cookies"
     ui.shutdown()
 
 

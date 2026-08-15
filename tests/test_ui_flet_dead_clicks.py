@@ -89,3 +89,5 @@ def test_queue_chrome_floating_and_settings_clicks_are_wired(tmp_path: Path):
 
     dlg = build_settings_dialog(JobRepository(tmp_path / "s.db"), on_save=lambda _s: None, on_close=lambda: None)
     assert all(a.on_click is not None for a in dlg.actions)
+    assert "cookies" in str(dlg.data["cookies_dir"]).lower()
+    assert Path(dlg.data["cookies_dir"]).name == "cookies"

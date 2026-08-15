@@ -74,6 +74,7 @@ def authenticate_dialog(
     on_txt: Any,
     on_close: Any,
     on_copy: Any | None = None,
+    on_open_cookies: Any | None = None,
     prefill: str = "",
     error: str = "",
 ) -> ft.AlertDialog:
@@ -84,6 +85,26 @@ def authenticate_dialog(
         focused_border_color=COLORS["accent"],
     )
     err = ft.Text(error, color=COLORS["danger"], visible=bool(error))
+    from frameforge.download.cookies import cookie_store_status
+
+    store = cookie_store_status()
+    cookies_path = ft.Text(
+        f"Cookies folder: {store['directory']}",
+        color=COLORS["text_secondary"],
+        size=12,
+        selectable=True,
+    )
+    cookies_list = ft.Text(
+        f"Domain files: {store['label']}",
+        color=COLORS["text_secondary"],
+        size=12,
+        selectable=True,
+    )
+
+    def _open_cookies(_e=None) -> None:
+        if on_open_cookies:
+            on_open_cookies()
+
     dlg = ft.AlertDialog(
         modal=False,
         title=ft.Text("Authenticate site"),
@@ -96,6 +117,9 @@ def authenticate_dialog(
                     "FrameForge cannot decrypt those cookies. Log in in Firefox first if the site shows a bot check.",
                     color=COLORS["text_secondary"],
                 ),
+                cookies_path,
+                cookies_list,
+                ft.OutlinedButton(content="Open cookies folder", on_click=_open_cookies),
                 field,
                 ft.ListTile(title=ft.Text("Import from Firefox (recommended)"), on_click=on_firefox),
                 ft.ListTile(title=ft.Text("Choose cookies.txt file"), on_click=on_txt),
@@ -132,6 +156,11 @@ def authenticate_dialog(
         "on_txt": on_txt,
         "on_close": on_close,
         "on_copy": on_copy,
+        "on_open_cookies": on_open_cookies,
+        "cookies_path": cookies_path,
+        "cookies_list": cookies_list,
+        "cookies_dir": store["directory"],
+        "cookie_files": store["label"],
     }
     return dlg
 
