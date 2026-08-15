@@ -67,3 +67,14 @@ def test_clear_finished_hides_completed_failed_cancelled(tmp_path: Path):
     assert ids["failed"] in hist_ids
     assert ids["cancelled"] in hist_ids
     repo.close()
+
+
+def test_clear_finished_never_hides_pending_even_if_status_filter_wrong(tmp_path: Path):
+    repo, ids = _seed(tmp_path)
+    repo.clear_finished_from_queue(statuses=("pending", "completed", "downloading", "paused"))
+    visible = {j.id: j.status for j in repo.list_jobs()}
+    assert visible[ids["pending"]] == "pending"
+    assert visible[ids["paused"]] == "paused"
+    assert visible[ids["downloading"]] == "downloading"
+    assert ids["completed"] not in visible
+    repo.close()

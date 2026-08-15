@@ -210,6 +210,7 @@ def build_queue_chrome(
     on_retry_failed: Callable[[], None] | None = None,
     on_clear_finished: Callable[[], None] | None = None,
     on_clear_selected: Callable[[], None] | None = None,
+    on_undo: Callable[[], None] | None = None,
 ) -> ft.Container:
     if not spec.get("visible"):
         return ft.Container(visible=False, data=spec)
@@ -236,6 +237,8 @@ def build_queue_chrome(
             on_click=lambda _e: on_clear_selected and on_clear_selected(),
         )
     )
+    if spec.get("show_undo"):
+        buttons.append(elevated_filled_button("Undo", on_click=lambda _e: on_undo and on_undo()))
     row = ft.Container(
         visible=True,
         data=spec,

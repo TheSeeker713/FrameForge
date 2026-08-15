@@ -197,6 +197,7 @@ class FrameForgeUi:
         self.thumbs_grid: ft.GridView | None = None
         self.floating: ft.Container | None = None
         self.resource_banner: ft.Container | None = None
+        self.undo_banner: ft.Container | None = None
         self._queue_sig: tuple[Any, ...] | None = None
         self.fail_pause_payload: dict[str, Any] | None = None
         self.fail_pause_shown = 0
@@ -307,6 +308,7 @@ class FrameForgeUi:
             on_import=lambda _e=None: self.import_file(),
         )
         self.resource_banner = ft.Container(visible=False, data={"text": ""})
+        self.undo_banner = ft.Container(visible=False, data={"text": ""})
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
@@ -337,7 +339,7 @@ class FrameForgeUi:
         root = ft.Column(
             expand=True,
             spacing=16,
-            controls=[self.header, self.hero, self.resource_banner, self.tabs],
+            controls=[self.header, self.hero, self.undo_banner, self.resource_banner, self.tabs],
         )
         self.refresh_queue(force=True)
         self.refresh_history()
@@ -356,7 +358,11 @@ class FrameForgeUi:
         self.refresh_queue(force=True)
 
     def _sync_queue_chrome(self) -> None:
-        spec = queue_chrome_spec(self.queue_jobs(), self.selected_ids)
+        spec = queue_chrome_spec(
+            self.queue_jobs(),
+            self.selected_ids,
+            undo_available=bool(self.bridge.clear_undo),
+        )
         if self.queue_chrome is None:
             return
         built = build_queue_chrome(
@@ -365,6 +371,7 @@ class FrameForgeUi:
             on_retry_failed=self.retry_all_failed,
             on_clear_finished=self.clear_finished,
             on_clear_selected=self.clear_selected,
+            on_undo=self.undo_clear,
         )
         self.queue_chrome.visible = built.visible
         self.queue_chrome.content = built.content
@@ -460,16 +467,44 @@ class FrameForgeUi:
         self.refresh_queue(force=True)
 
     def clear_finished(self) -> None:
-        self.repo.clear_finished_from_queue()
+        self.bridge.clear_finished()
         self.selected_ids.clear()
+        self._sync_undo_banner()
         self.refresh_queue(force=True)
 
     def clear_selected(self) -> None:
         if not self.selected_ids:
             return
-        self.repo.clear_from_queue(sorted(self.selected_ids))
+        self.bridge.clear_selected(sorted(self.selected_ids))
         self.selected_ids.clear()
+        self._sync_undo_banner()
         self.refresh_queue(force=True)
+
+    def undo_clear(self) -> int:
+        n = self.bridge.undo_clear()
+        self._sync_undo_banner()
+        self.refresh_queue(force=True)
+        self.refresh_history()
+        return n
+
+    def _sync_undo_banner(self) -> None:
+        if self.undo_banner is None:
+            return
+        msg = self.bridge.last_clear_message
+        self.undo_banner.visible = bool(msg)
+        self.undo_banner.data = {"text": msg or ""}
+        if msg:
+            self.undo_banner.content = ft.Row(
+                [
+                    ft.Text(msg, color=COLORS["text_primary"], expand=True),
+                    elevated_filled_button("Undo", on_click=lambda _e: self.undo_clear()),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        else:
+            self.undo_banner.content = None
+        if self.page is not None:
+            self.page.update()
 
     def reauthenticate_job(self, job_id: int) -> None:
         job = self.repo.get(job_id)
@@ -600,7 +635,8 @@ class FrameForgeUi:
 
     def clear_history_selected(self) -> None:
         if self.selected_ids:
-            self.repo.clear_history(sorted(self.selected_ids))
+            self.bridge.clear_history_ids(sorted(self.selected_ids))
+            self._sync_undo_banner()
         self.refresh_history()
 
     def refresh_thumbs(self) -> None:

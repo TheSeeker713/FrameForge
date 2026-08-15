@@ -28,12 +28,10 @@ def test_clear_selected_removes_only_those_rows(tmp_path: Path):
     assert drop_pending.id not in visible_ids
     assert drop_done.id not in visible_ids
 
-    # Pending row is gone; completed row remains for history
-    try:
-        repo.get(drop_pending.id)
-        assert False, "pending row should be hard-deleted"
-    except KeyError:
-        pass
+    # Pending row is hidden (not deleted) so Undo can restore it; media stays.
+    hidden_pending = repo.get(drop_pending.id)
+    assert hidden_pending.status == "pending"
+    assert hidden_pending.queue_hidden is True
     hidden = repo.get(drop_done.id)
     assert hidden.status == "completed"
     assert hidden.queue_hidden is True

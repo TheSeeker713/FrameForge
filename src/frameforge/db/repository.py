@@ -17,6 +17,16 @@ ACTIVE_STAGE_STATUSES = ("downloading", "upscaling", "converting")
 INTERRUPTIBLE_STATUSES = ACTIVE_STAGE_STATUSES
 CONVERT_PENDING_STATUS = "convert_pending"
 TERMINAL_STATUSES = ("completed", "failed", "cancelled")
+# Clear finished must never hide or remove these (v0.5.3 field bug).
+CLEAR_FINISHED_PROTECTED = (
+    "pending",
+    "downloading",
+    "paused",
+    "upscaling",
+    "converting",
+    "convert_pending",
+    "download_completed",
+)
 PAUSED_STATUS = "paused"
 HOLDING_STATUSES = (PAUSED_STATUS,)
 # Live queue omits these; History still lists terminal rows.
@@ -739,6 +749,34 @@ class JobRepository:
         """Soft-remove from the live queue. Does not delete media or the SQLite row."""
         return self.merge_options(job_id, {"queue_hidden": True})
 
+    def snapshot_hide_flags(self, job_ids: list[int] | tuple[int, ...]) -> list[tuple[int, bool, bool]]:
+        """(job_id, queue_hidden, history_hidden) before a clear — for undo."""
+        rows: list[tuple[int, bool, bool]] = []
+        for jid in job_ids:
+            try:
+                job = self.get(int(jid))
+            except KeyError:
+                continue
+            rows.append(
+                (job.id, job.queue_hidden, bool(job.options().get("history_hidden"))),
+            )
+        return rows
+
+    def restore_hide_flags(self, rows: list[tuple[int, bool, bool]]) -> int:
+        """Undo a soft-hide. Never creates rows; never touches media."""
+        n = 0
+        for jid, queue_hidden, history_hidden in rows:
+            try:
+                self.get(int(jid))
+            except KeyError:
+                continue
+            self.merge_options(
+                int(jid),
+                {"queue_hidden": bool(queue_hidden), "history_hidden": bool(history_hidden)},
+            )
+            n += 1
+        return n
+
     def delete_job_row(self, job_id: int) -> None:
         """Hard-delete a jobs row. Never deletes media files on disk."""
         self.conn.execute("DELETE FROM jobs WHERE id = ?", (int(job_id),))
@@ -747,9 +785,8 @@ class JobRepository:
     def clear_from_queue(self, job_ids: list[int] | tuple[int, ...]) -> list[int]:
         """Remove jobs from the live queue. Media files are left on disk.
 
-        Terminal jobs (completed/failed/cancelled) are hidden so History keeps
-        them. Pending/paused and other non-active rows are deleted. Active
-        download/upscale/convert stages are skipped (cancel or pause first).
+        All clearable rows are soft-hidden (``queue_hidden``) so Undo can restore
+        visibility. Active download/upscale/convert stages are skipped.
         """
         cleared: list[int] = []
         for jid in job_ids:
@@ -759,10 +796,7 @@ class JobRepository:
                 continue
             if job.status in ACTIVE_STAGE_STATUSES:
                 continue
-            if job.status in TERMINAL_STATUSES:
-                self.hide_from_queue(job.id)
-            else:
-                self.delete_job_row(job.id)
+            self.hide_from_queue(job.id)
             cleared.append(job.id)
         return cleared
 
@@ -771,10 +805,21 @@ class JobRepository:
         *,
         statuses: tuple[str, ...] | list[str] | None = None,
     ) -> list[int]:
-        """Hide completed/failed/cancelled (or a subset) from the live queue."""
-        wanted = tuple(statuses) if statuses is not None else TERMINAL_STATUSES
-        ids = [j.id for j in self.list_jobs() if j.status in wanted]
-        return self.clear_from_queue(ids)
+        """Hide completed/failed/cancelled from the live queue.
+
+        Never hides or removes pending / paused / in-flight jobs. Does not call
+        ``clear_from_queue`` (that path used to hard-delete pending rows).
+        """
+        wanted = set(statuses) if statuses is not None else set(TERMINAL_STATUSES)
+        wanted -= set(CLEAR_FINISHED_PROTECTED)
+        wanted &= set(TERMINAL_STATUSES)
+        ids: list[int] = []
+        for job in self.list_jobs():
+            if job.status not in wanted:
+                continue
+            self.hide_from_queue(job.id)
+            ids.append(job.id)
+        return ids
 
     def clear_completed_from_queue(self) -> list[int]:
         return self.clear_finished_from_queue(statuses=("completed",))

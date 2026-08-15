@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from frameforge.db.repository import TERMINAL_STATUSES
+from frameforge.queue.clear_undo import ClearUndoEntry, ClearUndoStack, HideSnapshot
 from frameforge.queue.fail_pause import fail_pause_payload, maybe_fail_pause
 
 AskRetry = Callable[[], bool]
@@ -21,6 +23,8 @@ class UiBridge:
         self.settings_open = False
         self.fail_pause_events: list[dict[str, Any]] = []
         self._on_fail_pause_ui: Callable[[Any, dict[str, Any]], None] | None = None
+        self.clear_undo = ClearUndoStack()
+        self.last_clear_message: str | None = None
         if getattr(worker, "on_fail_pause", None) is None:
             worker.on_fail_pause = self._dispatch_fail_pause
 
@@ -123,6 +127,53 @@ class UiBridge:
 
     def download_all_pending(self) -> None:
         self.worker.request_download_all()
+
+    def _record_clear(self, kind: str, snapshots: list[HideSnapshot]) -> None:
+        if not snapshots:
+            return
+        self.clear_undo.push(ClearUndoEntry(kind=kind, snapshots=snapshots))
+        peek = self.clear_undo.peek()
+        self.last_clear_message = peek.message if peek else None
+
+    def clear_finished(self) -> list[int]:
+        """Hide only completed/failed/cancelled. Pending and in-flight stay."""
+        jobs = [j for j in self.repo.list_jobs() if j.status in TERMINAL_STATUSES]
+        snaps = [
+            HideSnapshot(j.id, j.queue_hidden, bool(j.options().get("history_hidden")))
+            for j in jobs
+        ]
+        ids = self.repo.clear_finished_from_queue()
+        self._record_clear("queue", snaps[:])
+        return ids
+
+    def clear_selected(self, job_ids: list[int]) -> list[int]:
+        ids = [int(i) for i in job_ids]
+        flag_rows = self.repo.snapshot_hide_flags(ids)
+        snaps = [HideSnapshot(jid, qh, hh) for jid, qh, hh in flag_rows]
+        cleared = self.repo.clear_from_queue(ids)
+        kept = {s.job_id for s in snaps if s.job_id in set(cleared)}
+        self._record_clear("queue", [s for s in snaps if s.job_id in kept])
+        return cleared
+
+    def clear_history_ids(self, job_ids: list[int]) -> int:
+        ids = [int(i) for i in job_ids]
+        flag_rows = self.repo.snapshot_hide_flags(ids)
+        snaps = [HideSnapshot(jid, qh, hh) for jid, qh, hh in flag_rows]
+        n = self.repo.clear_history(ids)
+        self._record_clear("history", snaps)
+        return n
+
+    def undo_clear(self) -> int:
+        entry = self.clear_undo.pop()
+        if entry is None:
+            self.last_clear_message = None
+            return 0
+        n = self.repo.restore_hide_flags(
+            [(s.job_id, s.queue_hidden, s.history_hidden) for s in entry.snapshots]
+        )
+        peek = self.clear_undo.peek()
+        self.last_clear_message = peek.message if peek else None
+        return n
 
     def handle_fail_pause_action(
         self,
