@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -77,3 +78,15 @@ def open_job_folder(job: Job, *, launch: bool = True) -> Path:
 
 def reveal_job_file(job: Job, *, launch: bool = True) -> Path:
     return reveal_file(resolve_job_media_path(job), launch=launch)
+
+
+def open_in_default_player(path: Path, *, launch: bool = True) -> Path:
+    """Open a media file with the OS default app (`os.startfile` on Windows)."""
+    path = Path(path)
+    if not path.is_file():
+        raise RevealError(f"Path does not exist: {path}")
+    if launch and sys.platform == "win32":
+        os.startfile(path)  # noqa: S606
+    elif launch:
+        subprocess.Popen(["xdg-open", str(path)])  # noqa: S603
+    return path.resolve()

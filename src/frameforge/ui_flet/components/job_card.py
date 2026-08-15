@@ -17,16 +17,29 @@ from frameforge.ui_flet.job_view import MORE_LABELS, OVERFLOW_LABELS, fail_actio
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
 
-def _pill(text: str, *, bg: str, fg: str) -> ft.Container:
+def _pill(text: str, *, bg: str, fg: str, tooltip: str | None = None) -> ft.Container:
     return ft.Container(
         padding=ft.Padding.symmetric(horizontal=8, vertical=4),
         bgcolor=bg,
         border_radius=999,
+        tooltip=tooltip,
         content=ft.Text(text, size=11, color=fg, weight=ft.FontWeight.W_500),
     )
 
 
-def _thumb_box(thumbnail_path: str | None) -> ft.Container:
+def _has_media(job: Any) -> bool:
+    for raw in (getattr(job, "output_path", None), getattr(job, "download_path", None)):
+        if raw and Path(str(raw)).is_file():
+            return True
+    return False
+
+
+def _thumb_box(
+    thumbnail_path: str | None,
+    *,
+    playable: bool = False,
+    on_play: Callable[[], None] | None = None,
+) -> ft.Container:
     placeholder = ft.Icon(ft.Icons.PLAY_CIRCLE_OUTLINE, color=COLORS["text_secondary"])
     src = str(thumbnail_path) if thumbnail_path else ""
     has_file = bool(src) and Path(src).is_file()
@@ -43,6 +56,9 @@ def _thumb_box(thumbnail_path: str | None) -> ft.Container:
     else:
         content = placeholder
         kind = "thumb_placeholder"
+    if playable and not has_file:
+        content = ft.Icon(ft.Icons.PLAY_CIRCLE_FILL, color=COLORS["accent"])
+        kind = "thumb_play"
     return ft.Container(
         width=72,
         height=48,
@@ -50,7 +66,9 @@ def _thumb_box(thumbnail_path: str | None) -> ft.Container:
         border_radius=8,
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
         content=content,
-        data={"kind": kind, "src": src if has_file else None},
+        tooltip="Click to play" if playable else None,
+        on_click=(lambda _e: on_play() if on_play else None) if playable else None,
+        data={"kind": kind, "src": src if has_file else None, "playable": playable},
     )
 
 
@@ -80,6 +98,7 @@ def build_job_card(
     on_expand: Callable[[int], None] | None = None,
     on_overflow: Callable[[int, str], None] | None = None,
     on_copy_error: Callable[[int], None] | None = None,
+    on_play: Callable[[int], None] | None = None,
 ) -> ft.Container:
     from frameforge.ui_flet.job_view import card_view
 
@@ -99,11 +118,27 @@ def build_job_card(
         value=selected,
         on_change=lambda _e, jid=job.id: on_toggle(jid) if on_toggle else None,
     )
-    thumb = _thumb_box(view.get("thumbnail_path"))
+    playable = view["raw_status"] == "completed" and _has_media(job)
+    thumb = _thumb_box(
+        view.get("thumbnail_path"),
+        playable=playable,
+        on_play=(lambda jid=job.id: on_play(jid) if on_play else None),
+    )
     title = ft.Text(view["title"], color=COLORS["text_primary"], weight=ft.FontWeight.W_600, size=14)
     meta_bits = [b for b in (view["domain"], view["resolution"]) if b]
     meta = ft.Text(" • ".join(meta_bits) or view["url"], color=COLORS["text_secondary"], size=12)
-    badges = [_pill(view["status"], bg=bg, fg=fg)]
+    status_pill = _pill(
+        view["status"],
+        bg=bg,
+        fg=fg,
+        tooltip=(
+            view.get("blocked_4k_hint")
+            or "Upscale blocked (≥2160p); download may still be completed"
+            if view["blocked_4k"]
+            else None
+        ),
+    )
+    badges = [status_pill]
     if view["recommended"]:
         badges.append(_pill("Recommended 2x", bg=COLORS["warn_bg"], fg=COLORS["warn"]))
     menu_items = []
