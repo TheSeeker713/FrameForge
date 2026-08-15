@@ -837,20 +837,72 @@ class FrameForgeUi:
         return self.dialogs.open("playlist", self.playlist_dialog)
 
     def open_quit_busy(self) -> ft.AlertDialog:
-        from frameforge.gui.exit_policy import OUTCOME_EXIT, apply_quit_choice
+        return self.open_quit_dialog()
+
+    def open_quit_dialog(self) -> ft.AlertDialog:
+        from frameforge.gui.exit_policy import (
+            CHOICE_FORCE_QUIT,
+            CHOICE_QUIT_IDLE,
+            CHOICE_STAY,
+            NEEDS_CHOICE,
+            OUTCOME_EXIT,
+            OUTCOME_FORCE,
+            OUTCOME_WAIT,
+            WAIT_IN_PROGRESS,
+            apply_quit_choice,
+            classify_exit,
+        )
         from frameforge.ui_flet.components.modals import quit_busy_dialog
 
+        kind = classify_exit(self.repo, self.worker)
+        busy = kind in (NEEDS_CHOICE, WAIT_IN_PROGRESS)
         self.quit_choice: str | None = None
 
         def choose(c: str) -> None:
             self.quit_choice = c
+            if c == CHOICE_STAY:
+                self.close_dialog()
+                self._close_clicks = 0
+                return
             self.close_dialog()
             outcome = apply_quit_choice(self.worker, c)
-            if outcome == OUTCOME_EXIT:
+            if c == CHOICE_FORCE_QUIT or outcome == OUTCOME_FORCE:
+                self.force_quit()
+                return
+            if outcome == OUTCOME_WAIT:
+                self._close_clicks = 0
+                return
+            if outcome == OUTCOME_EXIT or c == CHOICE_QUIT_IDLE:
                 self._finish_exit()
 
-        self.quit_dialog = quit_busy_dialog(on_choice=choose, on_cancel=self.close_dialog)
+        self.quit_dialog = quit_busy_dialog(
+            on_choice=choose,
+            on_cancel=lambda _e=None: choose(CHOICE_STAY),
+            busy=busy,
+        )
         return self.dialogs.open("quit", self.quit_dialog)
+
+    def force_quit(self) -> None:
+        """Always-available escape: release the HWND and kill the process tree."""
+        self._exiting = True
+        self._close_clicks = 99
+        self._release_native_close()
+        self._arm_exit_watchdog(0.5)
+        try:
+            self.worker.stop(timeout=0.5)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.repo.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._shutdown_complete = True
+        if self.exit_process_on_quit:
+            from frameforge.util.process_tree import force_kill_current_app
+
+            force_kill_current_app()
+        else:
+            self._release_native_close()
 
     def add_url(self) -> Any | None:
         field = (self.hero.data or {}).get("url") if self.hero is not None else None
@@ -1062,13 +1114,17 @@ class FrameForgeUi:
         key = getattr(e, "key", None)
         if key in {"Escape", "Esc"}:
             self.close_dialog()
+            return
+        ctrl = bool(getattr(e, "ctrl", False))
+        if ctrl and str(key).upper() in {"Q"}:
+            self.handle_window_close()
 
     def _on_window_event(self, e: Any) -> None:
         if self.page is not None:
             self.last_chrome = apply_page_chrome(self.page, set_size=False)
         et = getattr(e, "type", None)
-        name = getattr(et, "value", et)
-        if name in ("close", getattr(ft.WindowEventType, "CLOSE", "close")):
+        name = str(getattr(et, "name", None) or getattr(et, "value", et) or "").lower()
+        if any(tok in name for tok in ("close", "close_prevented")):
             self.handle_window_close()
 
     def _on_disconnect(self, _e: Any = None) -> None:
@@ -1097,32 +1153,22 @@ class FrameForgeUi:
         timer.start()
 
     def handle_window_close(self, _e: Any = None) -> str:
-        from frameforge.gui.exit_policy import NEEDS_CHOICE, classify_exit
-
         self._close_clicks += 1
         force = self._close_clicks >= 2 or self._exiting
         if force:
-            self._release_native_close()
-            self._finish_exit()
+            self.force_quit()
             return "force"
-        kind = classify_exit(self.repo, self.worker)
-        if kind != NEEDS_CHOICE:
-            self._release_native_close()
-            self._finish_exit()
-            return "exit"
         try:
-            dlg = self.open_quit_busy()
+            dlg = self.open_quit_dialog()
             opened = dlg is not None and (
                 bool(getattr(dlg, "open", False)) or self.dialogs.kind == "quit"
             )
             if not opened:
-                self._release_native_close()
-                self._finish_exit()
+                self.force_quit()
                 return "exit"
             return "choice"
         except Exception:  # noqa: BLE001
-            self._release_native_close()
-            self._finish_exit()
+            self.force_quit()
             return "exit"
 
     def _finish_exit(self) -> None:
@@ -1131,6 +1177,7 @@ class FrameForgeUi:
                 os._exit(0)
             return
         self._exiting = True
+        self._release_native_close()
         self._arm_exit_watchdog()
         try:
             self.close_dialog()

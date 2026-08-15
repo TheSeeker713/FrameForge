@@ -38,6 +38,24 @@ def test_active_download_requires_explicit_choice(tmp_path: Path):
     repo.close()
 
 
+def test_stay_and_force_quit_choices(tmp_path: Path):
+    from frameforge.gui.exit_policy import (
+        CHOICE_FORCE_QUIT,
+        CHOICE_QUIT_IDLE,
+        CHOICE_STAY,
+        OUTCOME_EXIT,
+        OUTCOME_FORCE,
+        OUTCOME_STAY,
+    )
+
+    repo = JobRepository(tmp_path / "stay.db")
+    worker = SequentialWorker(repo, download_handler=lambda j, r: None)
+    assert apply_quit_choice(worker, CHOICE_STAY) == OUTCOME_STAY
+    assert apply_quit_choice(worker, CHOICE_FORCE_QUIT) == OUTCOME_FORCE
+    assert apply_quit_choice(worker, CHOICE_QUIT_IDLE) == OUTCOME_EXIT
+    repo.close()
+
+
 def test_wait_to_quit_disarms_and_classifies(tmp_path: Path):
     repo = JobRepository(tmp_path / "w.db")
     job = repo.enqueue("https://example.com/d")

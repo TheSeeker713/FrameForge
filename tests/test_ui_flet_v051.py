@@ -150,12 +150,14 @@ def test_settings_and_other_modals_close(tmp_path: Path):
     ui.shutdown()
 
 
-def test_window_close_idle_tears_down_without_os_exit(tmp_path: Path):
+def test_window_close_idle_opens_quit_confirm(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.page = FakePage()
     assert ui.exit_process_on_quit is False
-    assert ui.handle_window_close() == "exit"
-    assert ui._shutdown_complete is True
+    assert ui.handle_window_close() == "choice"
+    assert ui.dialogs.kind == "quit"
+    assert ui._shutdown_complete is False
+    ui.shutdown()
 
 
 def test_window_close_busy_opens_quit_modal(tmp_path: Path):

@@ -26,11 +26,15 @@ def test_modals_have_locked_actions(tmp_path: Path):
     assert "will not start" in blob.lower() or "press Download" in blob
     pl = ui.open_playlist_modal("Summer Reel", list(range(8)))
     assert "Playlist" in str(pl.title.value)
+    job = ui.repo.enqueue("https://example.com/live")
+    ui.repo.update_status(job.id, "downloading")
     q = ui.open_quit_busy()
     titles = [t.title.value for t in q.content.controls]
     assert any("Cancel download" in t for t in titles)
     assert any("Pause download" in t for t in titles)
     assert any("Wait until finished" in t for t in titles)
+    action_blob = " ".join(str(getattr(a, "content", a)) for a in q.actions)
+    assert "Force quit now" in action_blob
     auth = ui.open_authenticate("https://www.youtube.com/watch?v=x")
     assert "Authenticate" in str(auth.title.value)
     ui.shutdown()

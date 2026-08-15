@@ -68,9 +68,10 @@ class DialogHost:
             return self.current
         if self.current is not None:
             self.close()
-        from frameforge.ui_flet.components.modals import wire_closable
+        if kind != "quit":
+            from frameforge.ui_flet.components.modals import wire_closable
 
-        wire_closable(dialog, self.close)
+            wire_closable(dialog, self.close)
         self.current = dialog
         self.kind = kind
         self.open_kinds.append(kind)

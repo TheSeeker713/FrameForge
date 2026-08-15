@@ -72,6 +72,16 @@ def pid_is_running(pid: int) -> bool:
     return True
 
 
+def force_kill_current_app() -> None:
+    """Kill this process and children (flet.exe), then _exit. Last-resort quit."""
+    pid = os.getpid()
+    try:
+        kill_process_tree(pid)
+    except Exception:  # noqa: BLE001
+        pass
+    os._exit(1)
+
+
 def wait_pid_gone(pid: int, timeout: float = 10.0) -> bool:
     """Wait until pid exits. Returns True if gone."""
     deadline = time.time() + timeout

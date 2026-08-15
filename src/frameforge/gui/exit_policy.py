@@ -16,15 +16,20 @@ WAIT_IN_PROGRESS = "wait_in_progress"
 CHOICE_CANCEL_AND_QUIT = "cancel_and_quit"
 CHOICE_PAUSE_AND_QUIT = "pause_and_quit"
 CHOICE_WAIT_THEN_QUIT = "wait_then_quit"
+CHOICE_FORCE_QUIT = "force_quit"
+CHOICE_STAY = "stay"
+CHOICE_QUIT_IDLE = "quit_idle"
 CHOICES = (
     CHOICE_CANCEL_AND_QUIT,
     CHOICE_PAUSE_AND_QUIT,
     CHOICE_WAIT_THEN_QUIT,
 )
+ALL_QUIT_CHOICES = CHOICES + (CHOICE_FORCE_QUIT, CHOICE_STAY, CHOICE_QUIT_IDLE)
 
 OUTCOME_EXIT = "exit"
 OUTCOME_STAY = "stay"
 OUTCOME_WAIT = "wait"
+OUTCOME_FORCE = "force"
 
 
 def list_active_work(repo: Any) -> list[Any]:
@@ -56,9 +61,15 @@ def classify_exit(repo: Any, worker: Any | None = None) -> str:
 
 
 def apply_quit_choice(worker: Any, choice: str) -> str:
-    """Apply one of the three quit options. Returns exit / wait / stay."""
+    """Apply a quit option. Returns exit / wait / stay / force."""
+    if choice == CHOICE_STAY:
+        return OUTCOME_STAY
+    if choice == CHOICE_FORCE_QUIT:
+        return OUTCOME_FORCE
+    if choice == CHOICE_QUIT_IDLE:
+        return OUTCOME_EXIT
     if choice not in CHOICES:
-        raise ValueError(f"quit choice must be one of {CHOICES}, got {choice!r}")
+        raise ValueError(f"quit choice must be one of {ALL_QUIT_CHOICES}, got {choice!r}")
     jobs = list_active_work(worker.repo)
     if choice == CHOICE_CANCEL_AND_QUIT:
         for job in jobs:

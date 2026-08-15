@@ -9,7 +9,10 @@ import flet as ft
 from frameforge.download.formats import PRESET_LABELS
 from frameforge.gui.exit_policy import (
     CHOICE_CANCEL_AND_QUIT,
+    CHOICE_FORCE_QUIT,
     CHOICE_PAUSE_AND_QUIT,
+    CHOICE_QUIT_IDLE,
+    CHOICE_STAY,
     CHOICE_WAIT_THEN_QUIT,
 )
 from frameforge.ui_flet.theme import COLORS
@@ -175,11 +178,11 @@ def playlist_dialog(
     return dlg
 
 
-def quit_busy_dialog(*, on_choice: Any, on_cancel: Any) -> ft.AlertDialog:
-    dlg = ft.AlertDialog(
-        modal=False,
-        title=ft.Text("Download in progress"),
-        content=ft.Column(
+def quit_busy_dialog(*, on_choice: Any, on_cancel: Any, busy: bool = True) -> ft.AlertDialog:
+    """Busy: cancel/pause/wait/stay/force. Idle: quit/stay/force. Force is always visible."""
+    tiles: list[ft.Control] = []
+    if busy:
+        tiles.extend(
             [
                 ft.ListTile(
                     title=ft.Text("Cancel download and quit"),
@@ -193,12 +196,29 @@ def quit_busy_dialog(*, on_choice: Any, on_cancel: Any) -> ft.AlertDialog:
                     title=ft.Text("Wait until finished then quit"),
                     on_click=lambda _e: on_choice(CHOICE_WAIT_THEN_QUIT),
                 ),
-            ],
-            width=460,
-        ),
-        actions=[ft.OutlinedButton(content="Cancel", on_click=on_cancel)],
+            ]
+        )
+    else:
+        tiles.append(
+            ft.ListTile(
+                title=ft.Text("Quit FrameForge"),
+                on_click=lambda _e: on_choice(CHOICE_QUIT_IDLE),
+            )
+        )
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Download in progress" if busy else "Quit FrameForge?"),
+        content=ft.Column(tiles, width=460),
+        actions=[
+            ft.OutlinedButton(content="Stay", on_click=lambda _e: on_choice(CHOICE_STAY)),
+            ft.FilledButton(
+                content="Force quit now",
+                bgcolor=COLORS["danger"],
+                on_click=lambda _e: on_choice(CHOICE_FORCE_QUIT),
+            ),
+        ],
         bgcolor=COLORS["surface"],
         on_dismiss=on_cancel,
     )
-    dlg.data = {"on_choice": on_choice, "on_cancel": on_cancel}
+    dlg.data = {"on_choice": on_choice, "on_cancel": on_cancel, "busy": busy, "force": CHOICE_FORCE_QUIT}
     return dlg
