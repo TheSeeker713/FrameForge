@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3
+
+- Clear finished only hides completed/failed/cancelled; Undo restores visibility
+- Hard shutdown: second close force-kills; 3s watchdog; prevent_close released before teardown
+- Live progress bar + header activity; failed cards obvious without selection
+- Chrome and Edge cookie import; Authenticate stays open with in-dialog status
+- Window chrome reapplied on move/tick; v0.5.2 drag-ghost claim failed the field test — confirm item 9 on hardware
+
 ## 0.5.2
 
 - Hover elevation on cards and buttons (widget shadows only; window drag ghost stays gone)
