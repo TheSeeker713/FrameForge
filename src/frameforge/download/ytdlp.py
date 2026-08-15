@@ -219,6 +219,28 @@ class YtDlpDownloader:
         self.sleep_interval: float | None = None
         self.max_sleep_interval: float = 5.0
         self.limit_rate_bps: int | None = None
+        self.last_invocation: dict[str, Any] | None = None
+
+    def _aria2c_enabled(self) -> bool:
+        from frameforge.download.invocation import aria2c_available
+
+        return bool(self.use_aria2c) and aria2c_available()
+
+    def _valid_cookiefile(self) -> Path | None:
+        from frameforge.download.cookies import is_netscape_cookie_text
+
+        if not self.cookiefile:
+            return None
+        path = Path(self.cookiefile)
+        if not path.is_file() or path.stat().st_size <= 0:
+            return None
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return None
+        if not is_netscape_cookie_text(text):
+            return None
+        return path
 
     def _format_selector(self) -> str:
         from frameforge.download.formats import resolve_format_selector
@@ -233,8 +255,8 @@ class YtDlpDownloader:
             "no_warnings": True,
             "skip_download": True,
         }
-        if self.cookiefile and Path(self.cookiefile).is_file():
-            opts["cookiefile"] = str(self.cookiefile)
+        if self._valid_cookiefile() is not None:
+            opts["cookiefile"] = str(self._valid_cookiefile())
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         if not isinstance(info, dict):
@@ -302,9 +324,10 @@ class YtDlpDownloader:
                 {"key": "FFmpegMetadata", "add_metadata": True},
             ],
         }
-        if self.cookiefile and Path(self.cookiefile).is_file():
-            opts["cookiefile"] = str(self.cookiefile)
-        if self.use_aria2c:
+        cookie = self._valid_cookiefile()
+        if cookie is not None:
+            opts["cookiefile"] = str(cookie)
+        if self._aria2c_enabled():
             opts["external_downloader"] = {"default": "aria2c"}
             opts["external_downloader_args"] = {
                 "aria2c": [
@@ -347,6 +370,7 @@ class YtDlpDownloader:
         killable subprocess (hard cancel via process-tree kill). Otherwise the
         in-process YoutubeDL API is used (direct/unit callers).
         """
+        self.describe_cli_invocation(url)
         if process_registry is not None and job_id is not None:
             return self._download_subprocess(
                 url,
@@ -417,9 +441,16 @@ class YtDlpDownloader:
             "--print",
             "%(id)s",
         ]
-        if self.cookiefile and Path(self.cookiefile).is_file():
-            cmd.extend(["--cookies", str(self.cookiefile)])
-        if self.use_aria2c:
+        cookie = self._valid_cookiefile()
+        if cookie is not None:
+            cmd.extend(["--cookies", str(cookie)])
+        ffmpeg = None
+        from frameforge.download.invocation import ffmpeg_location
+
+        ffmpeg = ffmpeg_location()
+        if ffmpeg:
+            cmd.extend(["--ffmpeg-location", str(Path(ffmpeg).parent)])
+        if self._aria2c_enabled():
             cmd.extend(
                 [
                     "--downloader",
@@ -436,6 +467,30 @@ class YtDlpDownloader:
         cmd.append(url)
         return cmd
 
+    def describe_cli_invocation(self, url: str) -> dict[str, Any]:
+        """Same argv/cwd/env the subprocess path will use (no process started)."""
+        from frameforge.download.invocation import (
+            download_subprocess_env,
+            ffmpeg_location,
+            snapshot_invocation,
+        )
+
+        cmd = self._build_cli_cmd(url)
+        _env, overrides = download_subprocess_env()
+        cookie = self._valid_cookiefile()
+        snap = snapshot_invocation(
+            argv=cmd,
+            cwd=str(self.output_dir),
+            output_template=str(self.output_dir / "%(title).200B [%(id)s].%(ext)s"),
+            cookies=str(cookie) if cookie is not None else None,
+            aria2c=self._aria2c_enabled(),
+            format_selector=self._format_selector(),
+            env_overrides=overrides,
+            ffmpeg=ffmpeg_location(),
+        )
+        self.last_invocation = snap
+        return snap
+
     def _download_subprocess(
         self,
         url: str,
@@ -445,14 +500,22 @@ class YtDlpDownloader:
         process_registry: ProcessRegistry,
     ) -> DownloadResult:
         import subprocess
+        import threading
+
+        from frameforge.download.invocation import download_subprocess_env
 
         cmd = self._build_cli_cmd(url)
+        env, overrides = download_subprocess_env()
+        snap = self.describe_cli_invocation(url)
+        snap["env_overrides"] = overrides
         creationflags = popen_creationflags()
         kwargs: dict[str, Any] = {
             "stdout": subprocess.PIPE,
-            "stderr": subprocess.STDOUT,
+            "stderr": subprocess.PIPE,
             "bufsize": 0,
             "creationflags": creationflags,
+            "cwd": str(self.output_dir),
+            "env": env,
         }
         if sys.platform != "win32":
             kwargs["start_new_session"] = True
@@ -462,6 +525,24 @@ class YtDlpDownloader:
         process_registry.register(job_id, proc.pid)
         printed: list[str] = []
         output_tail: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def _drain_stderr() -> None:
+            stream = proc.stderr
+            if stream is None:
+                return
+            try:
+                data = stream.read()
+            except Exception:  # noqa: BLE001
+                return
+            if not data:
+                return
+            text = data.decode("utf-8", errors="replace") if isinstance(data, (bytes, bytearray)) else str(data)
+            if text:
+                stderr_chunks.append(text)
+
+        err_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        err_thread.start()
         try:
             assert proc.stdout is not None
             for raw in iter_subprocess_text_chunks(proc.stdout):
@@ -487,11 +568,19 @@ class YtDlpDownloader:
                             "eta_str": eta_str if eta_str != "—" else None,
                         },
                     )
-                # yt-dlp --print lines have no [download] prefix typically
                 if line and not line.startswith("[") and line not in printed:
                     if "ETA" not in line and "at " not in line and "%" not in line:
                         printed.append(line)
-            rc = proc.wait(timeout=30)
+            rc = proc.wait()
+            err_thread.join(timeout=5)
+            stderr_text = "".join(stderr_chunks)
+            for err_line in iter_progress_lines(stderr_text):
+                output_tail.append(err_line)
+                if len(output_tail) > 80:
+                    del output_tail[0]
+            snap["returncode"] = rc
+            snap["stderr_empty"] = not bool(stderr_text.strip() or output_tail)
+            self.last_invocation = snap
             if process_registry.was_paused(job_id):
                 raise DownloadPaused("paused")
             if process_registry.was_killed(job_id):
@@ -499,7 +588,9 @@ class YtDlpDownloader:
             if rc != 0:
                 from frameforge.errors import format_ytdlp_exit_error
 
-                raise RuntimeError(format_ytdlp_exit_error(rc, output_tail or printed))
+                raise RuntimeError(
+                    format_ytdlp_exit_error(rc, output_tail or printed, argv=cmd)
+                )
         except (DownloadCancelled, DownloadPaused):
             if proc.poll() is None:
                 process_registry.kill(job_id)

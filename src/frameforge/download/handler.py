@@ -101,15 +101,23 @@ def make_download_handler(
         from frameforge.download.cookie_validate import consume_gentle_job
 
         apply_gentle_rate(dl, consume_gentle_job(repo))
-        cookie = _cookiefile_for_url(job.url)
-        if cookie is not None:
-            dl.cookiefile = cookie
-        result = dl.download(
-            job.url,
-            progress_cb=progress_cb,
-            job_id=job.id,
-            process_registry=process_registry,
-        )
+        dl.cookiefile = _cookiefile_for_url(job.url)
+        try:
+            result = dl.download(
+                job.url,
+                progress_cb=progress_cb,
+                job_id=job.id,
+                process_registry=process_registry,
+            )
+        finally:
+            inv = getattr(dl, "last_invocation", None)
+            if not inv and hasattr(dl, "describe_cli_invocation"):
+                try:
+                    inv = dl.describe_cli_invocation(job.url)
+                except Exception:  # noqa: BLE001
+                    inv = None
+            if inv:
+                repo.merge_options(job.id, {"ytdlp_invocation": inv})
         # If cancelled mid-flight after process death, do not mark success
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")

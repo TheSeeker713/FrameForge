@@ -40,7 +40,8 @@ def test_stderr_corpus_maps_to_category_with_cause_and_tail(tmp_path: Path):
 
 def test_bare_exit_code_without_stderr_is_unknown():
     msg = format_ytdlp_exit_error(1, [])
-    assert msg == "yt-dlp exited with code 1"
+    assert "yt-dlp exited with code 1" in msg
+    assert "no stderr; see invocation log" in msg
     assert classify_error(msg) == UNKNOWN
 
 

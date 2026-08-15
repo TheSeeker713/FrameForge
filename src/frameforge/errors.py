@@ -130,12 +130,26 @@ def stderr_tail(message: str | None, *, max_lines: int = STDERR_TAIL_LINES) -> s
     return tail
 
 
-def format_ytdlp_exit_error(rc: int, lines: list[str] | tuple[str, ...], *, max_lines: int = STDERR_TAIL_LINES) -> str:
+def format_ytdlp_exit_error(
+    rc: int,
+    lines: list[str] | tuple[str, ...],
+    *,
+    max_lines: int = STDERR_TAIL_LINES,
+    argv: list[str] | None = None,
+) -> str:
     """Combine exit code with a stderr/stdout tail so classifiers see bot/auth text."""
     tail = stderr_tail("\n".join(lines), max_lines=max_lines)
     if tail:
-        return f"yt-dlp exited with code {rc}\n{tail}"
-    return f"yt-dlp exited with code {rc}"
+        msg = f"yt-dlp exited with code {rc}\n{tail}"
+    else:
+        msg = f"yt-dlp exited with code {rc}\nno stderr; see invocation log"
+    if argv:
+        from frameforge.download.invocation import argv_summary
+
+        summary = argv_summary(list(argv))
+        if summary:
+            msg += f"\nargv: {summary}"
+    return msg
 
 
 def human_cause(category: str) -> str:
