@@ -73,6 +73,7 @@ def authenticate_dialog(
     on_firefox: Any,
     on_txt: Any,
     on_close: Any,
+    on_copy: Any | None = None,
     prefill: str = "",
     error: str = "",
 ) -> ft.AlertDialog:
@@ -104,6 +105,7 @@ def authenticate_dialog(
             spacing=8,
         ),
         actions=[
+            ft.OutlinedButton(content="Copy error", on_click=on_copy),
             ft.OutlinedButton(content="Cancel", on_click=on_close),
             ft.FilledButton(content="Done", bgcolor=COLORS["accent"], on_click=on_close),
         ],
@@ -118,6 +120,7 @@ def authenticate_dialog(
         "on_firefox": on_firefox,
         "on_txt": on_txt,
         "on_close": on_close,
+        "on_copy": on_copy,
     }
     return dlg
 

@@ -38,6 +38,10 @@ class FakePage:
         self.padding = None
         self.theme = None
         self.added: list[Any] = []
+        self.clipboard: str | None = None
+
+    def set_clipboard(self, text: str) -> None:
+        self.clipboard = text
 
     def show_dialog(self, dialog: Any) -> None:
         dialog.open = True

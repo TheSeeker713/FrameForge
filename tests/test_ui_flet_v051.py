@@ -52,7 +52,11 @@ def test_authenticate_closes_via_x_cancel_and_dismiss(tmp_path: Path):
     assert page.popped >= 1
 
     dlg2 = ui.open_authenticate()
-    cancel = next(a for a in dlg2.actions if isinstance(a, ft.OutlinedButton))
+    cancel = next(
+        a
+        for a in dlg2.actions
+        if isinstance(a, ft.OutlinedButton) and str(getattr(a, "content", "")) == "Cancel"
+    )
     cancel.on_click()
     assert ui.auth_open is False
 

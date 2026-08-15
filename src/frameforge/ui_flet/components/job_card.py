@@ -50,6 +50,7 @@ def build_job_card(
     on_reauth: Callable[[int], None] | None = None,
     on_expand: Callable[[int], None] | None = None,
     on_overflow: Callable[[int, str], None] | None = None,
+    on_copy_error: Callable[[int], None] | None = None,
 ) -> ft.Container:
     from frameforge.ui_flet.job_view import card_view
 
@@ -131,6 +132,10 @@ def build_job_card(
                     elevated_outlined_button(
                         "Retry",
                         on_click=lambda _e, jid=job.id: on_retry(jid) if on_retry else None,
+                    ),
+                    elevated_outlined_button(
+                        "Copy error",
+                        on_click=lambda _e, jid=job.id: on_copy_error(jid) if on_copy_error else None,
                     ),
                 ],
                 spacing=8,

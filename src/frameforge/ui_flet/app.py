@@ -209,6 +209,7 @@ class FrameForgeUi:
         self._activity_note: str | None = None
         self._action_lock = False
         self.last_chrome: dict[str, Any] | None = None
+        self.last_copied_report: str | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -292,6 +293,7 @@ class FrameForgeUi:
                 width=460,
             ),
             actions=[
+                elevated_outlined_button("Copy full report", on_click=self._copy_fail_pause_report),
                 elevated_filled_button("Import from browser", on_click=act("import_browser")),
                 elevated_outlined_button("Authenticate site", on_click=act("authenticate")),
                 elevated_outlined_button("Retry this job", on_click=act("retry")),
@@ -299,8 +301,46 @@ class FrameForgeUi:
                 elevated_outlined_button("Stop queue", on_click=act("stop")),
             ],
         )
-        dlg.data = {"status": status, "resume": resume_btn, "browser": browser_pick}
+        dlg.data = {"status": status, "resume": resume_btn, "browser": browser_pick, "payload": payload}
         return dlg
+
+    def copy_error_report(
+        self,
+        job: Any | None = None,
+        *,
+        payload: dict[str, Any] | None = None,
+        extra_error: str | None = None,
+    ) -> str:
+        from frameforge.error_report import format_full_error_report
+
+        if job is None and payload and payload.get("job_id") is not None:
+            try:
+                job = self.repo.get(int(payload["job_id"]))
+            except Exception:  # noqa: BLE001
+                job = None
+        text = format_full_error_report(job, payload=payload, extra_error=extra_error)
+        self.last_copied_report = text
+        page = self.page
+        if page is not None:
+            setter = getattr(page, "set_clipboard", None)
+            if callable(setter):
+                try:
+                    setter(text)
+                except Exception:  # noqa: BLE001
+                    pass
+        return text
+
+    def _copy_fail_pause_report(self, _e: Any = None) -> str:
+        return self.copy_error_report(payload=self.fail_pause_payload)
+
+    def _copy_auth_error(self, _e: Any = None) -> str:
+        err = self._auth_error_control()
+        extra = getattr(err, "value", None) or ""
+        return self.copy_error_report(extra_error=extra or "Authenticate dialog", payload={"url": self._auth_domain_value()})
+
+    def copy_job_error(self, job_id: int) -> str:
+        job = self.repo.get(int(job_id))
+        return self.copy_error_report(job)
 
     def build(self) -> ft.Column:
         status = status_from_repo(self.repo, self.worker)
@@ -440,6 +480,7 @@ class FrameForgeUi:
                     on_reauth=self.reauthenticate_job,
                     on_expand=self.toggle_failed_expand,
                     on_overflow=self.handle_overflow,
+                    on_copy_error=self.copy_job_error,
                 )
                 for job in jobs
             ]
@@ -1140,6 +1181,7 @@ class FrameForgeUi:
             on_edge=self._auth_edge,
             on_firefox=self._auth_firefox,
             on_txt=self._auth_choose_txt,
+            on_copy=self._copy_auth_error,
             on_close=self.close_dialog,
         )
         return self.dialogs.open("auth", self.auth_dialog)
