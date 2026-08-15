@@ -13,7 +13,7 @@ from frameforge.ui_flet.elevation import (
     elevated_filled_button,
     elevated_outlined_button,
 )
-from frameforge.ui_flet.job_view import MORE_LABELS, OVERFLOW_LABELS, overflow_actions
+from frameforge.ui_flet.job_view import MORE_LABELS, OVERFLOW_LABELS, fail_action_ids, overflow_actions
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
 
@@ -146,23 +146,33 @@ def build_job_card(
         )
         actions = None
         if view["expanded"]:
-            actions = ft.Row(
-                [
-                    elevated_filled_button(
-                        "Re-authenticate",
-                        on_click=lambda _e, jid=job.id: on_reauth(jid) if on_reauth else None,
-                    ),
-                    elevated_outlined_button(
-                        "Retry",
-                        on_click=lambda _e, jid=job.id: on_retry(jid) if on_retry else None,
-                    ),
-                    elevated_outlined_button(
-                        "Copy error",
-                        on_click=lambda _e, jid=job.id: on_copy_error(jid) if on_copy_error else None,
-                    ),
-                ],
-                spacing=8,
-            )
+            action_ids = fail_action_ids(view.get("error_category"))
+            lead = action_ids[0] if action_ids else "retry"
+            buttons: list[ft.Control] = []
+            for aid in action_ids:
+                if aid == "reauth":
+                    buttons.append(
+                        elevated_filled_button(
+                            "Re-authenticate",
+                            on_click=lambda _e, jid=job.id: on_reauth(jid) if on_reauth else None,
+                        )
+                    )
+                elif aid == "retry":
+                    factory = elevated_filled_button if lead == "retry" else elevated_outlined_button
+                    buttons.append(
+                        factory(
+                            "Retry",
+                            on_click=lambda _e, jid=job.id: on_retry(jid) if on_retry else None,
+                        )
+                    )
+                elif aid == "copy":
+                    buttons.append(
+                        elevated_outlined_button(
+                            "Copy error",
+                            on_click=lambda _e, jid=job.id: on_copy_error(jid) if on_copy_error else None,
+                        )
+                    )
+            actions = ft.Row(buttons, spacing=8, data={"fail_actions": action_ids, "lead": lead})
         fail_row = ft.Container(
             bgcolor=COLORS["danger_bg"],
             border=ft.Border.all(1, COLORS["danger"]),

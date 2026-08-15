@@ -74,4 +74,36 @@ def test_fail_pause_and_auth_and_card_copy(tmp_path: Path):
     card_text = ui.copy_job_error(job.id)
     assert str(job.id) in card_text
     assert card_text.strip()
+    assert ui.page.clipboard == card_text
+    assert ui.last_clipboard_status in {"sync", "scheduled", "set"}
     ui.shutdown()
+
+
+def test_ffmpeg_fail_leads_with_retry_not_reauth(tmp_path: Path):
+    from frameforge.errors import FFMPEG
+    from frameforge.ui_flet.components.job_card import build_job_card
+    from frameforge.ui_flet.job_view import fail_action_ids
+
+    assert fail_action_ids(FFMPEG)[0] == "retry"
+    assert "reauth" not in fail_action_ids(FFMPEG)
+    repo = JobRepository(tmp_path / "f.db")
+    job = repo.enqueue("https://example.com/v")
+    annotate_job_error(repo, job.id, "ffmpeg failed: No such file or directory")
+    card = build_job_card(repo.get(job.id), selected=False, expanded=True, show_progress=False)
+    found = []
+
+    def walk(ctrl):
+        data = getattr(ctrl, "data", None)
+        if isinstance(data, dict) and "fail_actions" in data:
+            found.append(data)
+        content = getattr(ctrl, "content", None)
+        if content is not None:
+            walk(content)
+        for child in getattr(ctrl, "controls", None) or []:
+            walk(child)
+
+    walk(card)
+    assert found
+    assert found[0]["lead"] == "retry"
+    assert found[0]["fail_actions"][0] == "retry"
+    repo.close()

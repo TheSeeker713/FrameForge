@@ -211,6 +211,7 @@ class FrameForgeUi:
         self._action_lock = False
         self.last_chrome: dict[str, Any] | None = None
         self.last_copied_report: str | None = None
+        self.last_clipboard_status: str | None = None
         self.last_destroy_status: str | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
@@ -324,12 +325,9 @@ class FrameForgeUi:
         self.last_copied_report = text
         page = self.page
         if page is not None:
-            setter = getattr(page, "set_clipboard", None)
-            if callable(setter):
-                try:
-                    setter(text)
-                except Exception:  # noqa: BLE001
-                    pass
+            from frameforge.ui_flet.clipboard import request_set_clipboard
+
+            self.last_clipboard_status = request_set_clipboard(page, text)
         return text
 
     def _copy_fail_pause_report(self, _e: Any = None) -> str:
@@ -365,7 +363,7 @@ class FrameForgeUi:
         self.thumbs_grid = ft.GridView(expand=True, runs_count=4, max_extent=220, spacing=8)
         self.floating = ft.Container(visible=False)
         queue_body = ft.Column(
-            [self.queue_chrome, self.queue_list, self.floating],
+            [self.queue_chrome, self.floating, self.queue_list],
             expand=True,
             spacing=8,
         )

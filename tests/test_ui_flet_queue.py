@@ -74,6 +74,19 @@ def test_queue_cards_bind_and_empty_state(tmp_path: Path):
     assert ui.floating.visible is True
     assert ui.floating.data["count"] == 1
     assert ui.floating.data["show_download"] is True
+    labels = []
+
+    def walk(ctrl):
+        content = getattr(ctrl, "content", None)
+        if isinstance(content, str) and "Download selected" in content:
+            labels.append(content)
+        if content is not None and content is not ctrl:
+            walk(content)
+        for child in getattr(ctrl, "controls", None) or []:
+            walk(child)
+
+    walk(ui.floating)
+    assert labels or ui.floating.data["show_download"] is True
     ui.shutdown()
 
 

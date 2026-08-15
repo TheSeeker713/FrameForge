@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from frameforge.errors import human_cause
+from frameforge.errors import AUTH_REQUIRED, BOT_CHECK
 from frameforge.gui.actions import can_convert, can_download, can_upscale
 
 STATUS_PILL = {
@@ -66,6 +67,13 @@ def status_pill(job: Any) -> str:
     return STATUS_PILL.get(getattr(job, "status", ""), str(getattr(job, "status", "")).title())
 
 
+def fail_action_ids(category: str | None) -> list[str]:
+    """ffmpeg / js_runtime / network lead with Retry, not Re-authenticate."""
+    if category in (AUTH_REQUIRED, BOT_CHECK):
+        return ["reauth", "retry", "copy"]
+    return ["retry", "copy"]
+
+
 def resolution_label(job: Any) -> str | None:
     w, h = getattr(job, "source_width", None), getattr(job, "source_height", None)
     if h:
@@ -112,6 +120,7 @@ def card_view(
         "resolution": resolution_label(job),
         "thumbnail_path": getattr(job, "thumbnail_path", None),
         "active": active,
+        "error_category": opts.get("error_category") or "",
     }
 
 
