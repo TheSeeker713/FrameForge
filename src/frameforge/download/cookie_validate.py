@@ -104,7 +104,7 @@ def validate_cookies_for_url(
     if not has_cookies(url) or not _file_ok(path):
         return CookieValidationResult(
             False,
-            "No valid Netscape cookies for this site. Import from Firefox or cookies.txt first.",
+            "No valid Netscape cookies for this site. Import from Chrome, Edge, Firefox, or cookies.txt first.",
             domain=domain,
             cookiefile=path,
         )

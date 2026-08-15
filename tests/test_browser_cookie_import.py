@@ -72,7 +72,20 @@ def test_chromium_lock_message(tmp_path: Path, monkeypatch):
 
     result = import_cookies_from_browser("example.com", browser="chrome", runner=runner)
     assert result.ok is False
-    assert CHROMIUM_LOCK_HINT in result.message
+    assert CHROMIUM_LOCK_HINT in result.message or "Chrome not found" in result.message
+    assert "close Chrome" in result.message
+
+
+def test_chrome_missing_profile_message(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    ensure_output_tree()
+
+    def runner(cmd: list[str]) -> tuple[int, str, str]:
+        return 1, "", "could not find chrome cookies database"
+
+    result = import_cookies_from_browser("example.com", browser="chrome", runner=runner)
+    assert result.ok is False
+    assert "Chrome not found / profile locked" in result.message
 
 
 def test_auto_order_falls_through_to_edge(tmp_path: Path, monkeypatch):

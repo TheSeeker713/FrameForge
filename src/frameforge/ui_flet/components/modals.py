@@ -65,6 +65,8 @@ def format_dialog(*, on_apply: Any, on_cancel: Any) -> ft.AlertDialog:
 def authenticate_dialog(
     domain: str,
     *,
+    on_chrome: Any,
+    on_edge: Any,
     on_firefox: Any,
     on_txt: Any,
     on_close: Any,
@@ -85,10 +87,12 @@ def authenticate_dialog(
             [
                 ft.Text(f"Authenticate {domain}", weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "Import cookies from Firefox or provide a cookies.txt file.",
+                    "Import cookies from Chrome, Edge, or Firefox. Log in in that browser first if the site shows a bot check.",
                     color=COLORS["text_secondary"],
                 ),
                 field,
+                ft.ListTile(title=ft.Text("Import from Chrome"), on_click=on_chrome),
+                ft.ListTile(title=ft.Text("Import from Edge"), on_click=on_edge),
                 ft.ListTile(title=ft.Text("Import from Firefox"), on_click=on_firefox),
                 ft.ListTile(title=ft.Text("Choose cookies.txt file"), on_click=on_txt),
                 err,
@@ -106,6 +110,8 @@ def authenticate_dialog(
     dlg.data = {
         "field": field,
         "error": err,
+        "on_chrome": on_chrome,
+        "on_edge": on_edge,
         "on_firefox": on_firefox,
         "on_txt": on_txt,
         "on_close": on_close,

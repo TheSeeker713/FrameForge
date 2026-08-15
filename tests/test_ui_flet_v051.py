@@ -84,7 +84,7 @@ def _write_site_cookies(url: str) -> Path:
     return path
 
 
-def test_authenticate_firefox_success_closes_error_stays(tmp_path: Path):
+def test_authenticate_firefox_success_stays_open_error_stays(tmp_path: Path):
     clear_session_cookie_validation()
     ui = _ui(tmp_path)
     page = FakePage()
@@ -96,10 +96,14 @@ def test_authenticate_firefox_success_closes_error_stays(tmp_path: Path):
         return SimpleNamespace(ok=True, message="ok")
 
     ui.import_browser_fn = ok_import
-    ui.open_authenticate("https://www.youtube.com/watch?v=z")
-    ui._auth_firefox()
-    assert ui.auth_open is False
-    assert ui.dialogs.current is None
+    dlg = ui.open_authenticate("https://www.youtube.com/watch?v=z")
+    assert dlg.data.get("on_chrome") is not None
+    assert dlg.data.get("on_edge") is not None
+    ui._auth_chrome()
+    assert ui.auth_open is True
+    assert ui.dialogs.current is dlg
+    assert dlg.data["error"].visible is True
+    assert "valid" in dlg.data["error"].value.lower() or "close" in dlg.data["error"].value.lower()
 
     ui.import_browser_fn = lambda url, browser="firefox": SimpleNamespace(ok=False, message="locked")
     dlg = ui.open_authenticate("https://www.youtube.com/watch?v=z")
@@ -110,7 +114,7 @@ def test_authenticate_firefox_success_closes_error_stays(tmp_path: Path):
     ui.shutdown()
 
 
-def test_authenticate_cookies_txt_success_closes(tmp_path: Path):
+def test_authenticate_cookies_txt_success_stays_open(tmp_path: Path):
     clear_session_cookie_validation()
     ui = _ui(tmp_path)
     page = FakePage()
@@ -119,7 +123,7 @@ def test_authenticate_cookies_txt_success_closes(tmp_path: Path):
     ui.open_authenticate("https://www.youtube.com/watch?v=z")
     cookie = _netscape(tmp_path / "cookies.txt")
     ui.import_cookies_txt_path(cookie)
-    assert ui.auth_open is False
+    assert ui.auth_open is True
     ui.shutdown()
 
 

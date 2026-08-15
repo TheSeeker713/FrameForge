@@ -22,6 +22,13 @@ CHROMIUM_LOCK_HINT = (
     "Close the browser and retry, use Firefox, or import a Netscape cookies.txt manually."
 )
 
+
+def missing_browser_message(browser: str) -> str:
+    title = (browser or "browser").strip().capitalize()
+    return (
+        f"{title} not found / profile locked — close {title} and retry, or export cookies.txt."
+    )
+
 Runner = Callable[[list[str]], tuple[int, str, str]]
 
 
@@ -140,7 +147,9 @@ def import_cookies_from_browser(
             except OSError:
                 pass
         hint = ""
-        if name in CHROMIUM_BROWSERS and _looks_like_chromium_lock(blob):
+        if name in {"chrome", "edge", "firefox"}:
+            hint = " " + missing_browser_message(name)
+        elif name in CHROMIUM_BROWSERS and _looks_like_chromium_lock(blob):
             hint = " " + CHROMIUM_LOCK_HINT
         detail = (err or out or f"exit {rc}").strip().splitlines()
         short = detail[-1] if detail else f"exit {rc}"

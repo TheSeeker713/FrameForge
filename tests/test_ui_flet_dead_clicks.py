@@ -40,6 +40,8 @@ def test_fail_pause_dialog_five_actions_and_resume_control(tmp_path: Path):
     assert "Stop queue" in blob
     assert dlg.data["resume"] is not None
     assert dlg.data["status"] is not None
+    assert dlg.data["browser"] is not None
+    assert (dlg.data["browser"].value or "") == "chrome"
     ids = [aid for aid, _ in MODAL_ACTIONS]
     assert ids == ["import_browser", "authenticate", "retry", "skip_resume", "stop"]
     ui.shutdown()
