@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.8
+
+- Quit: native X → “Quit FrameForge?” (Quit / Cancel only); UI and process tree exit on a hard deadline (`docs/UI_SHUTDOWN.md`)
+- Aria2 stays default when installed; googlevideo HTTP 403 / aria2 exit 22 auto-retries once with the native yt-dlp downloader
+- Those CDN blocks classify as `aria2_forbidden`, not `ffmpeg` (argv `--ffmpeg-location` is not an FFmpeg failure)
+
 ## 0.5.7
 
 - Native Windows title bar for window drag (`title_bar_hidden=False`); custom `WindowDragArea` is not default chrome

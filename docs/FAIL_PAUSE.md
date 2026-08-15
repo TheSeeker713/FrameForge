@@ -13,7 +13,8 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `rate_limited` | HTTP 429, too many requests | Site is slowing you down. |
 | `not_available` | private, removed, 404 | Video cannot be downloaded. |
 | `network` | timeout, DNS, connection reset | Network interrupted the download. |
-| `ffmpeg` | ffmpeg/ffprobe errors | Mux / probe failed. |
+| `ffmpeg` | ffmpeg/ffprobe errors (not `--ffmpeg-location` in argv) | Mux / probe failed. |
+| `aria2_forbidden` | aria2c exit 22 / googlevideo HTTP 403 | CDN blocked the fast downloader. |
 | `blocked_4k` | 4K / ≥2160 blocked for upscale | Pick a lower source resolution. |
 | `cancelled` | user cancel | Job was cancelled. |
 | `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
@@ -39,6 +40,8 @@ If the download handler marks a job `failed` without raising, the worker still
 runs fail-pause instead of promoting that row to `completed`.
 
 Optional `fail_pause_on_any=1` pauses on every failure (not exposed as a checkbox; default off).
+
+`aria2_forbidden` is **not** a fail-pause category. Attempt 1 (aria2 403) never marks the job failed; the worker only sees a failure after the native retry also fails. A final `aria2_forbidden` (both methods hit CDN 403) does not halt the bulk queue. See [SPEED.md](SPEED.md).
 
 Turn the default policy off in Settings if you want the bulk run to keep going after auth/bot failures.
 

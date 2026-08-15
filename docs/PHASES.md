@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.7 (native title bar drag, YouTube throughput, cookies folder UX)
+## Status: v0.5.8 (quit that works + aria2 → native fallback)
 
-Package version is **0.5.7**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.7_COMPLETE.md](V0.5.7_COMPLETE.md), [UI_WINDOW_FIX.md](UI_WINDOW_FIX.md), [SPEED.md](SPEED.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [COOKIES.md](COOKIES.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
+Package version is **0.5.8**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.8_COMPLETE.md](V0.5.8_COMPLETE.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [SPEED.md](SPEED.md), [YTDLP_PARITY.md](YTDLP_PARITY.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
 
 ## Phase 0 – Foundation
 

@@ -1,3 +1,3 @@
 """FrameForge — local sequential downloader + ONNX upscaler."""
 
-__version__ = "0.5.7"
+__version__ = "0.5.8"

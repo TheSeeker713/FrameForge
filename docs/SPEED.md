@@ -15,9 +15,13 @@ FrameForge never runs more than one download job at a time. Speed work is inside
 - `--continue` / `continuedl` stays on so pause/resume can pick up `.part` files.
 - Cookie files under `%USERPROFILE%\Downloads\FrameForge\cookies\` (e.g. `youtube.txt`) are attached only when Netscape-valid; empty/header-only files are omitted and logged as not attached.
 
+**aria2 stays the default** when `aria2c` is on PATH, including YouTube. Do not turn it off to “fix” CDN blocks.
+
+If aria2 hits googlevideo **HTTP 403** / exit **22**, the same job automatically retries **once** with the native yt-dlp downloader (no `--downloader aria2c`), same cookies, `-f`, `-N`, `--continue`, and output paths. Status while retrying: **CDN blocked aria2 — retrying built-in…**. The job fails only if the native attempt also fails. Category is `aria2_forbidden` (not `ffmpeg`). See [YTDLP_PARITY.md](YTDLP_PARITY.md) and [FAIL_PAUSE.md](FAIL_PAUSE.md).
+
 There is no multi-job parallel download.
 
-**YouTube may still server-throttle well below NIC speed** even with the same cookies + Deno as a terminal CLI. That is a site-side limit, not a FrameForge `--limit-rate`. Acceptance for v0.5.7 is matching this documented CLI recipe, not saturating the NIC.
+**YouTube may still server-throttle well below NIC speed** even with the same cookies + Deno as a terminal CLI. That is a site-side limit, not a FrameForge `--limit-rate`. Acceptance for v0.5.8 is matching this documented CLI recipe, not saturating the NIC. Aria2 403 is handled by native fallback, not by disabling aria2.
 
 ## Documented CLI recipe (parity)
 

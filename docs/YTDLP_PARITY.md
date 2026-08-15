@@ -48,9 +48,25 @@ Every download job persists `options_json.ytdlp_invocation`:
 | `returncode` | Process exit code (subprocess path) |
 | `stderr_empty` | True when no stderr/stdout tail was captured |
 
+Same job also persists:
+
+| Field | Meaning |
+|-------|---------|
+| `download_method` | `aria2c` or `native` for the attempt that finished (or last attempt) |
+| `aria2_fallback_native` | True when attempt 1 used aria2 and attempt 2 ran native |
+| `download_attempt` | `1` (aria2/default) or `2` (native fallback) |
+
 If stderr is empty, the job error is:
 
 `yt-dlp exited with code N` + `no stderr; see invocation log` + `argv: …`
+
+## Aria2 CDN 403 → native fallback (v0.5.8)
+
+Keep aria2 as the preferred path when it is on PATH (including YouTube).
+
+When yt-dlp reports **aria2c exit 22** / googlevideo **HTTP 403**, FrameForge does **not** mark the job failed on that first try and does **not** classify it as `ffmpeg` (argv often contains `--ffmpeg-location`). It retries the **same job** once without `--downloader aria2c`. Cancel still kills the active attempt’s process tree.
+
+Fail-pause does **not** fire for `aria2_forbidden`. The queue pauses only after a **final** failure whose category is in the fail-pause set.
 
 ## Fixes in 0.5.4
 
