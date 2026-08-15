@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+
+log = logging.getLogger("frameforge.download.ytdlp")
 
 from frameforge.paths import archive_dir, downloads_dir, ensure_output_tree
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused, popen_creationflags
@@ -222,7 +225,26 @@ class YtDlpDownloader:
         self.last_invocation: dict[str, Any] | None = None
         self.youtube_innertube: bool = True
         self.youtube_player_clients: str | None = None
+        self.concurrent_fragments: int | None = None
+        self.aria2_connections: int | None = None
         self._settings_repo: Any | None = None
+
+    def _speed_repo(self) -> Any | None:
+        return getattr(self, "_settings_repo", None)
+
+    def _concurrent_fragments(self) -> int:
+        from frameforge.download.throughput import concurrent_fragments
+
+        if self.concurrent_fragments is not None:
+            return int(self.concurrent_fragments)
+        return concurrent_fragments(self._speed_repo())
+
+    def _aria2_connections(self) -> int:
+        from frameforge.download.throughput import aria2_connections
+
+        if self.aria2_connections is not None:
+            return int(self.aria2_connections)
+        return aria2_connections(self._speed_repo())
 
     def _aria2c_enabled(self) -> bool:
         from frameforge.download.invocation import aria2c_available
@@ -341,25 +363,20 @@ class YtDlpDownloader:
         cookie = self._valid_cookiefile()
         if cookie is not None:
             opts["cookiefile"] = str(cookie)
+        from frameforge.download.throughput import (
+            aria2c_opt_args,
+            http_chunk_size_bytes,
+            throttled_rate_bps,
+        )
+
+        opts["concurrent_fragment_downloads"] = self._concurrent_fragments()
+        opts["throttledratelimit"] = throttled_rate_bps()
+        opts["http_chunk_size"] = http_chunk_size_bytes()
         if self._aria2c_enabled():
             opts["external_downloader"] = {"default": "aria2c"}
             opts["external_downloader_args"] = {
-                "aria2c": [
-                    "-x",
-                    "8",
-                    "-s",
-                    "8",
-                    "-k",
-                    "1M",
-                    "--file-allocation=none",
-                    "-c",
-                    "--allow-overwrite=true",
-                    "--auto-file-renaming=false",
-                ]
+                "aria2c": aria2c_opt_args(self._aria2_connections())
             }
-        else:
-            # HLS/DASH fragments: one job still, multiple connections
-            opts["concurrent_fragment_downloads"] = 8
         self._apply_rate_opts(opts)
         args = self._extractor_args_cli(url or "")
         if args:
@@ -466,19 +483,26 @@ class YtDlpDownloader:
         cookie = self._valid_cookiefile()
         if cookie is not None:
             cmd.extend(["--cookies", str(cookie)])
-        ffmpeg = None
         from frameforge.download.invocation import ffmpeg_location
+        from frameforge.download.throughput import (
+            DEFAULT_HTTP_CHUNK_SIZE,
+            DEFAULT_THROTTLED_RATE,
+            aria2c_cli_args,
+        )
 
         ffmpeg = ffmpeg_location()
         if ffmpeg:
             cmd.extend(["--ffmpeg-location", str(Path(ffmpeg).parent)])
+        cmd.extend(["--concurrent-fragments", str(self._concurrent_fragments())])
+        cmd.extend(["--throttled-rate", DEFAULT_THROTTLED_RATE])
+        cmd.extend(["--http-chunk-size", DEFAULT_HTTP_CHUNK_SIZE])
         if self._aria2c_enabled():
             cmd.extend(
                 [
                     "--downloader",
                     "aria2c",
                     "--downloader-args",
-                    "aria2c:-x 8 -s 8 -k 1M --file-allocation=none --summary-interval=1 --enable-color=false -c --allow-overwrite=true --auto-file-renaming=false",
+                    f"aria2c:{aria2c_cli_args(self._aria2_connections())}",
                 ]
             )
         if self.sleep_interval:
@@ -506,16 +530,38 @@ class YtDlpDownloader:
         cmd = self._build_cli_cmd(url)
         _env, overrides = download_subprocess_env()
         cookie = self._valid_cookiefile()
+        from frameforge.download.throughput import (
+            DEFAULT_HTTP_CHUNK_SIZE,
+            DEFAULT_THROTTLED_RATE,
+            aria2c_cli_args,
+        )
+
+        extractor = self._extractor_args_cli(url)
+        aria2_on = self._aria2c_enabled()
         snap = snapshot_invocation(
             argv=cmd,
             cwd=str(self.output_dir),
             output_template=str(self.output_dir / "%(title).200B [%(id)s].%(ext)s"),
             cookies=str(cookie) if cookie is not None else None,
-            aria2c=self._aria2c_enabled(),
+            aria2c=aria2_on,
             format_selector=self._format_selector(),
             env_overrides=overrides,
             ffmpeg=ffmpeg_location(),
         )
+        snap["cookies_attached"] = cookie is not None
+        snap["concurrent_fragments"] = self._concurrent_fragments()
+        snap["throttled_rate"] = DEFAULT_THROTTLED_RATE
+        snap["http_chunk_size"] = DEFAULT_HTTP_CHUNK_SIZE
+        snap["aria2_args"] = aria2c_cli_args(self._aria2_connections()) if aria2_on else None
+        snap["player_client"] = extractor
+        js_args = [a for i, a in enumerate(cmd) if a == "--js-runtimes" or (i and cmd[i - 1] == "--js-runtimes")]
+        snap["js_runtimes"] = js_args[1] if len(js_args) > 1 else (overrides.get("js_runtime") if overrides else None)
+        if cookie is not None:
+            log.info("ytdlp_invocation cookiefile attached: %s", cookie)
+        else:
+            log.info(
+                "ytdlp_invocation cookiefile not attached (missing, empty, or header-only)"
+            )
         self.last_invocation = snap
         return snap
 

@@ -50,6 +50,16 @@ def build_settings_dialog(
         value=str(repo.get_setting("max_download_rate", "0")),
         width=280,
     )
+    fragments = ft.TextField(
+        label="Concurrent fragments (-N, default 8)",
+        value=str(repo.get_setting("concurrent_fragments", "8")),
+        width=280,
+    )
+    aria2_n = ft.TextField(
+        label="aria2 connections (-x/-s, default 16, max 16)",
+        value=str(repo.get_setting("aria2_connections", "16")),
+        width=280,
+    )
     upscale = ft.Checkbox(
         label="Enable AI upscaling after download (still sequential)",
         value=repo.get_setting("upscale_after_download", "0") == "1",
@@ -104,6 +114,17 @@ def build_settings_dialog(
             delay_sec = 3.0
         repo.set_setting("inter_job_delay_sec", str(int(delay_sec) if delay_sec == int(delay_sec) else delay_sec))
         repo.set_setting("max_download_rate", str(rate.value or "0").strip() or "0")
+        from frameforge.download.throughput import (
+            DEFAULT_ARIA2_CONNECTIONS,
+            DEFAULT_CONCURRENT_FRAGMENTS,
+            aria2_connections,
+            concurrent_fragments,
+        )
+
+        repo.set_setting("concurrent_fragments", str(fragments.value or DEFAULT_CONCURRENT_FRAGMENTS).strip())
+        repo.set_setting("aria2_connections", str(aria2_n.value or DEFAULT_ARIA2_CONNECTIONS).strip())
+        repo.set_setting("concurrent_fragments", str(concurrent_fragments(repo)))
+        repo.set_setting("aria2_connections", str(aria2_connections(repo)))
         repo.set_setting("upscale_after_download", "1" if upscale.value else "0")
         repo.set_setting("close_to_tray", "1" if tray.value else "0")
         repo.set_setting("fail_pause_on_auth", "1" if fail_pause.value else "0")
@@ -138,6 +159,8 @@ def build_settings_dialog(
                 ),
                 delay,
                 rate,
+                fragments,
+                aria2_n,
                 innertube,
                 ytdlp_defaults,
                 clients,
@@ -176,6 +199,8 @@ def build_settings_dialog(
         "gentle": gentle,
         "delay": delay,
         "rate": rate,
+        "fragments": fragments,
+        "aria2_n": aria2_n,
         "upscale": upscale,
         "tray": tray,
         "fail_pause": fail_pause,

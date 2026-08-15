@@ -51,7 +51,14 @@ def format_full_error_report(
     if inv:
         lines.append(f"cwd: {inv.get('cwd') or ''}")
         lines.append(f"cookies: {inv.get('cookies') or '(none)'}")
+        lines.append(f"cookies_attached: {inv.get('cookies_attached', bool(inv.get('cookies')))}")
+        lines.append(f"concurrent_fragments: {inv.get('concurrent_fragments', '')}")
+        lines.append(f"throttled_rate: {inv.get('throttled_rate') or ''}")
+        lines.append(f"http_chunk_size: {inv.get('http_chunk_size') or ''}")
         lines.append(f"aria2c: {inv.get('aria2c')}")
+        if inv.get("aria2_args"):
+            lines.append(f"aria2_args: {inv.get('aria2_args')}")
+        lines.append(f"player_client: {inv.get('player_client') or '(none)'}")
         lines.append(f"format: {inv.get('format') or ''}")
         lines.append(f"ffmpeg_location: {inv.get('ffmpeg_location') or '(not found)'}")
         if inv.get("ffprobe_location"):
@@ -59,6 +66,8 @@ def format_full_error_report(
         lines.append(f"yt_dlp_version: {inv.get('yt_dlp_version') or ''}")
         runtime = inv.get("js_runtime") or (inv.get("env_overrides") or {}).get("js_runtime")
         lines.append(f"js_runtime: {runtime or '(none — Deno/Node not detected)'}")
+        if inv.get("js_runtimes"):
+            lines.append(f"js_runtimes: {inv.get('js_runtimes')}")
         if not runtime:
             from frameforge.download.js_runtime import JS_RUNTIME_FIX
 

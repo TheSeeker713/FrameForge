@@ -21,6 +21,7 @@ def test_describe_cli_invocation_matches_build_cmd(tmp_path: Path):
     assert snap["argv"] == cmd
     assert snap["cwd"] == str(out)
     assert snap["cookies"] is None
+    assert snap["cookies_attached"] is False
     assert "--cookies" not in cmd
     assert snap["format"] == "bv*+ba/b"
     assert snap["yt_dlp_version"] == bundled_yt_dlp_version()
@@ -89,6 +90,9 @@ def test_aria2c_omitted_when_missing(tmp_path: Path, monkeypatch):
     opts = dl.build_opts()
     assert "external_downloader" not in opts
     assert opts.get("concurrent_fragment_downloads") == 8
+    assert "--concurrent-fragments" in cmd
+    assert "--throttled-rate" in cmd
+    assert "--limit-rate" not in cmd
 
 
 def test_empty_stderr_includes_argv_and_hint():
