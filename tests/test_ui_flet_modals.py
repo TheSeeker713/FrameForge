@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from frameforge.db.repository import JobRepository
-from frameforge.gui.exit_policy import CHOICE_PAUSE_AND_QUIT, CHOICES
 from frameforge.queue.worker import SequentialWorker
 from frameforge.ui_flet.app import FrameForgeUi
 from frameforge.ui_flet.job_view import overflow_actions
@@ -29,12 +28,12 @@ def test_modals_have_locked_actions(tmp_path: Path):
     job = ui.repo.enqueue("https://example.com/live")
     ui.repo.update_status(job.id, "downloading")
     q = ui.open_quit_busy()
-    titles = [t.title.value for t in q.content.controls]
-    assert any("Cancel download" in t for t in titles)
-    assert any("Pause download" in t for t in titles)
-    assert any("Wait until finished" in t for t in titles)
+    body = str(getattr(q.content, "value", q.content))
+    assert "in progress" in body.lower() or "Quit FrameForge" in str(q.title.value)
     action_blob = " ".join(str(getattr(a, "content", a)) for a in q.actions)
-    assert "Force quit now" in action_blob
+    assert "Quit" in action_blob
+    assert "Cancel" in action_blob
+    assert "Force quit now" not in action_blob
     auth = ui.open_authenticate("https://www.youtube.com/watch?v=x")
     assert "Authenticate" in str(auth.title.value)
     from frameforge.paths import cookies_dir

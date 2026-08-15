@@ -82,6 +82,13 @@ class ProcessRegistry:
         with self._lock:
             return dict(self._job_pid)
 
+    def kill_all(self) -> list[int]:
+        """Hard-kill every registered download/upscale PID. Returns job ids."""
+        ids = list(self.active_pids())
+        for job_id in ids:
+            self.kill(job_id)
+        return ids
+
     def ensure_dead(self, job_id: int, timeout: float = 10.0) -> bool:
         """After kill, wait until the registered PID is gone (or already unregistered)."""
         pid = self.pid_for(job_id)

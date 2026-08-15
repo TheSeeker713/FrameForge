@@ -65,6 +65,12 @@ class SequentialWorker:
         self.processes.kill(job_id)
         return job
 
+    def kill_active_processes(self) -> None:
+        """Hard-kill in-flight yt-dlp/aria2c/ffmpeg trees and disarm. Does not join."""
+        self.disarm()
+        self.clear_wait_to_quit()
+        self.processes.kill_all()
+
     def pause_job(self, job_id: int) -> Job:
         """Hard-stop the active process tree, mark paused, keep partials, go idle."""
         from frameforge.download.partials import collect_partial_artifacts

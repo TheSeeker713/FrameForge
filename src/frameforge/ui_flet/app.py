@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -31,6 +32,8 @@ from frameforge.ui_flet.window_chrome import USE_CUSTOM_TITLE_BAR, apply_page_ch
 
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
+QUIT_HARD_EXIT_DELAY_SEC = 0.35
+CLOSE_DEBOUNCE_SEC = 0.25
 
 
 def _placeholder_panel(label: str) -> ft.Container:
@@ -199,6 +202,7 @@ class FrameForgeUi:
         self._shutdown_complete = False
         self._exiting = False
         self._close_clicks = 0
+        self._last_close_event = 0.0
         self._watchdog_armed = False
         self._watchdog_seconds = SHUTDOWN_WATCHDOG_SEC
         self._import_preview: Any | None = None
@@ -622,6 +626,8 @@ class FrameForgeUi:
         """Poll SQLite into the cards. Tests call this; the live window schedules it."""
         if self._exiting or self._shutdown_complete:
             return
+        if getattr(self.dialogs, "kind", None) == "quit":
+            return
         active = next(
             (j for j in self.queue_jobs() if j.status in {"downloading", "upscaling", "converting"}),
             None,
@@ -987,75 +993,28 @@ class FrameForgeUi:
         return self.open_quit_dialog()
 
     def open_quit_dialog(self) -> ft.AlertDialog:
-        from frameforge.gui.exit_policy import (
-            CHOICE_FORCE_QUIT,
-            CHOICE_QUIT_IDLE,
-            CHOICE_STAY,
-            NEEDS_CHOICE,
-            OUTCOME_EXIT,
-            OUTCOME_FORCE,
-            OUTCOME_WAIT,
-            WAIT_IN_PROGRESS,
-            apply_quit_choice,
-            classify_exit,
-        )
-        from frameforge.ui_flet.components.modals import quit_busy_dialog
+        from frameforge.gui.exit_policy import list_active_work
+        from frameforge.ui_flet.components.modals import quit_confirm_dialog
 
-        kind = classify_exit(self.repo, self.worker)
-        busy = kind in (NEEDS_CHOICE, WAIT_IN_PROGRESS)
+        busy = bool(list_active_work(self.repo))
         self.quit_choice: str | None = None
 
-        def choose(c: str) -> None:
-            self.quit_choice = c
-            if c == CHOICE_STAY:
-                self.close_dialog()
-                self._close_clicks = 0
-                return
+        def stay(_e=None) -> None:
+            self.quit_choice = "cancel"
             self.close_dialog()
-            outcome = apply_quit_choice(self.worker, c)
-            if c == CHOICE_FORCE_QUIT or outcome == OUTCOME_FORCE:
-                self.force_quit()
-                return
-            if outcome == OUTCOME_WAIT:
-                self._close_clicks = 0
-                return
-            if outcome == OUTCOME_EXIT or c == CHOICE_QUIT_IDLE:
-                self._finish_exit()
+            self._close_clicks = 0
 
-        self.quit_dialog = quit_busy_dialog(
-            on_choice=choose,
-            on_cancel=lambda _e=None: choose(CHOICE_STAY),
-            busy=busy,
-        )
+        def quit(_e=None) -> None:
+            self.quit_choice = "quit"
+            self.close_dialog()
+            self._commit_quit()
+
+        self.quit_dialog = quit_confirm_dialog(on_quit=quit, on_cancel=stay, busy=busy)
         return self.dialogs.open("quit", self.quit_dialog)
 
     def force_quit(self) -> None:
-        """Always-available escape: await window destroy, kill flet children, _exit."""
-        self._exiting = True
-        self._close_clicks = 99
-        self._release_native_close()
-        self._arm_exit_watchdog(0.5)
-        try:
-            self.worker.stop(timeout=0.5)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            self.repo.close()
-        except Exception:  # noqa: BLE001
-            pass
-        self._shutdown_complete = True
-        from frameforge.ui_flet.window_teardown import request_window_destroy
-        from frameforge.util.process_tree import force_kill_current_app, kill_gui_children
-
-        self.last_destroy_status = request_window_destroy(self.page, wait=0.4)
-        if self.exit_process_on_quit:
-            try:
-                kill_gui_children()
-            except Exception:  # noqa: BLE001
-                pass
-            force_kill_current_app()
-        else:
-            self._release_native_close()
+        """Same as Quit — hard-kill children and exit. Kept for tests / second X."""
+        self._commit_quit()
 
     def add_url(self) -> Any | None:
         field = (self.hero.data or {}).get("url") if self.hero is not None else None
@@ -1276,17 +1235,19 @@ class FrameForgeUi:
             self.handle_window_close()
 
     def _on_window_event(self, e: Any) -> None:
-        if self.page is not None:
-            self.last_chrome = apply_page_chrome(self.page, set_size=False)
         et = getattr(e, "type", None)
         name = str(getattr(et, "name", None) or getattr(et, "value", et) or "").lower()
-        if any(tok in name for tok in ("close", "close_prevented")):
+        if "close" in name:
             self.handle_window_close()
+            return
+        if self._exiting or self._shutdown_complete:
+            return
+        if self.page is not None:
+            self.last_chrome = apply_page_chrome(self.page, set_size=False)
 
     def _on_disconnect(self, _e: Any = None) -> None:
         if not self._shutdown_complete:
-            self._release_native_close()
-            self._finish_exit()
+            self._commit_quit()
 
     def _release_native_close(self) -> None:
         page = self.page
@@ -1299,61 +1260,86 @@ class FrameForgeUi:
             pass
 
     def _arm_exit_watchdog(self, seconds: float = SHUTDOWN_WATCHDOG_SEC) -> None:
-        """If teardown hangs, kill the process. Never starts a timer in pytest."""
+        """If teardown hangs, kill Flet View children then _exit. Never starts a timer in pytest."""
         self._watchdog_armed = True
         self._watchdog_seconds = seconds
         if not self.exit_process_on_quit:
             return
-        timer = threading.Timer(max(0.2, float(seconds)), lambda: os._exit(1))
-        timer.daemon = True
-        timer.start()
+        from frameforge.util.process_tree import schedule_hard_exit
+
+        schedule_hard_exit(max(0.2, float(seconds)), 0)
 
     def handle_window_close(self, _e: Any = None) -> str:
+        now = time.monotonic()
+        if self._exiting or self._shutdown_complete:
+            self._commit_quit()
+            return "quit"
+        if getattr(self.dialogs, "kind", None) == "quit":
+            if now - self._last_close_event < CLOSE_DEBOUNCE_SEC:
+                return "choice"
+            self._commit_quit()
+            return "quit"
+        self._last_close_event = now
         self._close_clicks += 1
-        force = self._close_clicks >= 2 or self._exiting
-        if force:
-            self.force_quit()
-            return "force"
         try:
             dlg = self.open_quit_dialog()
             opened = dlg is not None and (
                 bool(getattr(dlg, "open", False)) or self.dialogs.kind == "quit"
             )
             if not opened:
-                self.force_quit()
-                return "exit"
+                self._commit_quit()
+                return "quit"
             return "choice"
         except Exception:  # noqa: BLE001
-            self.force_quit()
-            return "exit"
+            self._commit_quit()
+            return "quit"
 
     def _finish_exit(self) -> None:
+        self._commit_quit()
+
+    def _commit_quit(self) -> None:
+        """Quit: release prevent_close, kill children, destroy window, hard-exit.
+
+        Never waits on the Flet event loop. Watchdog at 3s always kill+`_exit(0)`.
+        """
         if self._shutdown_complete:
             if self.exit_process_on_quit:
-                os._exit(0)
+                from frameforge.util.process_tree import hard_exit
+
+                hard_exit(0)
             return
         self._exiting = True
         self._release_native_close()
-        self._arm_exit_watchdog()
+        self._arm_exit_watchdog(SHUTDOWN_WATCHDOG_SEC)
         try:
             self.close_dialog()
         except Exception:  # noqa: BLE001
             pass
-        self.shutdown()
-        self._shutdown_complete = True
-        if self.exit_process_on_quit:
-            self._destroy_and_exit()
-
-    def _destroy_and_exit(self) -> None:
-        from frameforge.ui_flet.window_teardown import request_window_destroy
-        from frameforge.util.process_tree import kill_gui_children
-
-        self.last_destroy_status = request_window_destroy(self.page, wait=0.8)
         try:
-            kill_gui_children()
+            self.worker.kill_active_processes()
         except Exception:  # noqa: BLE001
             pass
-        os._exit(0)
+        try:
+            self.worker.stop(timeout=0.2)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.repo.close()
+        except Exception:  # noqa: BLE001
+            pass
+        self._shutdown_complete = True
+        from frameforge.ui_flet.window_teardown import request_window_destroy
+
+        self.last_destroy_status = request_window_destroy(self.page, wait=0)
+        if self.exit_process_on_quit:
+            from frameforge.util.process_tree import schedule_hard_exit
+
+            schedule_hard_exit(QUIT_HARD_EXIT_DELAY_SEC, 0)
+        else:
+            self._release_native_close()
+
+    def _destroy_and_exit(self) -> None:
+        self._commit_quit()
 
     def attach_page(self, page: ft.Page) -> None:
         self.page = page
@@ -1421,8 +1407,13 @@ def run_gui(**kwargs: Any) -> None:
         _GUI_RUNNING = False
         if not ui._shutdown_complete:
             ui._exiting = True
-            ui._arm_exit_watchdog()
+            try:
+                ui.worker.kill_active_processes()
+            except Exception:  # noqa: BLE001
+                pass
             ui.shutdown()
             ui._shutdown_complete = True
         if ui.exit_process_on_quit:
-            os._exit(0)
+            from frameforge.util.process_tree import hard_exit
+
+            hard_exit(0)

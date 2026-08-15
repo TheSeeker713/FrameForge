@@ -99,11 +99,26 @@ def kill_gui_children(pid: int | None = None) -> list[int]:
 
 def force_kill_current_app() -> None:
     """Kill GUI children (flet.exe), then _exit this process. Last-resort quit."""
+    hard_exit(1)
+
+
+def hard_exit(code: int = 0) -> None:
+    """Kill Flet View / download children, then terminate this process. Never returns."""
     try:
         kill_gui_children(os.getpid())
     except Exception:  # noqa: BLE001
         pass
-    os._exit(1)
+    os._exit(int(code))
+
+
+def schedule_hard_exit(seconds: float, code: int = 0):
+    """Daemon timer → hard_exit. Used so a hung UI thread cannot trap the user."""
+    import threading
+
+    timer = threading.Timer(max(0.05, float(seconds)), lambda: hard_exit(code))
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 def wait_pid_gone(pid: int, timeout: float = 10.0) -> bool:

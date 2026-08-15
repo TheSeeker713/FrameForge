@@ -7,14 +7,7 @@ from typing import Any
 import flet as ft
 
 from frameforge.download.formats import PRESET_LABELS
-from frameforge.gui.exit_policy import (
-    CHOICE_CANCEL_AND_QUIT,
-    CHOICE_FORCE_QUIT,
-    CHOICE_PAUSE_AND_QUIT,
-    CHOICE_QUIT_IDLE,
-    CHOICE_STAY,
-    CHOICE_WAIT_THEN_QUIT,
-)
+from frameforge.gui.exit_policy import CHOICE_QUIT_IDLE, CHOICE_STAY
 from frameforge.ui_flet.theme import COLORS
 
 
@@ -221,58 +214,37 @@ def playlist_dialog(
     return dlg
 
 
-def quit_busy_dialog(*, on_choice: Any, on_cancel: Any, busy: bool = True) -> ft.AlertDialog:
-    """Busy: cancel/pause/wait/stay/force. Idle: quit/stay/force. Force is always visible."""
-    tiles: list[ft.Control] = []
-    if busy:
-        tiles.extend(
-            [
-                ft.ListTile(
-                    title=ft.Text("Cancel download and quit"),
-                    on_click=lambda _e: on_choice(CHOICE_CANCEL_AND_QUIT),
-                ),
-                ft.ListTile(
-                    title=ft.Text("Pause download and quit"),
-                    on_click=lambda _e: on_choice(CHOICE_PAUSE_AND_QUIT),
-                ),
-                ft.ListTile(
-                    title=ft.Text("Wait until finished then quit"),
-                    on_click=lambda _e: on_choice(CHOICE_WAIT_THEN_QUIT),
-                ),
-            ]
-        )
-    else:
-        tiles.append(
-            ft.ListTile(
-                title=ft.Text("Quit FrameForge"),
-                on_click=lambda _e: on_choice(CHOICE_QUIT_IDLE),
-            )
-        )
+def quit_confirm_dialog(*, on_quit: Any, on_cancel: Any, busy: bool = False) -> ft.AlertDialog:
+    """Single confirm: Quit or Cancel. No Force-quit / pause / wait stack."""
+    body = (
+        "A download is in progress. Quit anyway?"
+        if busy
+        else "Quit FrameForge?"
+    )
     dlg = ft.AlertDialog(
         modal=True,
-        title=ft.Text("Download in progress" if busy else "Quit FrameForge?"),
-        content=ft.Column(tiles, width=460),
+        title=ft.Text("Quit FrameForge?"),
+        content=ft.Text(body, color=COLORS["text_secondary"]),
         actions=[
-            ft.OutlinedButton(content="Stay", on_click=lambda _e: on_choice(CHOICE_STAY)),
-            *(
-                []
-                if busy
-                else [
-                    ft.FilledButton(
-                        content="Quit",
-                        bgcolor=COLORS["accent"],
-                        on_click=lambda _e: on_choice(CHOICE_QUIT_IDLE),
-                    )
-                ]
-            ),
-            ft.FilledButton(
-                content="Force quit now",
-                bgcolor=COLORS["danger"],
-                on_click=lambda _e: on_choice(CHOICE_FORCE_QUIT),
-            ),
+            ft.OutlinedButton(content="Cancel", on_click=lambda _e: on_cancel()),
+            ft.FilledButton(content="Quit", bgcolor=COLORS["danger"], on_click=lambda _e: on_quit()),
         ],
         bgcolor=COLORS["surface"],
-        on_dismiss=on_cancel,
+        on_dismiss=lambda _e=None: on_cancel(),
     )
-    dlg.data = {"on_choice": on_choice, "on_cancel": on_cancel, "busy": busy, "force": CHOICE_FORCE_QUIT}
+    dlg.data = {"on_quit": on_quit, "on_cancel": on_cancel, "busy": busy}
+    return dlg
+
+
+def quit_busy_dialog(*, on_choice: Any, on_cancel: Any, busy: bool = True) -> ft.AlertDialog:
+    """Back-compat wrapper: maps to Quit / Cancel only."""
+    def _quit(_e=None) -> None:
+        on_choice(CHOICE_QUIT_IDLE)
+
+    def _stay(_e=None) -> None:
+        on_choice(CHOICE_STAY)
+
+    dlg = quit_confirm_dialog(on_quit=_quit, on_cancel=_stay, busy=busy)
+    dlg.data["on_choice"] = on_choice
+    dlg.data["force"] = CHOICE_QUIT_IDLE
     return dlg
