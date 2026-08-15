@@ -1,21 +1,19 @@
-# Window drag ghost — v0.5.1
+# Window drag / visibility — v0.5.3
 
-## Symptom
+## Field report (v0.5.2 claim **failed**)
 
-Dragging the Flet desktop window on Windows showed a stale/ghost copy. The real window jumped to the drop position only after mouse release.
+v0.5.1/v0.5.2 set `window.bgcolor = #F8FAFC` and `window.shadow = False` **once** at attach. On a real Windows 11 session (RustDesk remote, AMD iGPU) the window still went **invisible except the outline** while dragging. Tests that only asserted those flags were not enough.
 
-## Root cause
+## v0.5.3 attempt
 
-Flet 0.86 maps to a Flutter Windows HWND. When `page.window.bgcolor` is left `None`, that HWND is composited as **transparent**. Desktop Window Manager then shows the previous framebuffer as a ghost while the (opaque) Flutter view lags behind the native move. `window.shadow = True` adds a second shadow window that is especially laggy on AMD iGPU (Radeon 680M).
+1. Opaque `#F8FAFC` on **both** `page.bgcolor` and `window.bgcolor` (never `None`, never alpha).
+2. Re-apply those flags on **every window event** and UI tick — not only first attach. Size is set only once so drag is not fought.
+3. `window.shadow = False`, native title bar, `frameless = False`, `transparent = False` when the attribute exists.
+4. Windows 11: `DwmSetWindowAttribute` to disable Mica/acrylic / DWM glass on the foreground HWND.
+5. `chrome_snapshot(page)` records the live flags for debugging.
 
-This was not a second `ft.app` / extra view in v0.5.0, but `run_gui` now also refuses a second instance in the same process.
+No custom title-bar `start_dragging`. Widget hover shadows stay on controls only.
 
-## Fix (`apply_page_chrome`)
+## Workaround if drag is still outline-only
 
-- `page.window.bgcolor = "#F8FAFC"` (same as `page.bgcolor`) — opaque native window
-- `page.window.opacity = 1.0`
-- `page.window.shadow = False`
-- Keep the **native** title bar (`title_bar_hidden=False`, `frameless=False`) so Windows owns the drag
-- One `ft.app` per process (`_GUI_RUNNING`)
-
-No custom title-bar drag (`start_dragging`) is used.
+Maximize then restore, or move the window via Win+Arrow. This is a Flet 0.86.5 / Flutter Windows compositor limitation on some GPUs; FrameForge cannot fully replace DWM. Confirm on hardware with [ACCEPTANCE_V053.md](ACCEPTANCE_V053.md) item 9.

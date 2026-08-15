@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import flet as ft
 
-from frameforge import __version__
 from frameforge.db.repository import JobRepository
 from frameforge.paths import db_path, ensure_output_tree
 from frameforge.pipeline import build_worker
@@ -27,38 +26,11 @@ from frameforge.ui_flet.dialog_host import DialogHost
 from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
 from frameforge.ui_flet.queue_chrome import queue_chrome_spec
 from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
-from frameforge.ui_flet.theme import (
-    COLORS,
-    FONT_FAMILY,
-    TAB_LABELS,
-    WINDOW_HEIGHT,
-    WINDOW_WIDTH,
-)
+from frameforge.ui_flet.theme import COLORS, TAB_LABELS
+from frameforge.ui_flet.window_chrome import apply_page_chrome
 
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
-
-
-def apply_page_chrome(page: ft.Page) -> None:
-    """Opaque native window + no DWM shadow — avoids the Windows drag ghost copy."""
-    page.title = f"FrameForge {__version__}"
-    page.bgcolor = COLORS["app_bg"]
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = 20
-    page.theme = ft.Theme(font_family=FONT_FAMILY, color_scheme_seed=COLORS["accent"])
-    window = getattr(page, "window", None)
-    if window is not None:
-        window.width = WINDOW_WIDTH
-        window.height = WINDOW_HEIGHT
-        window.min_width = 900
-        window.min_height = 600
-        window.bgcolor = COLORS["app_bg"]
-        window.opacity = 1.0
-        window.shadow = False
-        window.title_bar_hidden = False
-        window.frameless = False
-        window.visible = True
-        window.ignore_mouse_events = False
 
 
 def _placeholder_panel(label: str) -> ft.Container:
@@ -226,6 +198,7 @@ class FrameForgeUi:
         self.more_invocations: list[str] = []
         self._activity_note: str | None = None
         self._action_lock = False
+        self.last_chrome: dict[str, Any] | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -515,6 +488,8 @@ class FrameForgeUi:
             self._activity_note = None
         self.refresh_queue()
         self._sync_header()
+        if self.page is not None:
+            self.last_chrome = apply_page_chrome(self.page, set_size=False)
 
     def _schedule_tick(self) -> None:
         if self._exiting or self._shutdown_complete or not self.exit_process_on_quit:
@@ -1089,6 +1064,8 @@ class FrameForgeUi:
             self.close_dialog()
 
     def _on_window_event(self, e: Any) -> None:
+        if self.page is not None:
+            self.last_chrome = apply_page_chrome(self.page, set_size=False)
         et = getattr(e, "type", None)
         name = getattr(et, "value", et)
         if name in ("close", getattr(ft.WindowEventType, "CLOSE", "close")):
@@ -1186,7 +1163,7 @@ class FrameForgeUi:
     def attach_page(self, page: ft.Page) -> None:
         self.page = page
         self.exit_process_on_quit = isinstance(page, ft.Page)
-        apply_page_chrome(page)
+        self.last_chrome = apply_page_chrome(page, set_size=True)
         win = getattr(page, "window", None)
         if win is not None:
             win.prevent_close = True
