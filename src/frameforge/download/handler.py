@@ -119,6 +119,10 @@ def make_download_handler(
             if cap:
                 dl.limit_rate_bps = cap
         dl.cookiefile = _cookiefile_for_url(job.url)
+        from frameforge.download.youtube_clients import innertube_enabled
+
+        dl._settings_repo = repo
+        dl.youtube_innertube = innertube_enabled(repo)
         try:
             result = dl.download(
                 job.url,

@@ -68,6 +68,22 @@ def build_settings_dialog(
         value=repo.get_setting("fail_pause_on_auth", "1") == "1",
     )
     from frameforge.download.js_runtime import js_runtime_status
+    from frameforge.download.youtube_clients import DEFAULT_PLAYER_CLIENTS
+
+    innertube = ft.Switch(
+        label="YouTube Innertube clients (anonymous public downloads)",
+        value=str(repo.get_setting("youtube_innertube", "1") or "1") != "0"
+        and str(repo.get_setting("youtube_use_ytdlp_clients", "0") or "0") != "1",
+    )
+    clients = ft.TextField(
+        label="YouTube player_client order",
+        value=str(repo.get_setting("youtube_player_clients", DEFAULT_PLAYER_CLIENTS) or DEFAULT_PLAYER_CLIENTS),
+        width=420,
+    )
+    ytdlp_defaults = ft.Switch(
+        label="Use yt-dlp default YouTube clients (no extractor-args)",
+        value=str(repo.get_setting("youtube_use_ytdlp_clients", "0") or "0") == "1",
+    )
 
     js = js_runtime_status()
     js_tip = ft.Text(
@@ -91,6 +107,12 @@ def build_settings_dialog(
         repo.set_setting("upscale_after_download", "1" if upscale.value else "0")
         repo.set_setting("close_to_tray", "1" if tray.value else "0")
         repo.set_setting("fail_pause_on_auth", "1" if fail_pause.value else "0")
+        repo.set_setting("youtube_innertube", "1" if innertube.value else "0")
+        repo.set_setting("youtube_use_ytdlp_clients", "1" if ytdlp_defaults.value else "0")
+        repo.set_setting(
+            "youtube_player_clients",
+            str(clients.value or DEFAULT_PLAYER_CLIENTS).strip() or DEFAULT_PLAYER_CLIENTS,
+        )
         if ram.value:
             repo.set_setting("ram_warning_pct", str(ram.value).strip())
         if on_save:
@@ -116,6 +138,9 @@ def build_settings_dialog(
                 ),
                 delay,
                 rate,
+                innertube,
+                ytdlp_defaults,
+                clients,
             ),
             _card(
                 "AI and Upscaling",
@@ -133,7 +158,7 @@ def build_settings_dialog(
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         width=480,
-        height=520,
+        height=580,
     )
     dlg = ft.AlertDialog(
         modal=False,

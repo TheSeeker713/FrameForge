@@ -220,6 +220,9 @@ class YtDlpDownloader:
         self.max_sleep_interval: float = 5.0
         self.limit_rate_bps: int | None = None
         self.last_invocation: dict[str, Any] | None = None
+        self.youtube_innertube: bool = True
+        self.youtube_player_clients: str | None = None
+        self._settings_repo: Any | None = None
 
     def _aria2c_enabled(self) -> bool:
         from frameforge.download.invocation import aria2c_available
@@ -247,6 +250,17 @@ class YtDlpDownloader:
 
         return resolve_format_selector(self.format_preference)
 
+    def _extractor_args_cli(self, url: str) -> str | None:
+        from frameforge.download.youtube_clients import extractor_args_cli
+
+        if not self.youtube_innertube:
+            return None
+        return extractor_args_cli(
+            url,
+            repo=self._settings_repo,
+            clients=self.youtube_player_clients,
+        )
+
     def extract_info(self, url: str) -> dict[str, Any]:
         from yt_dlp import YoutubeDL
 
@@ -263,7 +277,7 @@ class YtDlpDownloader:
             raise RuntimeError("extract_info returned non-dict")
         return info
 
-    def build_opts(self, progress_cb: ProgressCb | None = None) -> dict[str, Any]:
+    def build_opts(self, progress_cb: ProgressCb | None = None, *, url: str | None = None) -> dict[str, Any]:
         outtmpl = str(self.output_dir / "%(title).200B [%(id)s].%(ext)s")
 
         def _hook(d: dict[str, Any]) -> None:
@@ -347,6 +361,13 @@ class YtDlpDownloader:
             # HLS/DASH fragments: one job still, multiple connections
             opts["concurrent_fragment_downloads"] = 8
         self._apply_rate_opts(opts)
+        args = self._extractor_args_cli(url or "")
+        if args:
+            from frameforge.download.youtube_clients import extractor_args_opts
+
+            parsed = extractor_args_opts(url or "https://www.youtube.com/", clients=args.split("=", 1)[-1])
+            if parsed:
+                opts["extractor_args"] = parsed
         return opts
 
     def _apply_rate_opts(self, opts: dict[str, Any]) -> None:
@@ -385,7 +406,7 @@ class YtDlpDownloader:
     ) -> DownloadResult:
         from yt_dlp import YoutubeDL
 
-        opts = self.build_opts(progress_cb)
+        opts = self.build_opts(progress_cb, url=url)
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
             if info is None:
@@ -468,6 +489,9 @@ class YtDlpDownloader:
         from frameforge.download.js_runtime import js_runtime_cli_args
 
         cmd.extend(js_runtime_cli_args())
+        extractor = self._extractor_args_cli(url)
+        if extractor:
+            cmd.extend(["--extractor-args", extractor])
         cmd.append(url)
         return cmd
 
