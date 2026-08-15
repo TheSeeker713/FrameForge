@@ -108,6 +108,12 @@ def make_download_handler(
         from frameforge.download.cookie_validate import consume_gentle_job
 
         apply_gentle_rate(dl, consume_gentle_job(repo))
+        if not dl.limit_rate_bps:
+            from frameforge.download.throughput import max_download_rate_bps
+
+            cap = max_download_rate_bps(repo)
+            if cap:
+                dl.limit_rate_bps = cap
         dl.cookiefile = _cookiefile_for_url(job.url)
         try:
             result = dl.download(

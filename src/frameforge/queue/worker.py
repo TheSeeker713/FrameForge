@@ -48,6 +48,7 @@ class SequentialWorker:
     events: list[WorkerEvent] = field(default_factory=list)
     processes: ProcessRegistry = field(default_factory=ProcessRegistry)
     on_fail_pause: Callable[[Job], None] | None = field(default=None)
+    _last_download_finished: float = field(default=0.0, init=False, repr=False)
 
     def recover(self) -> list[int]:
         return self.repo.recover_interrupted()
@@ -346,10 +347,32 @@ class SequentialWorker:
             self.repo.update_status(job.id, "completed", progress=100.0)
             return True
 
+        if self._eligible_pending_count() == 0:
+            return False
+        if not self._wait_inter_job_delay():
+            return False
         job = self.repo.claim_next_pending(self._claim_filter())
         if not job:
             return False
         return self._run_download(job)
+
+    def _wait_inter_job_delay(self) -> bool:
+        """Sleep between download jobs. First claim of a run is immediate.
+
+        Returns False when stop/disarm/halt interrupts the wait (do not claim).
+        """
+        from frameforge.download.throughput import inter_job_delay_sec
+
+        delay = inter_job_delay_sec(self.repo)
+        started = self._last_download_finished
+        if delay <= 0 or started <= 0:
+            return self._claims_allowed()
+        deadline = started + delay
+        while time.time() < deadline:
+            if self._stop.is_set() or not self._claims_allowed():
+                return False
+            time.sleep(min(0.1, max(0.0, deadline - time.time())))
+        return self._claims_allowed()
 
     def _preserve_paused(self, job_id: int, exc: BaseException) -> bool:
         """If job was paused (or pause exception), keep paused — never failed/cancelled.
@@ -434,6 +457,7 @@ class SequentialWorker:
             self._maybe_fail_pause(job.id)
             return True
         finally:
+            self._last_download_finished = time.time()
             self.processes.unregister(job.id)
 
     def _run_upscale(self, job: Job) -> bool:

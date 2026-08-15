@@ -13,6 +13,18 @@ FrameForge never runs more than one download job at a time. Speed work is inside
 
 There is no multi-job parallel download.
 
+**YouTube may still throttle well below NIC speed** even after Deno/EJS solves the n-challenge. That is a site-side limit, not a FrameForge cap.
+
+## Inter-job cooldown (default 3s)
+
+Settings **Inter-job delay** (`inter_job_delay_sec`, default **3**, range 0–60). After one download job finishes (success, fail, cancel, or pause), the worker waits this long before claiming the next **pending** download. The first job of a run starts immediately. Upscale/convert of the same file is not delayed.
+
+This reduces bot-check pressure on bulk lists. Set to **0** to claim the next pending as soon as the current job ends.
+
+## Optional per-job rate cap
+
+Settings **Max download rate** (`max_download_rate`, default **0** = unlimited). Accepts `0`, an integer byte/s value, or `50K` / `2M`. Applied only when Gentle rate is off (Gentle still uses its 2 MiB/s cap).
+
 ## Gentle rate mode (opt-in)
 
 Settings checkbox **Gentle rate mode** (`gentle_rate_mode`, default **0**).
@@ -30,4 +42,5 @@ The fail-pause modal points at this setting; it does not turn it on for you.
 
 - Does not start the next pending job while one is active.
 - Does not raise aria2c connections beyond 8 (conservative for iGPU laptops and site friendliness).
-- Does not force sleep/limit-rate on every user.
+- Does not force sleep/limit-rate on every user (unless Gentle rate or a max rate is set).
+- Does not override YouTube’s own throttle after EJS is solved.

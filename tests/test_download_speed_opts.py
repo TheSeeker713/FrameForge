@@ -109,3 +109,37 @@ def test_handler_leaves_fast_path_when_gentle_rate_off(tmp_path: Path):
     assert captured["sleep"] is None
     assert captured["limit"] is None
     repo.close()
+
+
+def test_max_download_rate_applied_when_gentle_off(tmp_path: Path):
+    from frameforge.db.repository import JobRepository
+    from frameforge.download.handler import make_download_handler
+    from frameforge.download.throughput import parse_rate_bps
+    from frameforge.download.ytdlp import DownloadResult
+
+    assert parse_rate_bps("0") is None
+    assert parse_rate_bps("2M") == 2 * 1024 * 1024
+    assert parse_rate_bps("50K") == 50 * 1024
+
+    repo = JobRepository(tmp_path / "jobs.db")
+    repo.set_setting("max_download_rate", "2M")
+    out = tmp_path / "dl"
+    out.mkdir()
+    dl = YtDlpDownloader(output_dir=out, archive_file=tmp_path / "archive.txt")
+    captured: dict[str, float | int | None] = {}
+
+    def fake_download(url: str, **kwargs: object):
+        captured["sleep"] = dl.sleep_interval
+        captured["limit"] = dl.limit_rate_bps
+        path = out / "x.mp4"
+        path.write_bytes(b"not-a-real-video")
+        return DownloadResult(path=path, title="t", info={})
+
+    dl.download = fake_download  # type: ignore[method-assign]
+    handler = make_download_handler(dl)
+    job = repo.enqueue("https://example.com/watch?v=abc")
+    repo.update_status(job.id, "downloading")
+    handler(job, repo)
+    assert captured["sleep"] is None
+    assert captured["limit"] == 2 * 1024 * 1024
+    repo.close()

@@ -40,6 +40,16 @@ def build_settings_dialog(
         label="Gentle rate (sleep + 2 MiB/s cap after bot-check)",
         value=repo.get_setting("gentle_rate_mode", "0") == "1",
     )
+    delay = ft.TextField(
+        label="Inter-job delay (seconds, 0–60)",
+        value=str(repo.get_setting("inter_job_delay_sec", "3")),
+        width=220,
+    )
+    rate = ft.TextField(
+        label="Max download rate (0 = unlimited, e.g. 2M)",
+        value=str(repo.get_setting("max_download_rate", "0")),
+        width=280,
+    )
     upscale = ft.Checkbox(
         label="Enable AI upscaling after download (still sequential)",
         value=repo.get_setting("upscale_after_download", "0") == "1",
@@ -61,6 +71,13 @@ def build_settings_dialog(
     def save(_e=None) -> None:
         repo.set_setting("format_preference", (fmt.value or "Best").strip() or "best")
         repo.set_setting("gentle_rate_mode", "1" if gentle.value else "0")
+        raw_delay = str(delay.value or "3").strip() or "3"
+        try:
+            delay_sec = max(0.0, min(60.0, float(raw_delay)))
+        except ValueError:
+            delay_sec = 3.0
+        repo.set_setting("inter_job_delay_sec", str(int(delay_sec) if delay_sec == int(delay_sec) else delay_sec))
+        repo.set_setting("max_download_rate", str(rate.value or "0").strip() or "0")
         repo.set_setting("upscale_after_download", "1" if upscale.value else "0")
         repo.set_setting("close_to_tray", "1" if tray.value else "0")
         repo.set_setting("fail_pause_on_auth", "1" if fail_pause.value else "0")
@@ -82,6 +99,13 @@ def build_settings_dialog(
                 ft.Text("Preferred download file format.", color=COLORS["text_secondary"], size=12),
                 fmt,
                 gentle,
+                ft.Text(
+                    "Jobs stay sequential. Delay waits before the next pending download.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                delay,
+                rate,
             ),
             _card(
                 "AI and Upscaling",
@@ -98,7 +122,7 @@ def build_settings_dialog(
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         width=480,
-        height=420,
+        height=520,
     )
     dlg = ft.AlertDialog(
         modal=False,
@@ -114,6 +138,8 @@ def build_settings_dialog(
     dlg.data = {
         "fmt": fmt,
         "gentle": gentle,
+        "delay": delay,
+        "rate": rate,
         "upscale": upscale,
         "tray": tray,
         "fail_pause": fail_pause,
