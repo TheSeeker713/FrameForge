@@ -11,6 +11,7 @@ def status_pill_text(
     pending_count: int = 0,
     speed_str: str | None = None,
     paused: bool = False,
+    idle_reason: str | None = None,
 ) -> str:
     if paused or active_status == "paused":
         return "Paused"
@@ -22,10 +23,16 @@ def status_pill_text(
     if active_status == "converting":
         return "Converting"
     n = max(0, int(pending_count))
+    if n and idle_reason == "stopped":
+        return f"Idle • {n} ready — stopped"
+    if n and idle_reason == "fail_pause":
+        return f"Idle • {n} ready — queue paused after failure"
     return f"Idle • {n} ready"
 
 
-def status_from_repo(repo: Any, worker: Any | None = None) -> str:
+def status_from_repo(
+    repo: Any, worker: Any | None = None, *, idle_reason: str | None = None
+) -> str:
     paused = False
     active = None
     speed = None
@@ -48,4 +55,5 @@ def status_from_repo(repo: Any, worker: Any | None = None) -> str:
         pending_count=pending,
         speed_str=speed,
         paused=paused,
+        idle_reason=idle_reason,
     )
