@@ -68,7 +68,7 @@ def status_pill(job: Any) -> str:
 
 
 def fail_action_ids(category: str | None) -> list[str]:
-    """ffmpeg / js_runtime / network lead with Retry, not Re-authenticate."""
+    """Non-auth failures (ffmpeg, aria2_forbidden, js_runtime, network) lead with Retry."""
     if category in (AUTH_REQUIRED, BOT_CHECK):
         return ["reauth", "retry", "copy"]
     return ["retry", "copy"]

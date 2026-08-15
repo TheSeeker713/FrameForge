@@ -49,6 +49,7 @@ def test_classify_error_known_messages():
     assert should_fail_pause(AUTH_REQUIRED) is True
     assert should_fail_pause(UNKNOWN) is True
     assert should_fail_pause(NETWORK) is False
+    assert should_fail_pause("aria2_forbidden") is False
     assert "cookies" in human_cause(AUTH_REQUIRED).lower() or "signed in" in human_cause(AUTH_REQUIRED).lower()
     assert any("browser" in a.lower() for a in suggested_actions(BOT_CHECK))
 

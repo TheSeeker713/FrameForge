@@ -227,6 +227,9 @@ class YtDlpDownloader:
         self.youtube_player_clients: str | None = None
         self.concurrent_fragments: int | None = None
         self.aria2_connections: int | None = None
+        self.aria2_fallback_native: bool = False
+        self.download_attempt: int = 1
+        self.download_method: str = "aria2c" if use_aria2c else "native"
         self._settings_repo: Any | None = None
 
     def _speed_repo(self) -> Any | None:
@@ -407,7 +410,55 @@ class YtDlpDownloader:
         When *process_registry* and *job_id* are provided, yt-dlp runs as a
         killable subprocess (hard cancel via process-tree kill). Otherwise the
         in-process YoutubeDL API is used (direct/unit callers).
+
+        If aria2c hits googlevideo HTTP 403 / exit 22, retry once with the native
+        downloader. Cancel/pause still abort immediately.
         """
+        from frameforge.errors import is_aria2_forbidden
+
+        original_aria2 = self.use_aria2c
+        self.aria2_fallback_native = False
+        self.download_attempt = 1
+        used_aria2 = self._aria2c_enabled()
+        self.download_method = "aria2c" if used_aria2 else "native"
+        try:
+            try:
+                return self._download_once(
+                    url, progress_cb, job_id=job_id, process_registry=process_registry
+                )
+            except (DownloadCancelled, DownloadPaused):
+                raise
+            except Exception as exc:
+                if not used_aria2 or not is_aria2_forbidden(str(exc)):
+                    raise
+                self.use_aria2c = False
+                self.aria2_fallback_native = True
+                self.download_attempt = 2
+                self.download_method = "native"
+                if progress_cb:
+                    progress_cb(
+                        0.0,
+                        {
+                            "speed_bps": None,
+                            "eta_seconds": None,
+                            "speed_str": "CDN blocked aria2 — retrying built-in…",
+                            "eta_str": None,
+                        },
+                    )
+                return self._download_once(
+                    url, progress_cb, job_id=job_id, process_registry=process_registry
+                )
+        finally:
+            self.use_aria2c = original_aria2
+
+    def _download_once(
+        self,
+        url: str,
+        progress_cb: ProgressCb | None = None,
+        *,
+        job_id: int | None = None,
+        process_registry: ProcessRegistry | None = None,
+    ) -> DownloadResult:
         self.describe_cli_invocation(url)
         if process_registry is not None and job_id is not None:
             return self._download_subprocess(

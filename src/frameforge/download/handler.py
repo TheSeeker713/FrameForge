@@ -138,7 +138,16 @@ def make_download_handler(
                 except Exception:  # noqa: BLE001
                     inv = None
             if inv:
-                repo.merge_options(job.id, {"ytdlp_invocation": inv})
+                repo.merge_options(
+                    job.id,
+                    {
+                        "ytdlp_invocation": inv,
+                        "download_method": getattr(dl, "download_method", None)
+                        or ("native" if not dl._aria2c_enabled() else "aria2c"),
+                        "aria2_fallback_native": bool(getattr(dl, "aria2_fallback_native", False)),
+                        "download_attempt": int(getattr(dl, "download_attempt", 1) or 1),
+                    },
+                )
         # If cancelled mid-flight after process death, do not mark success
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")

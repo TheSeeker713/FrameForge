@@ -17,6 +17,7 @@ RATE_LIMITED = "rate_limited"
 NOT_AVAILABLE = "not_available"
 NETWORK = "network"
 FFMPEG = "ffmpeg"
+ARIA2_FORBIDDEN = "aria2_forbidden"
 BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
 JS_RUNTIME = "js_runtime"
@@ -29,6 +30,7 @@ CATEGORIES = (
     NOT_AVAILABLE,
     NETWORK,
     FFMPEG,
+    ARIA2_FORBIDDEN,
     BLOCKED_4K,
     CANCELLED,
     JS_RUNTIME,
@@ -92,7 +94,17 @@ _NETWORK_RE = re.compile(
     re.IGNORECASE,
 )
 _FFMPEG_RE = re.compile(
-    r"\bffmpeg\b|\bffprobe\b|\blibx264\b|\baac\b encoder|no such file or directory",
+    r"(?<!-)\bffmpeg\b|\bffprobe\b|\blibx264\b|\baac\b encoder",
+    re.IGNORECASE,
+)
+_ARIA2_FORBIDDEN_RE = re.compile(
+    r"aria2c exited with code 22"
+    r"|aria2c.*\bcode 22\b"
+    r"|\[#\w+\s+.*status[=:\s]*403"
+    r"|googlevideo\.com.*\b403\b"
+    r"|\b403\b.*googlevideo"
+    r"|http error 403.*aria2"
+    r"|aria2.*http error 403",
     re.IGNORECASE,
 )
 _BLOCKED_4K_RE = re.compile(r"blocked:.*(?:4k|2160)|height\s*=\s*2[1-9]\d{2}", re.IGNORECASE)
@@ -110,6 +122,19 @@ _JS_RUNTIME_RE = re.compile(
 )
 
 
+def is_aria2_forbidden(message: str | None) -> bool:
+    """True for aria2c exit 22 / googlevideo HTTP 403 (CDN block, not FFmpeg)."""
+    text = str(message or "")
+    if not text.strip():
+        return False
+    if _ARIA2_FORBIDDEN_RE.search(text):
+        return True
+    lower = text.lower()
+    if "aria2" in lower and ("403" in lower or "exited with code 22" in lower):
+        return True
+    return False
+
+
 def classify_error(message: str | None, *, status: str | None = None) -> str:
     """Map a human error string (and optional status) to a stable category."""
     if status == "cancelled":
@@ -122,6 +147,8 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         "requested format" in lower and "not available" in lower and "image" in lower
     ):
         return JS_RUNTIME
+    if is_aria2_forbidden(text):
+        return ARIA2_FORBIDDEN
     if _BOT_RE.search(text):
         return BOT_CHECK
     if _RATE_RE.search(text):
@@ -132,7 +159,9 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         return AUTH_REQUIRED
     if _BLOCKED_4K_RE.search(text) or ("blocked" in lower and "2160" in lower):
         return BLOCKED_4K
-    if _FFMPEG_RE.search(text):
+    # argv often includes --ffmpeg-location C:\ffmpeg\bin — that is not an FFmpeg failure.
+    ffmpeg_text = re.sub(r"\nargv:.*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    if _FFMPEG_RE.search(ffmpeg_text):
         return FFMPEG
     if _NETWORK_RE.search(text):
         return NETWORK
@@ -178,6 +207,7 @@ def human_cause(category: str) -> str:
         NOT_AVAILABLE: "The video is private, removed, or otherwise unavailable.",
         NETWORK: "A network error interrupted the download.",
         FFMPEG: "FFmpeg/ffprobe failed while processing the file.",
+        ARIA2_FORBIDDEN: "Fast downloader (aria2) was blocked by the CDN (HTTP 403).",
         BLOCKED_4K: "This source is 4K/≥2160p and cannot be upscaled here.",
         CANCELLED: "The job was cancelled.",
         JS_RUNTIME: (
@@ -206,6 +236,8 @@ def suggested_actions(category: str) -> list[str]:
         return ["Check the network connection", "Retry this job"]
     if category == FFMPEG:
         return ["Confirm FFmpeg is on PATH (`python -m frameforge --check-env`)", "Retry"]
+    if category == ARIA2_FORBIDDEN:
+        return ["Retry this job (built-in downloader)", "Check cookies if it still fails"]
     if category == BLOCKED_4K:
         return ["Select a lower-resolution source (≤1080p)"]
     if category == CANCELLED:
