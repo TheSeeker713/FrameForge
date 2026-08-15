@@ -1,4 +1,4 @@
-"""Force an opaque native HWND. v0.5.2 one-shot bgcolor failed the field drag test."""
+"""Custom Flutter title bar so content stays painted while dragging (Flet 0.86)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from frameforge.ui_flet.theme import COLORS, FONT_FAMILY, WINDOW_HEIGHT, WINDOW_
 
 # 6-digit hex only — never None, never 8-digit alpha, never "transparent".
 OPAQUE_BG = COLORS["app_bg"]
+TITLE_BAR_HEIGHT = 36
 
 
 def chrome_snapshot(page: Any) -> dict[str, Any]:
@@ -23,22 +24,26 @@ def chrome_snapshot(page: Any) -> dict[str, Any]:
         "opacity": getattr(win, "opacity", None) if win is not None else None,
         "shadow": getattr(win, "shadow", None) if win is not None else None,
         "title_bar_hidden": getattr(win, "title_bar_hidden", None) if win is not None else None,
+        "title_bar_buttons_hidden": getattr(win, "title_bar_buttons_hidden", None)
+        if win is not None
+        else None,
         "frameless": getattr(win, "frameless", None) if win is not None else None,
         "visible": getattr(win, "visible", None) if win is not None else None,
         "ignore_mouse_events": getattr(win, "ignore_mouse_events", None) if win is not None else None,
         "transparent": getattr(win, "transparent", None) if win is not None else None,
+        "custom_title_bar": True,
     }
 
 
 def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]:
-    """Solid page + window fill, native title bar, no OS shadow, no glass.
+    """Opaque fill + hidden native caption. Drag is WindowDragArea, not DWM.
 
     ``set_size`` only on first attach — reapplying width/height during drag fights the user.
     """
     page.title = f"FrameForge {__version__}"
     page.bgcolor = OPAQUE_BG
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.padding = 20
+    page.padding = ft.Padding.only(left=20, right=20, bottom=20, top=0)
     page.theme = ft.Theme(font_family=FONT_FAMILY, color_scheme_seed=COLORS["accent"])
     if hasattr(page, "decoration"):
         try:
@@ -55,7 +60,9 @@ def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]
         window.bgcolor = OPAQUE_BG
         window.opacity = 1.0
         window.shadow = False
-        window.title_bar_hidden = False
+        window.title_bar_hidden = True
+        if hasattr(window, "title_bar_buttons_hidden"):
+            window.title_bar_buttons_hidden = True
         window.frameless = False
         if hasattr(window, "transparent"):
             window.transparent = False
@@ -65,8 +72,69 @@ def apply_page_chrome(page: ft.Page, *, set_size: bool = True) -> dict[str, Any]
     return chrome_snapshot(page)
 
 
+def build_custom_title_bar(
+    *,
+    on_close: Any,
+    on_min: Any | None = None,
+    on_max: Any | None = None,
+    on_drag_start: Any | None = None,
+    on_drag_end: Any | None = None,
+) -> ft.WindowDragArea:
+    """Flutter-drawn caption. Native DWM title-bar drag is what went outline-only."""
+    min_btn = ft.IconButton(
+        icon=ft.Icons.REMOVE,
+        tooltip="Minimize",
+        icon_color=COLORS["text_primary"],
+        icon_size=18,
+        on_click=lambda _e=None: on_min and on_min(),
+    )
+    max_btn = ft.IconButton(
+        icon=ft.Icons.CROP_SQUARE,
+        tooltip="Maximize",
+        icon_color=COLORS["text_primary"],
+        icon_size=18,
+        on_click=lambda _e=None: on_max and on_max(),
+    )
+    close_btn = ft.IconButton(
+        icon=ft.Icons.CLOSE,
+        tooltip="Close",
+        icon_color=COLORS["danger"],
+        icon_size=18,
+        on_click=lambda _e=None: on_close and on_close(),
+    )
+    row = ft.Container(
+        height=TITLE_BAR_HEIGHT,
+        bgcolor=OPAQUE_BG,
+        padding=ft.Padding.symmetric(horizontal=8),
+        content=ft.Row(
+            [
+                ft.Text(
+                    f"FrameForge {__version__}",
+                    size=13,
+                    weight=ft.FontWeight.W_600,
+                    color=COLORS["text_primary"],
+                ),
+                ft.Container(expand=True),
+                min_btn,
+                max_btn,
+                close_btn,
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        data={"min": min_btn, "max": max_btn, "close": close_btn},
+    )
+    area = ft.WindowDragArea(
+        content=row,
+        maximizable=True,
+        on_drag_start=on_drag_start,
+        on_drag_end=on_drag_end,
+    )
+    area.data = row.data
+    return area
+
+
 def disable_dwm_glass() -> None:
-    """Ask DWM not to use Mica/acrylic on the foreground FrameForge window (Windows 11)."""
+    """Ask DWM not to use Mica/acrylic / iconic thumbnails on the FrameForge HWND."""
     if sys.platform != "win32":
         return
     try:
@@ -76,14 +144,14 @@ def disable_dwm_glass() -> None:
         if not hwnd:
             return
         dwmapi = ctypes.windll.dwmapi
-        # DWMWA_TRANSITIONS_FORCEDISABLED = 3
         val = ctypes.c_int(1)
         dwmapi.DwmSetWindowAttribute(hwnd, 3, ctypes.byref(val), ctypes.sizeof(val))
-        # DWMWA_SYSTEMBACKDROP_TYPE = 38, DWMSBT_NONE = 1
         none = ctypes.c_int(1)
         dwmapi.DwmSetWindowAttribute(hwnd, 38, ctypes.byref(none), ctypes.sizeof(none))
-        # DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1 (no glass frame)
         policy = ctypes.c_int(1)
         dwmapi.DwmSetWindowAttribute(hwnd, 2, ctypes.byref(policy), ctypes.sizeof(policy))
+        off = ctypes.c_int(0)
+        dwmapi.DwmSetWindowAttribute(hwnd, 7, ctypes.byref(off), ctypes.sizeof(off))
+        dwmapi.DwmSetWindowAttribute(hwnd, 10, ctypes.byref(off), ctypes.sizeof(off))
     except Exception:  # noqa: BLE001
         return

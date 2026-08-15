@@ -27,7 +27,7 @@ from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
 from frameforge.ui_flet.queue_chrome import queue_chrome_spec
 from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import COLORS, TAB_LABELS
-from frameforge.ui_flet.window_chrome import apply_page_chrome
+from frameforge.ui_flet.window_chrome import apply_page_chrome, build_custom_title_bar
 
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
@@ -175,6 +175,7 @@ class FrameForgeUi:
         self.bulk_open = False
         self.playlist_open = False
         self.header: ft.Row | None = None
+        self.title_bar: ft.Control | None = None
         self.hero: ft.Row | None = None
         self.tabs: ft.Tabs | None = None
         self.selected_ids: set[int] = set()
@@ -384,10 +385,24 @@ class FrameForgeUi:
         )
         history_body = ft.Column([hist_filters, self.history_list], expand=True)
         self.tabs = build_tabs(queue_body, history_body, self.thumbs_grid)
+        self.title_bar = build_custom_title_bar(
+            on_close=self.handle_window_close,
+            on_min=self.minimize_window,
+            on_max=self.toggle_maximize,
+            on_drag_start=self._on_title_drag_start,
+            on_drag_end=self._on_title_drag_end,
+        )
         root = ft.Column(
             expand=True,
             spacing=16,
-            controls=[self.header, self.hero, self.undo_banner, self.resource_banner, self.tabs],
+            controls=[
+                self.title_bar,
+                self.header,
+                self.hero,
+                self.undo_banner,
+                self.resource_banner,
+                self.tabs,
+            ],
         )
         self.refresh_queue(force=True)
         self.refresh_history()
@@ -521,6 +536,24 @@ class FrameForgeUi:
             if self.page is not None:
                 self.page.update()
             return
+
+    def minimize_window(self) -> None:
+        win = getattr(self.page, "window", None) if self.page is not None else None
+        if win is not None:
+            win.minimized = True
+
+    def toggle_maximize(self) -> None:
+        win = getattr(self.page, "window", None) if self.page is not None else None
+        if win is not None:
+            win.maximized = not bool(getattr(win, "maximized", False))
+
+    def _on_title_drag_start(self, _e: Any = None) -> None:
+        if self.page is not None:
+            self.last_chrome = apply_page_chrome(self.page, set_size=False)
+
+    def _on_title_drag_end(self, _e: Any = None) -> None:
+        if self.page is not None:
+            self.last_chrome = apply_page_chrome(self.page, set_size=False)
 
     def _sync_header(self) -> None:
         if self.header is None:

@@ -21,6 +21,7 @@ class FakePage:
             opacity=1.0,
             shadow=True,
             title_bar_hidden=False,
+            title_bar_buttons_hidden=False,
             frameless=False,
             visible=True,
             ignore_mouse_events=False,
@@ -28,6 +29,8 @@ class FakePage:
             height=None,
             min_width=None,
             min_height=None,
+            minimized=False,
+            maximized=False,
         )
         self.on_disconnect = None
         self.on_keyboard_event = None

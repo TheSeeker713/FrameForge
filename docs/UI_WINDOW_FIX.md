@@ -1,19 +1,37 @@
-# Window drag / visibility — v0.5.3
+# Window drag / visibility — v0.5.4
 
-## Field report (v0.5.2 claim **failed**)
+## Field report
 
-v0.5.1/v0.5.2 set `window.bgcolor = #F8FAFC` and `window.shadow = False` **once** at attach. On a real Windows 11 session (RustDesk remote, AMD iGPU) the window still went **invisible except the outline** while dragging. Tests that only asserted those flags were not enough.
+v0.5.1–0.5.3 kept the **native Windows caption** and tried to stop outline-only
+drag by setting opaque `bgcolor` / `shadow=False` / DWM Mica off. The user
+retested **on local Windows 11 Pro** (not remote desktop). Drag was still
+outline-only. Re-applying bgcolor is **not** a fix.
 
-## v0.5.3 attempt
+## v0.5.4 escalation (new mechanism)
 
-1. Opaque `#F8FAFC` on **both** `page.bgcolor` and `window.bgcolor` (never `None`, never alpha).
-2. Re-apply those flags on **every window event** and UI tick — not only first attach. Size is set only once so drag is not fought.
-3. `window.shadow = False`, native title bar, `frameless = False`, `transparent = False` when the attribute exists.
-4. Windows 11: `DwmSetWindowAttribute` to disable Mica/acrylic / DWM glass on the foreground HWND.
-5. `chrome_snapshot(page)` records the live flags for debugging.
+FrameForge **no longer uses the native DWM title bar for dragging**.
 
-No custom title-bar `start_dragging`. Widget hover shadows stay on controls only.
+1. `window.title_bar_hidden = True` (native caption and caption buttons off).
+2. A Flutter `WindowDragArea` custom title bar (`build_custom_title_bar`) is
+   the drag surface. Content is painted by Flutter during the gesture instead
+   of DWM’s live thumbnail of a possibly-transparent HWND.
+3. Custom **Minimize / Maximize / Close**. Close calls the same quit dialog as
+   Alt+F4 / Ctrl+Q (`handle_window_close`), including Force quit.
+4. Opaque `#F8FAFC` fill, `frameless=False` (resize border kept), DWM Mica /
+   glass / iconic-thumbnail flags still forced off.
 
-## Workaround if drag is still outline-only
+## Tradeoffs
 
-Maximize then restore, or move the window via Win+Arrow. This is a Flet 0.86.5 / Flutter Windows compositor limitation on some GPUs; FrameForge cannot fully replace DWM. Confirm on hardware with [ACCEPTANCE_V053.md](ACCEPTANCE_V053.md) item 9.
+- Windows 11 snap layouts on the native maximize button are gone; double-click
+  the custom bar still maximizes (`WindowDragArea(maximizable=True)`).
+- The caption is a 36px Flutter strip, not the OS chrome.
+- If Flet 0.86.5 still blanks the Flutter view during `WindowDragArea` drag on
+  AMD iGPU, that is a compositor limit FrameForge cannot patch. Workarounds:
+  maximize then restore, or Win+Arrow. Do not treat bgcolor-only patches as a
+  fix.
+
+## Honesty
+
+This is a **different window strategy**, not another bgcolor pass. Eyes-on
+confirm on the user’s Win11 + Radeon 680M is still required before calling
+drag fully Fixed in the field.
