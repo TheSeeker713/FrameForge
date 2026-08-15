@@ -466,6 +466,12 @@ class FrameForgeUi:
         self.floating.data = spec
 
     def refresh_queue(self, *, force: bool = False) -> None:
+        from frameforge.download.thumbnails import backfill_missing_thumbnails
+
+        try:
+            backfill_missing_thumbnails(self.repo, extract_still=False)
+        except Exception:  # noqa: BLE001
+            pass
         jobs = self.queue_jobs()
         armed = bool(getattr(self.worker, "is_armed", False))
         sig = (structural_sig(jobs), armed, self._activity_note)

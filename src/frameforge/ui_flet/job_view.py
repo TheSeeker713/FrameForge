@@ -175,4 +175,4 @@ def floating_bar_view(jobs: list[Any], selected_ids: set[int]) -> dict[str, Any]
 
 def structural_sig(jobs: list[Any]) -> tuple[Any, ...]:
     """Identity of the list (not live progress) — progress ticks must not rebuild."""
-    return tuple((j.id, j.status, j.title) for j in jobs)
+    return tuple((j.id, j.status, j.title, getattr(j, "thumbnail_path", None)) for j in jobs)

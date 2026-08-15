@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import flet as ft
@@ -22,6 +23,34 @@ def _pill(text: str, *, bg: str, fg: str) -> ft.Container:
         bgcolor=bg,
         border_radius=999,
         content=ft.Text(text, size=11, color=fg, weight=ft.FontWeight.W_500),
+    )
+
+
+def _thumb_box(thumbnail_path: str | None) -> ft.Container:
+    placeholder = ft.Icon(ft.Icons.PLAY_CIRCLE_OUTLINE, color=COLORS["text_secondary"])
+    src = str(thumbnail_path) if thumbnail_path else ""
+    has_file = bool(src) and Path(src).is_file()
+    if has_file:
+        content: ft.Control = ft.Image(
+            src=src,
+            width=72,
+            height=48,
+            fit=ft.BoxFit.COVER,
+            border_radius=8,
+            error_content=placeholder,
+        )
+        kind = "thumb_image"
+    else:
+        content = placeholder
+        kind = "thumb_placeholder"
+    return ft.Container(
+        width=72,
+        height=48,
+        bgcolor="#E2E8F0",
+        border_radius=8,
+        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        content=content,
+        data={"kind": kind, "src": src if has_file else None},
     )
 
 
@@ -70,13 +99,7 @@ def build_job_card(
         value=selected,
         on_change=lambda _e, jid=job.id: on_toggle(jid) if on_toggle else None,
     )
-    thumb = ft.Container(
-        width=72,
-        height=48,
-        bgcolor="#E2E8F0",
-        border_radius=8,
-        content=ft.Icon(ft.Icons.PLAY_CIRCLE_OUTLINE, color=COLORS["text_secondary"]),
-    )
+    thumb = _thumb_box(view.get("thumbnail_path"))
     title = ft.Text(view["title"], color=COLORS["text_primary"], weight=ft.FontWeight.W_600, size=14)
     meta_bits = [b for b in (view["domain"], view["resolution"]) if b]
     meta = ft.Text(" • ".join(meta_bits) or view["url"], color=COLORS["text_secondary"], size=12)
