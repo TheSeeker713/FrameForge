@@ -74,7 +74,7 @@ class SequentialWorker:
             return job
         self.processes.mark_paused(job_id)
         paused = self.repo.pause(job_id)
-        self.processes.kill(job_id)
+        self.processes.terminate(job_id)
         opts = paused.options()
         out_dir = opts.get("download_output_dir")
         if out_dir:
@@ -90,6 +90,7 @@ class SequentialWorker:
 
     def resume_job(self, job_id: int) -> Job:
         """Resume a paused job with continue semantics. Sequential: one active stage."""
+        self.processes.clear_signals(job_id)
         job = self.repo.resume_paused(job_id)
         if job.status == "download_completed":
             with self._lock:
@@ -192,6 +193,8 @@ class SequentialWorker:
     def request_download_ids(self, job_ids: Iterable[int]) -> None:
         """Arm worker to process only the given pending job IDs."""
         ids = {int(i) for i in job_ids}
+        for jid in ids:
+            self.processes.clear_signals(jid)
         with self._lock:
             self._only_ids = ids
             self._fail_pause_halt.clear()

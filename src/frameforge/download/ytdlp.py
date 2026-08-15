@@ -523,6 +523,10 @@ class YtDlpDownloader:
 
         proc = subprocess.Popen(cmd, **kwargs)  # noqa: S603
         process_registry.register(job_id, proc.pid)
+        if process_registry.was_paused(job_id):
+            raise DownloadPaused("paused")
+        if process_registry.was_killed(job_id):
+            raise DownloadCancelled("cancelled")
         printed: list[str] = []
         output_tail: list[str] = []
         stderr_chunks: list[str] = []

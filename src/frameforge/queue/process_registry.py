@@ -20,8 +20,10 @@ class ProcessRegistry:
     def register(self, job_id: int, pid: int) -> None:
         with self._lock:
             self._job_pid[int(job_id)] = int(pid)
-            self._killed_jobs.discard(int(job_id))
-            self._paused_jobs.discard(int(job_id))
+            already_killed = int(job_id) in self._killed_jobs
+            already_paused = int(job_id) in self._paused_jobs
+        if already_killed or already_paused:
+            kill_process_tree(int(pid))
 
     def unregister(self, job_id: int) -> None:
         with self._lock:
@@ -35,21 +37,44 @@ class ProcessRegistry:
         with self._lock:
             return int(job_id) in self._killed_jobs
 
+    def mark_killed(self, job_id: int) -> None:
+        """Remember cancel even before yt-dlp has a PID (Starting…)."""
+        with self._lock:
+            self._killed_jobs.add(int(job_id))
+            self._paused_jobs.discard(int(job_id))
+
     def mark_paused(self, job_id: int) -> None:
         with self._lock:
             self._paused_jobs.add(int(job_id))
+            self._killed_jobs.discard(int(job_id))
+
+    def clear_signals(self, job_id: int) -> None:
+        """Allow a later Popen after Pause/Resume or Retry."""
+        with self._lock:
+            self._killed_jobs.discard(int(job_id))
+            self._paused_jobs.discard(int(job_id))
 
     def was_paused(self, job_id: int) -> bool:
         with self._lock:
             return int(job_id) in self._paused_jobs
 
-    def kill(self, job_id: int) -> bool:
-        """Kill process tree for job if registered. Returns True if a kill was attempted."""
+    def terminate(self, job_id: int) -> bool:
+        """Kill the tree without changing cancel/pause flags."""
         with self._lock:
             pid = self._job_pid.get(int(job_id))
-            if pid is None:
-                return False
+        if pid is None:
+            return False
+        kill_process_tree(pid)
+        return True
+
+    def kill(self, job_id: int) -> bool:
+        """Cancel: mark killed (even with no PID yet) and kill the tree if registered."""
+        with self._lock:
             self._killed_jobs.add(int(job_id))
+            self._paused_jobs.discard(int(job_id))
+            pid = self._job_pid.get(int(job_id))
+        if pid is None:
+            return True
         kill_process_tree(pid)
         return True
 

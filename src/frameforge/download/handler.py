@@ -51,8 +51,12 @@ def make_download_handler(
     def handler(job: Job, repo: JobRepository) -> None:
         job = repo.get(job.id)
         if job.status == "cancelled":
-            return
+            raise DownloadCancelled("cancelled")
         if job.status == "paused":
+            raise DownloadPaused("paused")
+        if process_registry is not None and process_registry.was_killed(job.id):
+            raise DownloadCancelled("cancelled")
+        if process_registry is not None and process_registry.was_paused(job.id):
             raise DownloadPaused("paused")
 
         out_dir = resolve_download_output_dir(job, fallback=dl.output_dir)
