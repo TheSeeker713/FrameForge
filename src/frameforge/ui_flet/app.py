@@ -235,15 +235,18 @@ class FrameForgeUi:
 
         resume_btn = elevated_filled_button("Retry this job and resume queue", on_click=retry_resume)
         resume_btn.visible = False
+        cat = str(payload.get("category") or "")
+        js_runtime = cat == "js_runtime"
         browser_pick = ft.Dropdown(
-            label="Browser",
-            value="chrome",
+            label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
+            value="firefox",
             options=[
-                ft.dropdown.Option("chrome", text="Chrome"),
+                ft.dropdown.Option("firefox", text="Firefox (recommended)"),
                 ft.dropdown.Option("edge", text="Edge"),
-                ft.dropdown.Option("firefox", text="Firefox"),
+                ft.dropdown.Option("chrome", text="Chrome (often blocked by DPAPI)"),
             ],
-            width=220,
+            width=360,
+            visible=not js_runtime,
         )
 
         def act(aid: str):
@@ -254,7 +257,7 @@ class FrameForgeUi:
                     return
                 if aid == "import_browser":
                     url = str(payload.get("url") or "")
-                    chosen = (browser_pick.value or "chrome").strip().lower()
+                    chosen = (browser_pick.value or "firefox").strip().lower()
                     recovered = self.bridge.recover_bot_cookies(
                         url,
                         import_browser=lambda u, b=chosen: self.import_cookies_from_browser_for_site(
@@ -284,7 +287,11 @@ class FrameForgeUi:
                     ft.Text(str(payload.get("url") or ""), color=COLORS["text_secondary"]),
                     ft.Text(f"Cause: {payload.get('cause') or ''}", color=COLORS["warn"]),
                     ft.Text(
-                        "Pick Chrome, Edge, or Firefox, import cookies, then retry only after they validate.",
+                        "YouTube n-challenge failed: install Deno + yt-dlp-ejs and restart FrameForge. "
+                        "This is not a cookie/login problem."
+                        if js_runtime
+                        else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
+                        "cannot be fixed by FrameForge. Import cookies, then retry only after they validate.",
                         color=COLORS["text_secondary"],
                         size=12,
                     ),
@@ -297,8 +304,14 @@ class FrameForgeUi:
             ),
             actions=[
                 elevated_outlined_button("Copy full report", on_click=self._copy_fail_pause_report),
-                elevated_filled_button("Import from browser", on_click=act("import_browser")),
-                elevated_outlined_button("Authenticate site", on_click=act("authenticate")),
+                *(
+                    []
+                    if js_runtime
+                    else [
+                        elevated_filled_button("Import from Firefox / browser", on_click=act("import_browser")),
+                        elevated_outlined_button("Import cookies.txt", on_click=act("authenticate")),
+                    ]
+                ),
                 elevated_outlined_button("Retry this job", on_click=act("retry")),
                 elevated_outlined_button("Skip & resume queue", on_click=act("skip_resume")),
                 elevated_outlined_button("Stop queue", on_click=act("stop")),

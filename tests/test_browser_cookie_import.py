@@ -6,10 +6,12 @@ from pathlib import Path
 
 from frameforge.download.browser_import import (
     BROWSER_PREFERENCE,
+    CHROME_ABE_HINT,
     CHROMIUM_LOCK_HINT,
     import_cookies_from_browser,
 )
 from frameforge.download.cookies import NETSCAPE_HEADER, has_cookies, is_netscape_cookie_text
+from frameforge.db.repository import JobRepository
 from frameforge.paths import cookies_dir, ensure_output_tree
 
 VALID_NETSCAPE = (
@@ -72,8 +74,49 @@ def test_chromium_lock_message(tmp_path: Path, monkeypatch):
 
     result = import_cookies_from_browser("example.com", browser="chrome", runner=runner)
     assert result.ok is False
-    assert CHROMIUM_LOCK_HINT in result.message or "Chrome not found" in result.message
-    assert "close Chrome" in result.message
+    assert CHROME_ABE_HINT in result.message
+    assert "App-Bound Encryption" in result.message
+    assert "Firefox" in result.message
+    assert "cookies.txt" in result.message
+    assert "cannot be fixed by FrameForge" in result.message
+
+
+def test_fail_pause_defaults_firefox_not_chrome(tmp_path: Path):
+    from frameforge.errors import annotate_job_error
+    from frameforge.queue.fail_pause import fail_pause_payload
+    from frameforge.queue.worker import SequentialWorker
+    from frameforge.ui_flet.app import FrameForgeUi
+    from tests.flet_fakes import FakePage
+
+    repo = JobRepository(tmp_path / "a.db")
+    worker = SequentialWorker(repo, download_handler=lambda j, r: None, poll_interval=0.05)
+    ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
+    ui.page = FakePage()
+    job = ui.bridge.enqueue_url("https://www.youtube.com/watch?v=d")
+    annotate_job_error(ui.repo, job.id, "Sign in to confirm you’re not a bot")
+    dlg = ui._fail_pause_dialog(fail_pause_payload(ui.repo.get(job.id)))
+    assert dlg.data["browser"].value == "firefox"
+    labels = " ".join(str(getattr(a, "content", a)) for a in dlg.actions)
+    assert "Firefox" in labels or "cookies.txt" in labels
+    assert "Copy full report" in labels
+    auth = ui.open_authenticate("https://www.youtube.com/watch?v=d")
+    texts: list[str] = []
+
+    def walk(ctrl):
+        for attr in ("value", "title", "content", "label"):
+            val = getattr(ctrl, attr, None)
+            if isinstance(val, str):
+                texts.append(val)
+            elif val is not None and val is not ctrl:
+                walk(val)
+        for child in getattr(ctrl, "controls", None) or []:
+            walk(child)
+
+    walk(auth.content)
+    blob = " ".join(texts)
+    assert "Firefox" in blob
+    assert "cookies.txt" in blob.lower()
+    ui.shutdown()
 
 
 def test_chrome_missing_profile_message(tmp_path: Path, monkeypatch):

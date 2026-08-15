@@ -21,6 +21,11 @@ CHROMIUM_LOCK_HINT = (
     "Chromium cookies may be locked (browser open) or App-Bound Encrypted. "
     "Close the browser and retry, use Firefox, or import a Netscape cookies.txt manually."
 )
+CHROME_ABE_HINT = (
+    "Chrome cookie import cannot be fixed by FrameForge: Chrome uses App-Bound Encryption "
+    "(DPAPI). Prefer Firefox Import, or export a Netscape cookies.txt and import it here. "
+    "Closing Chrome does not unlock App-Bound cookies."
+)
 
 
 def missing_browser_message(browser: str) -> str:
@@ -51,6 +56,14 @@ def _default_runner(cmd: list[str]) -> tuple[int, str, str]:
         check=False,
     )
     return int(proc.returncode), proc.stdout or "", proc.stderr or ""
+
+
+def _looks_like_abe(text: str) -> bool:
+    lower = text.lower()
+    return any(
+        n in lower
+        for n in ("app-bound", "app bound encryption", "dpapi", "failed to decrypt")
+    )
 
 
 def _looks_like_chromium_lock(text: str) -> bool:
@@ -147,15 +160,21 @@ def import_cookies_from_browser(
             except OSError:
                 pass
         hint = ""
-        if name in {"chrome", "edge", "firefox"}:
-            hint = " " + missing_browser_message(name)
+        if name == "chrome" and (_looks_like_abe(blob) or _looks_like_chromium_lock(blob)):
+            hint = " " + CHROME_ABE_HINT
         elif name in CHROMIUM_BROWSERS and _looks_like_chromium_lock(blob):
             hint = " " + CHROMIUM_LOCK_HINT
+        elif name in {"chrome", "edge", "firefox"}:
+            hint = " " + missing_browser_message(name)
         detail = (err or out or f"exit {rc}").strip().splitlines()
         short = detail[-1] if detail else f"exit {rc}"
         errors.append(f"{name}: {short}{hint}")
     msg = "Could not import cookies from browser. " + " | ".join(errors)
-    if any(b in CHROMIUM_BROWSERS for b in browsers) and CHROMIUM_LOCK_HINT not in msg:
+    if "chrome" in " ".join(browsers) and CHROME_ABE_HINT not in msg and any(
+        _looks_like_abe(e) for e in errors
+    ):
+        msg += " " + CHROME_ABE_HINT
+    if any(b in CHROMIUM_BROWSERS for b in browsers) and CHROMIUM_LOCK_HINT not in msg and CHROME_ABE_HINT not in msg:
         if any("chrome" in e.lower() or "edge" in e.lower() or "brave" in e.lower() for e in errors):
             msg += " " + CHROMIUM_LOCK_HINT
     return BrowserImportResult(False, msg.strip())

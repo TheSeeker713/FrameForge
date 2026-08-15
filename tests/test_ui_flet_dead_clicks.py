@@ -33,15 +33,15 @@ def test_fail_pause_dialog_five_actions_and_resume_control(tmp_path: Path):
         content = getattr(act, "content", None)
         labels.append(str(content) if content is not None else "")
     blob = " ".join(labels)
-    assert "Import from browser" in blob
-    assert "Authenticate site" in blob
+    assert "Import from Firefox" in blob
+    assert "cookies.txt" in blob.lower() or "Authenticate" in blob
     assert "Retry this job" in blob
     assert "Skip & resume queue" in blob
     assert "Stop queue" in blob
     assert dlg.data["resume"] is not None
     assert dlg.data["status"] is not None
     assert dlg.data["browser"] is not None
-    assert (dlg.data["browser"].value or "") == "chrome"
+    assert (dlg.data["browser"].value or "") == "firefox"
     ids = [aid for aid, _ in MODAL_ACTIONS]
     assert ids == ["import_browser", "authenticate", "retry", "skip_resume", "stop"]
     ui.shutdown()

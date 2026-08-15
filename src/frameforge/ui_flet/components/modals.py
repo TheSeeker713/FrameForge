@@ -91,14 +91,25 @@ def authenticate_dialog(
             [
                 ft.Text(f"Authenticate {domain}", weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "Import cookies from Chrome, Edge, or Firefox. Log in in that browser first if the site shows a bot check.",
+                    "Prefer Firefox import, or a Netscape cookies.txt from an extension. "
+                    "Chrome often fails on modern Windows (App-Bound Encryption / DPAPI) — "
+                    "FrameForge cannot decrypt those cookies. Log in in Firefox first if the site shows a bot check.",
                     color=COLORS["text_secondary"],
                 ),
                 field,
-                ft.ListTile(title=ft.Text("Import from Chrome"), on_click=on_chrome),
-                ft.ListTile(title=ft.Text("Import from Edge"), on_click=on_edge),
-                ft.ListTile(title=ft.Text("Import from Firefox"), on_click=on_firefox),
+                ft.ListTile(title=ft.Text("Import from Firefox (recommended)"), on_click=on_firefox),
                 ft.ListTile(title=ft.Text("Choose cookies.txt file"), on_click=on_txt),
+                ft.Text(
+                    "Export steps: open the site in Firefox → log in → use a cookies.txt extension "
+                    "(e.g. “Get cookies.txt LOCALLY”) → save the file → Choose cookies.txt file here.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.ListTile(title=ft.Text("Import from Edge"), on_click=on_edge),
+                ft.ListTile(
+                    title=ft.Text("Import from Chrome (often blocked by App-Bound Encryption)"),
+                    on_click=on_chrome,
+                ),
                 err,
             ],
             width=420,

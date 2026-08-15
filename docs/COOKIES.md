@@ -4,31 +4,30 @@ FrameForge stores per-domain Netscape cookie files under:
 
 `%USERPROFILE%\Downloads\FrameForge\cookies\<domain>.txt`
 
-## Import from browser (v0.4)
+## Import from browser (v0.5.6)
 
 User-triggered only — FrameForge never auto-opens a browser loop.
 
-1. Click **Authenticate site…** (or **Import from browser…** on an `auth_required` error).
+1. Click **Authenticate site…** (or **Import from Firefox / browser** on a bot/login pause).
 2. Enter the site URL or domain.
-3. Choose a browser (default **Firefox**) and click **Import from browser**.
+3. **Firefox is the default.** Click **Import from Firefox**, or **Choose cookies.txt file**.
 4. FrameForge runs:
 
    `yt-dlp --cookies-from-browser <browser> --cookies <FrameForge cookies path> --skip-download <url>`
 
 5. The Netscape file is validated (must contain at least one cookie row). Header-only stubs are rejected.
-6. On success, later downloads for that domain use `resolve_cookiefile_for_url` automatically.
+6. On success, later downloads for that domain use `resolve_cookiefile_for_url` automatically. YouTube then still uses the Innertube client list (`tv_downgraded`, etc.). See [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md).
 
 **Browser order** when auto-trying: `firefox`, then `edge`, `chrome`, `brave`.
 
-### Chromium limitations
+### Chrome App-Bound Encryption (honest limit)
 
-Edge/Chrome/Brave often fail while the browser is open, or when cookies are **App-Bound Encrypted**. FrameForge surfaces that error and keeps the manual path:
+Chrome cookie import **cannot be fixed by FrameForge**. Modern Chrome uses **App-Bound Encryption (DPAPI)**. Closing Chrome does not unlock those cookies. Prefer:
 
-- Close the Chromium browser and retry, **or**
-- Use Firefox, **or**
-- **Open browser + Import cookies.txt** (extension export).
+- Firefox Import, **or**
+- Export a Netscape `cookies.txt` (extension such as “Get cookies.txt LOCALLY”) and import the file.
 
-ChromeCookieUnlock-style recovery is **not** bundled in this pass.
+Edge/Brave may hit the same Chromium lock. ChromeCookieUnlock-style recovery is **not** bundled.
 
 ## Manual Netscape import (fallback)
 
