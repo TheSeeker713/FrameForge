@@ -53,6 +53,9 @@ def format_full_error_report(
         lines.append(f"cookies: {inv.get('cookies') or '(none)'}")
         lines.append(f"aria2c: {inv.get('aria2c')}")
         lines.append(f"format: {inv.get('format') or ''}")
+        lines.append(f"ffmpeg_location: {inv.get('ffmpeg_location') or '(not found)'}")
+        if inv.get("ffprobe_location"):
+            lines.append(f"ffprobe_location: {inv.get('ffprobe_location')}")
         lines.append(f"yt_dlp_version: {inv.get('yt_dlp_version') or ''}")
         runtime = inv.get("js_runtime") or (inv.get("env_overrides") or {}).get("js_runtime")
         lines.append(f"js_runtime: {runtime or '(none — Deno/Node not detected)'}")

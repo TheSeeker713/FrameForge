@@ -63,11 +63,64 @@ def aria2c_available() -> bool:
     return shutil.which("aria2c") is not None
 
 
-def ffmpeg_location() -> str | None:
-    exe = shutil.which("ffmpeg")
-    if not exe:
+def _winget_gyan_ffmpeg() -> Path | None:
+    local = Path(os.environ.get("LOCALAPPDATA") or "")
+    root = local / "Microsoft" / "WinGet" / "Packages"
+    if not root.is_dir():
         return None
-    return str(Path(exe).resolve())
+    found: list[Path] = []
+    try:
+        for pkg in root.glob("Gyan.FFmpeg*"):
+            found.extend(p for p in pkg.glob("ffmpeg-*/bin/ffmpeg.exe") if p.is_file())
+            found.extend(
+                p
+                for p in pkg.glob("**/ffmpeg.exe")
+                if p.is_file() and p.parent.name.lower() == "bin"
+            )
+    except OSError:
+        return None
+    if not found:
+        return None
+    uniq = sorted({p.resolve() for p in found}, key=lambda p: p.stat().st_mtime, reverse=True)
+    return uniq[0]
+
+
+def _common_ffmpeg_candidates() -> list[Path]:
+    pf = Path(os.environ.get("ProgramFiles") or r"C:\Program Files")
+    home = Path.home()
+    choco = Path(os.environ.get("ChocolateyInstall") or r"C:\ProgramData\chocolatey")
+    return [
+        Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
+        pf / "ffmpeg" / "bin" / "ffmpeg.exe",
+        home / "scoop" / "shims" / "ffmpeg.exe",
+        choco / "bin" / "ffmpeg.exe",
+    ]
+
+
+def ffmpeg_location() -> str | None:
+    """PATH first, then WinGet Gyan.FFmpeg and other common Windows locations."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return str(Path(exe).resolve())
+    gyan = _winget_gyan_ffmpeg()
+    if gyan is not None:
+        return str(gyan)
+    for cand in _common_ffmpeg_candidates():
+        if cand.is_file():
+            return str(cand.resolve())
+    return None
+
+
+def ffprobe_location() -> str | None:
+    exe = shutil.which("ffprobe")
+    if exe:
+        return str(Path(exe).resolve())
+    ffmpeg = ffmpeg_location()
+    if ffmpeg:
+        sibling = Path(ffmpeg).with_name("ffprobe.exe" if Path(ffmpeg).suffix.lower() == ".exe" else "ffprobe")
+        if sibling.is_file():
+            return str(sibling.resolve())
+    return None
 
 
 def download_subprocess_env() -> tuple[dict[str, str], dict[str, str]]:
@@ -82,7 +135,13 @@ def download_subprocess_env() -> tuple[dict[str, str], dict[str, str]]:
         env["PATH"] = os.environ.get("PATH", "")
     overrides: dict[str, str] = {}
     extra: list[str] = []
-    for tool in ("ffmpeg", "ffprobe", "aria2c", "deno", "node"):
+    ffmpeg = ffmpeg_location()
+    if ffmpeg:
+        extra.append(str(Path(ffmpeg).resolve().parent))
+    probe = ffprobe_location()
+    if probe:
+        extra.append(str(Path(probe).resolve().parent))
+    for tool in ("aria2c", "deno", "node"):
         loc = which_on_augmented_path(tool) if tool in {"deno", "node"} else shutil.which(tool)
         if loc:
             extra.append(str(Path(loc).resolve().parent))
@@ -130,6 +189,7 @@ def snapshot_invocation(
         "format": format_selector,
         "env_overrides": dict(env_overrides or {}),
         "ffmpeg_location": ffmpeg,
+        "ffprobe_location": ffprobe_location() if ffmpeg else None,
         "js_runtime": (env_overrides or {}).get("js_runtime"),
         "yt_dlp_version": bundled_yt_dlp_version(),
         "yt_dlp_path_version": path_yt_dlp_version(),
