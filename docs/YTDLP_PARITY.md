@@ -68,6 +68,12 @@ When yt-dlp reports **aria2c exit 22** / googlevideo **HTTP 403**, FrameForge do
 
 Fail-pause does **not** fire for `aria2_forbidden`. The queue pauses only after a **final** failure whose category is in the fail-pause set.
 
+## Cancel vs “Cancelled by the uploader”
+
+User **Cancel** is `DownloadCancelled` (process-tree kill) or a job already in status `cancelled`. The worker does **not** scan `str(exc)` for the word “cancelled”.
+
+yt-dlp messages such as “This live event was Cancelled by the uploader” are classified as **`not_available`**: the job is **failed**, the stderr is kept, and Retry failed remains available. That is not user-cancelled and does not fail-pause. See [FAIL_PAUSE.md](FAIL_PAUSE.md).
+
 ## Fixes in 0.5.4
 
 1. **Sticky cookies** — `cookiefile` is assigned every job, including `None`.

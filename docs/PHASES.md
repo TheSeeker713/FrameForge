@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.5 (SQLite thread-local connections)
+## Status: v0.6.6 (cancel is typed exceptions only)
 
-Package version is **0.6.5**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential WAL worker unchanged; each thread has its own SQLite connection. See [SQLITE_THREADING.md](SQLITE_THREADING.md). Upscale PNG disk guard remains as in 0.6.4 ([UPSCALE_DISK.md](UPSCALE_DISK.md)).
+Package version is **0.6.6**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential WAL worker; thread-local SQLite (0.6.5). User cancel is `DownloadCancelled` / status only — yt-dlp “Cancelled by the uploader” is a failed `not_available` job. See [FAIL_PAUSE.md](FAIL_PAUSE.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).
 
 ## Phase 0 – Foundation
 

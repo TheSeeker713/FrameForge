@@ -86,7 +86,10 @@ _UNAVAIL_RE = re.compile(
     r"|copyright"
     r"|not (currently )?available"
     r"|http error 404"
-    r"|status code 404",
+    r"|status code 404"
+    r"|cancelled by the uploader"
+    r"|this live event was cancelled"
+    r"|live event (has been |was )?cancelled",
     re.IGNORECASE,
 )
 _NETWORK_RE = re.compile(
@@ -151,8 +154,6 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         return CANCELLED
     text = str(message or "")
     lower = text.lower()
-    if "cancelled" in lower and not is_auth_failure(text) and not _BOT_RE.search(text):
-        return CANCELLED
     if _JS_RUNTIME_RE.search(text) or (
         "requested format" in lower and "not available" in lower and "image" in lower
     ):

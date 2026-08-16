@@ -43,6 +43,10 @@ CORPUS: list[tuple[str, str]] = [
         "ERROR: [youtube] Video unavailable. This video is private.",
     ),
     (
+        NOT_AVAILABLE,
+        "ERROR: [youtube] abc: This live event was Cancelled by the uploader",
+    ),
+    (
         NETWORK,
         "ERROR: Unable to download webpage: <urlopen error [Errno 11001] getaddrinfo failed>",
     ),

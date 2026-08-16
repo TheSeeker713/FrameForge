@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.6
+
+- Worker cancel is typed (`DownloadCancelled` / user status) only — yt-dlp “Cancelled by the uploader” is `not_available` failed, not user-cancelled ([FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [YTDLP_PARITY.md](docs/YTDLP_PARITY.md))
+
 ## 0.6.5
 
 - SQLite: thread-local connections (`check_same_thread=True`), WAL kept; GUI and worker no longer share one Connection ([SQLITE_THREADING.md](docs/SQLITE_THREADING.md))

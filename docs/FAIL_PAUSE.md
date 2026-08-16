@@ -16,7 +16,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `ffmpeg` | ffmpeg/ffprobe errors (not `--ffmpeg-location` in argv) | Mux / probe failed. |
 | `aria2_forbidden` | aria2c exit 22 / googlevideo HTTP 403 | CDN blocked the fast downloader. |
 | `blocked_4k` | 4K / ≥2160 blocked for upscale | Pick a lower source resolution. |
-| `cancelled` | user cancel | Job was cancelled. |
+| `cancelled` | user cancel (`DownloadCancelled` or status `cancelled`) | Job was cancelled. |
 | `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
 | `output_missing` | exit 0 but no file / archive orphan | File missing on disk after a “successful” download. |
 | `unknown` | anything else | Unclassified failure. |
@@ -45,6 +45,8 @@ Optional `fail_pause_on_any=1` pauses on every failure (not exposed as a checkbo
 `output_missing` pauses the bulk queue **without** cookie import. Actions are Retry (force re-download if the yt-dlp archive is stale), Open folder, Skip & resume, Stop, and Copy report. See [OUTPUT_PATH.md](OUTPUT_PATH.md).
 
 `aria2_forbidden` is **not** a fail-pause category.
+
+**User cancel vs yt-dlp “Cancelled”:** the worker never treats English in `str(exc)` as a cancel. Only an explicit user cancel/pause (status already `cancelled`/`paused`) or typed `DownloadCancelled` / `DownloadPaused` preserve those statuses. yt-dlp stderr such as “This live event was Cancelled by the uploader” is **`not_available`** (job **failed**, error text kept, Retry failed works). It is not user-cancelled and does not fail-pause the bulk queue. See [YTDLP_PARITY.md](YTDLP_PARITY.md).
 
 Turn the default policy off in Settings if you want the bulk run to keep going after auth/bot failures.
 

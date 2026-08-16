@@ -459,16 +459,13 @@ class SequentialWorker:
         return True
 
     def _preserve_cancelled(self, job_id: int, exc: BaseException) -> bool:
-        """If job was cancelled (or cancel exception), keep cancelled — never failed."""
+        """Keep user-cancelled jobs cancelled. Typed DownloadCancelled only — never English."""
         current = self.repo.get(job_id)
         if current.status == "paused" or isinstance(exc, DownloadPaused):
             return False
         if current.status == "cancelled" or isinstance(exc, DownloadCancelled):
             if current.status != "cancelled":
                 self.repo.cancel(job_id)
-            return True
-        if "cancelled" in str(exc).lower():
-            self.repo.cancel(job_id)
             return True
         return False
 
