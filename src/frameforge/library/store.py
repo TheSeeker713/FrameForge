@@ -327,6 +327,14 @@ class LibraryStore:
         self.conn.commit()
         return self.get(item_id)
 
+    def set_item_duration(self, item_id: int, duration: float | None) -> LibraryItem:
+        self.conn.execute(
+            "UPDATE library_items SET duration = ?, date_modified = ? WHERE id = ?",
+            (duration, utc_now(), item_id),
+        )
+        self.conn.commit()
+        return self.get(item_id)
+
     def set_flags(
         self,
         item_id: int,
