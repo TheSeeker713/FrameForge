@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+- Audit named the 1-file migrate abort: progress callbacks sat outside the per-file try, and the runner discarded the in-progress report ([AUDIT_LIBRARY_MIGRATE_v0.6.2.md](docs/AUDIT_LIBRARY_MIGRATE_v0.6.2.md))
+- Migrate continues after per-file **and** callback errors; cross-drive uses copy2 → size verify → unlink
+- Startup/Settings **Repair folders** sweeps all site folders: thumbs → `thumbnails/`, leftover SQLite → `database/`, junk candidates listed not deleted (background thread)
+- `scripts/reset_library_state.ps1` alias for clean onboarding retest
+
 ## 0.6.1
 
 - Library grid shows one playable card per indexed file; click thumb/card plays in the default player
