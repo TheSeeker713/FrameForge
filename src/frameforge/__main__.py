@@ -20,6 +20,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Probe dependencies and output directories",
     )
     parser.add_argument("--gui", action="store_true", help="Launch Flet GUI")
+    parser.add_argument(
+        "--reset-library",
+        action="store_true",
+        help="Clear Library index and onboarding flags (does not delete media files)",
+    )
     args = parser.parse_args(argv)
 
     if args.version:
@@ -31,6 +36,20 @@ def main(argv: list[str] | None = None) -> int:
         report = check_environment()
         print(json.dumps(report, indent=2))
         return 0 if report.get("ok") else 1
+
+    if args.reset_library:
+        from frameforge.db.repository import JobRepository
+        from frameforge.library.reset import reset_library_state
+        from frameforge.library.store import LibraryStore
+        from frameforge.paths import db_path
+
+        ensure_output_tree()
+        repo = JobRepository(db_path())
+        store = LibraryStore(repo)
+        reset_library_state(store)
+        repo.close()
+        print("Library index and onboarding flags cleared. Media files were not deleted.")
+        return 0
 
     if args.gui:
         from frameforge.ui_flet.app import run_gui

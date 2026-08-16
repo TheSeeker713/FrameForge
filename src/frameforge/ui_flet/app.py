@@ -27,6 +27,7 @@ from frameforge.ui_flet.components.library import (
     add_to_collection_dialog,
     build_library_toolbar,
     confirm_remove_dialog,
+    confirm_reset_library_dialog,
     create_collection_dialog,
     empty_library_state,
     library_tile,
@@ -2095,8 +2096,22 @@ class FrameForgeUi:
             on_pick_library_root=self.pick_library_root,
             on_pick_watch_folder=self.pick_watch_folder,
             on_set_private_password=self.open_set_private_password,
+            on_reset_library=self.open_reset_library,
         )
         return self.dialogs.open("settings", self.settings_dialog)
+
+    def open_reset_library(self, _e: Any = None) -> ft.AlertDialog:
+        dlg = confirm_reset_library_dialog(on_yes=self.confirm_reset_library, on_close=self.close_dialog)
+        return self.dialogs.open("reset_library", dlg)
+
+    def confirm_reset_library(self, _e: Any = None) -> None:
+        from frameforge.library.reset import reset_library_state
+
+        reset_library_state(self.library)
+        self.close_dialog()
+        self.refresh_library()
+        self._show_toast("Library onboarding reset — media files were not deleted")
+        self.on_library_opened()
 
     def _on_keyboard(self, e: Any) -> None:
         key = getattr(e, "key", None)

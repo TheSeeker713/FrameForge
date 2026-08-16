@@ -34,6 +34,7 @@ def build_settings_dialog(
     on_pick_library_root: Any | None = None,
     on_pick_watch_folder: Any | None = None,
     on_set_private_password: Any | None = None,
+    on_reset_library: Any | None = None,
 ) -> ft.AlertDialog:
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
@@ -234,6 +235,19 @@ def build_settings_dialog(
                 ft.OutlinedButton(
                     content="Set / change Private password",
                     on_click=lambda _e: on_set_private_password and on_set_private_password(),
+                ),
+            ),
+            _card(
+                "Advanced",
+                ft.Text(
+                    "Reset Library onboarding to retest first-run. Index and flags are cleared; "
+                    "media files stay on disk. Same as scripts/reset_library.ps1.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.OutlinedButton(
+                    content="Reset Library onboarding…",
+                    on_click=lambda _e: on_reset_library and on_reset_library(),
                 ),
             ),
             _card(

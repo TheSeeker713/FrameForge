@@ -456,6 +456,24 @@ def confirm_remove_dialog(n: int, *, delete_files: bool, on_yes: Any, on_close: 
     return dlg
 
 
+def confirm_reset_library_dialog(*, on_yes: Any, on_close: Any) -> ft.AlertDialog:
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Reset Library onboarding"),
+        content=ft.Text(
+            "Clear the Library index, collections, and onboarding flags so first-run setup "
+            "runs again. Media files on disk are not deleted."
+        ),
+        actions=[
+            elevated_outlined_button("Cancel", on_click=lambda _e: on_close()),
+            elevated_filled_button("Reset onboarding", on_click=lambda _e: on_yes()),
+        ],
+        bgcolor=COLORS["surface"],
+    )
+    dlg.data = {"kind": "reset_library"}
+    return dlg
+
+
 def private_password_dialog(
     *,
     title: str,

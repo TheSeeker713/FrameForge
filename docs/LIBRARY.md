@@ -20,6 +20,8 @@ Onboarding is two steps. **`library_root` and `library_onboarded` are separate.*
 
 Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 
+**Reset (dev / retest):** Settings → Advanced → **Reset Library onboarding**, or `.\scripts\reset_library.ps1` / `python -m frameforge --reset-library`. Clears the index, collections, watch folders, `library_root`, and `library_onboarded`. **Does not delete media files.**
+
 ## Layout
 
 - Grid: one card per **playable** indexed file (title, thumb if the thumb file exists, resolution). Count in the toolbar equals visible cards.
