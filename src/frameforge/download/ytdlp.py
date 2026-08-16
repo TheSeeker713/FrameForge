@@ -246,6 +246,44 @@ class YtDlpDownloader:
         self.ignore_download_archive: bool = False
         self._settings_repo: Any | None = None
 
+    def _staging_dir(self) -> Path:
+        from frameforge.paths import frameforge_root, temp_dir
+
+        dest = temp_dir() / "dl"
+        try:
+            Path(self.output_dir).resolve().relative_to(frameforge_root().resolve())
+        except ValueError:
+            dest = Path(self.output_dir) / ".ff-temp"
+        dest.mkdir(parents=True, exist_ok=True)
+        return dest
+
+    def _yt_paths(self) -> dict[str, str]:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        return {"home": str(self.output_dir), "temp": str(self._staging_dir())}
+
+    def _relocate_sidecars(self, media: Path) -> None:
+        """Move .info.json beside the finished file into FrameForge/metadata/."""
+        import shutil
+
+        from frameforge.library.paths import unique_dest
+        from frameforge.paths import metadata_dir
+
+        if media is None or not Path(media).exists():
+            return
+        media = Path(media)
+        dest_dir = metadata_dir()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for cand in (
+            media.with_suffix(media.suffix + ".info.json"),
+            media.with_name(media.stem + ".info.json"),
+        ):
+            if not cand.is_file():
+                continue
+            dest = unique_dest(dest_dir, cand.name)
+            shutil.move(str(cand), str(dest))
+
+    OUTTMPL_REL = "%(title).200B [%(id)s].%(ext)s"
+
     def _speed_repo(self) -> Any | None:
         return getattr(self, "_settings_repo", None)
 
@@ -317,7 +355,7 @@ class YtDlpDownloader:
         return info
 
     def build_opts(self, progress_cb: ProgressCb | None = None, *, url: str | None = None) -> dict[str, Any]:
-        outtmpl = str(self.output_dir / "%(title).200B [%(id)s].%(ext)s")
+        outtmpl = self.OUTTMPL_REL
 
         def _hook(d: dict[str, Any]) -> None:
             if not progress_cb:
@@ -359,6 +397,7 @@ class YtDlpDownloader:
 
         opts: dict[str, Any] = {
             "outtmpl": outtmpl,
+            "paths": self._yt_paths(),
             "format": self._format_selector(),
             "merge_output_format": "mp4",
             "continuedl": True,
@@ -517,10 +556,12 @@ class YtDlpDownloader:
                 path = resolved.path  # type: ignore[assignment]
                 self._record_path_recovery(resolved)
             title = str(info.get("title") or path.stem)
+            self._relocate_sidecars(path)
             return DownloadResult(path=path, title=title, info=info)
 
     def _build_cli_cmd(self, url: str) -> list[str]:
-        outtmpl = str(self.output_dir / "%(title).200B [%(id)s].%(ext)s")
+        paths = self._yt_paths()
+        outtmpl = self.OUTTMPL_REL
         cmd: list[str] = [
             sys.executable,
             "-m",
@@ -534,6 +575,10 @@ class YtDlpDownloader:
             self._format_selector(),
             "--merge-output-format",
             "mp4",
+            "-P",
+            f"home:{paths['home']}",
+            "-P",
+            f"temp:{paths['temp']}",
             "-o",
             outtmpl,
             "--write-info-json",
@@ -616,7 +661,7 @@ class YtDlpDownloader:
         snap = snapshot_invocation(
             argv=cmd,
             cwd=str(self.output_dir),
-            output_template=str(self.output_dir / "%(title).200B [%(id)s].%(ext)s"),
+            output_template=self.OUTTMPL_REL,
             cookies=str(cookie) if cookie is not None else None,
             aria2c=aria2_on,
             format_selector=self._format_selector(),
@@ -834,6 +879,7 @@ class YtDlpDownloader:
                     "eta_str": "00:00",
                 },
             )
+        self._relocate_sidecars(path)
         return DownloadResult(path=path, title=title, info=info)
 
     def is_in_archive(self, url: str) -> bool:

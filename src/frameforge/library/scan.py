@@ -93,12 +93,22 @@ def orphan_videos(store: LibraryStore) -> list[Path]:
 
 
 def scan_library_folder(store: LibraryStore) -> list[LibraryItem]:
-    """Index orphan videos already under library_root (no move)."""
+    """Index orphan videos already under library_root (no move). Toolbar Scan uses this."""
     heal_library_paths(store)
     root = store.root()
     if root is None:
         return []
     return index_folder(store, root)
+
+
+def scan_ingest_folder(store: LibraryStore) -> list[LibraryItem]:
+    """Index videos already in Uncategorized (post-migrate). Avoids walking a huge mis-set root."""
+    heal_library_paths(store)
+    try:
+        dest = store.ingest_dir()
+    except RuntimeError:
+        return []
+    return index_folder(store, dest)
 
 
 DOWNLOAD_SCAN_SKIP = frozenset(
@@ -111,6 +121,7 @@ DOWNLOAD_SCAN_SKIP = frozenset(
         "database",
         "upscaled",
         "converted",
+        "metadata",
         PRIVATE_FOLDER.lower(),
     }
 )
@@ -132,6 +143,14 @@ def download_videos_not_in_library(
             continue
         for path in root.rglob("*"):
             if not is_video_file(path):
+                continue
+            try:
+                if path.stat().st_size <= 0:
+                    continue
+            except OSError:
+                continue
+            name = path.name.lower()
+            if name.endswith(".part") or ".part." in name or name.endswith(".aria2"):
                 continue
             try:
                 rel = path.resolve().relative_to(root.resolve())

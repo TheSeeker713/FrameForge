@@ -9,7 +9,7 @@ from pathlib import Path
 from frameforge.library.paths import VIDEO_SUFFIXES, is_video_file
 from frameforge.util.recycle import send_to_recycle_bin
 
-JUNK_SUFFIXES = frozenset({".part", ".ytdl", ".temp", ".tmp", ".download"})
+JUNK_SUFFIXES = frozenset({".part", ".ytdl", ".temp", ".tmp", ".download", ".aria2"})
 SIDECAR_SUFFIXES = (".info.json", ".json", ".description", ".annotations.xml")
 
 
@@ -36,7 +36,7 @@ def classify_junk(path: Path) -> str | None:
         return None
     name = path.name.lower()
     suffix = path.suffix.lower()
-    if suffix in JUNK_SUFFIXES or name.endswith(".part") or ".part." in name:
+    if suffix in JUNK_SUFFIXES or name.endswith(".part") or ".part." in name or name.endswith(".aria2"):
         return "incomplete download"
     try:
         size = path.stat().st_size

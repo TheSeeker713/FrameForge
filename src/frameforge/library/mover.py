@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import logging
-import threading
+import traceback
+from datetime import datetime
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+import threading
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.library.ingest import (
     completed_jobs_not_in_library,
+    is_migrate_video,
     job_media_file,
     move_into_library,
     move_path_into_library,
+    purge_missing_library_items,
 )
 from frameforge.library.store import LibraryStore
 
@@ -42,6 +46,7 @@ class MoveReport:
     disk_found: int = 0
     errors: list[str] = field(default_factory=list)
     results: list[Any] = field(default_factory=list)
+    log_path: str | None = None
 
     @property
     def summary(self) -> str:
@@ -53,7 +58,35 @@ class MoveReport:
         ]
         if self.cancelled:
             bits.append("cancelled")
+        if self.log_path:
+            bits.append(f"log {self.log_path}")
         return ", ".join(bits)
+
+
+def _new_move_log() -> Path | None:
+    try:
+        from frameforge.paths import temp_dir
+
+        folder = temp_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"library_move_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        path.write_text("", encoding="utf-8")
+        return path
+    except OSError:
+        log.exception("Could not create library move log")
+        return None
+
+
+def _log_line(path: Path | None, message: str) -> None:
+    log.info("%s", message)
+    if path is None:
+        return
+    try:
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(message.rstrip() + "\n")
+            fh.flush()
+    except OSError:
+        log.exception("Could not append library move log")
 
 
 def _job_label(job: Job) -> str:
@@ -90,6 +123,9 @@ def run_library_move(
     """
     if store.root() is None:
         raise RuntimeError("Library root is not set")
+    log_file = _new_move_log()
+    dropped = purge_missing_library_items(store)
+    _log_line(log_file, f"start library_root={store.root()} purged_missing={dropped}")
     batch_jobs = jobs if jobs is not None else completed_jobs_not_in_library(repo, store)
     job_files = set()
     for job in batch_jobs:
@@ -102,7 +138,7 @@ def run_library_move(
     disk: list[Path] = []
     for raw in extra_paths or []:
         path = Path(raw)
-        if not path.is_file():
+        if not path.is_file() or not is_migrate_video(path):
             continue
         try:
             resolved = path.resolve()
@@ -111,7 +147,8 @@ def run_library_move(
         if resolved in job_files:
             continue
         disk.append(path)
-    report = MoveReport(disk_found=len(disk))
+    report = MoveReport(disk_found=len(disk), log_path=str(log_file) if log_file else None)
+    _log_line(log_file, f"batch jobs={len(batch_jobs)} disk={len(disk)}")
     work: list[tuple[Job | None, Path | None]] = [(j, None) for j in batch_jobs]
     work.extend((None, p) for p in disk)
     total = len(work)
@@ -160,16 +197,17 @@ def run_library_move(
                     result = move_path_into_library(store, path)
                 report.results.append(result)
                 report.moved += 1
-                log.info(
-                    "Library move ok %s src=%s dst=%s",
-                    ident,
-                    result.source_path,
-                    result.dest_path,
+                _log_line(
+                    log_file,
+                    f"OK {ident} src={result.source_path} dst={result.dest_path}",
                 )
             except Exception as exc:  # noqa: BLE001 — one bad file must not abort the batch
                 report.failed += 1
                 report.errors.append(f"{ident} {label}: {exc}")
-                log.exception("Library move failed for %s src=%s", ident, src)
+                _log_line(
+                    log_file,
+                    f"FAIL {ident} src={src} error={exc}\n{traceback.format_exc()}",
+                )
         _emit(
             MoveProgress(
                 index=report.moved + report.failed if (report.moved + report.failed) else total,
@@ -186,6 +224,7 @@ def run_library_move(
         log.exception("Library move batch aborted after moved=%s failed=%s", report.moved, report.failed)
         report.failed += 1
         report.errors.append(str(exc))
+        _log_line(log_file, f"ABORT moved={report.moved} failed={report.failed} error={exc}\n{traceback.format_exc()}")
         _emit(
             MoveProgress(
                 index=report.moved + report.failed,

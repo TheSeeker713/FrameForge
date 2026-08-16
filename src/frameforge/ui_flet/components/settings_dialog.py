@@ -36,6 +36,8 @@ def build_settings_dialog(
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
     on_repair_folders: Any | None = None,
+    repair_status: Any | None = None,
+    repair_button: Any | None = None,
 ) -> ft.AlertDialog:
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
@@ -242,12 +244,15 @@ def build_settings_dialog(
                 "Folders",
                 ft.Text(
                     "Keep per-site download folders. Move thumbs next to videos into thumbnails/, "
-                    "loose SQLite into database/. Junk candidates are listed, never auto-deleted. "
-                    "Runs in the background so the window stays responsive.",
+                    "leftover .part/.aria2/.ytdl into temp/junk/, info.json into metadata/. "
+                    "Never Recycles without you. Runs in the background.",
                     color=COLORS["text_secondary"],
                     size=12,
                 ),
-                ft.OutlinedButton(
+                repair_status
+                or ft.Text("", size=12, color=COLORS["text_secondary"]),
+                repair_button
+                or ft.OutlinedButton(
                     content="Repair folders",
                     on_click=lambda _e: on_repair_folders and on_repair_folders(),
                 ),

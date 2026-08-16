@@ -71,8 +71,9 @@ def test_repair_sweeps_site_folder_thumbs_keeps_videos(tmp_path: Path):
     assert not (yt / "clip.webp").exists()
     assert (root / "thumbnails" / "clip.webp").read_bytes() == b"existing"
     assert (root / "thumbnails" / "clip (2).webp").is_file()
-    assert (yt / "clip.part").is_file()
-    assert moved["junk_candidates"] >= 1
+    assert not (yt / "clip.part").exists()
+    assert moved["junk_relocated"] >= 1
+    assert list((root / "temp" / "junk").glob("*.part"))
 
 
 def test_repair_site_folders_false_leaves_youtube_thumbs(tmp_path: Path):
@@ -121,3 +122,36 @@ def test_settings_has_repair_folders_action():
 
     sig = inspect.signature(build_settings_dialog)
     assert "on_repair_folders" in sig.parameters
+
+
+def test_repair_summary_dialog_shows_counts():
+    from frameforge.ui_flet.components.library import repair_summary_dialog
+
+    dlg = repair_summary_dialog(
+        {"thumbs": 4, "junk_relocated": 2, "json_moved": 1, "db": 0, "videos": 0},
+        on_close=lambda: None,
+    )
+    assert dlg.data["kind"] == "repair_summary"
+    body = str(dlg.content.value if hasattr(dlg.content, "value") else dlg.content)
+    assert "4" in body
+    assert "temp/junk" in body
+
+
+def test_repair_relocates_part_aria2_and_info_json(tmp_path: Path):
+    root = tmp_path / "FrameForge"
+    yt = root / "youtube"
+    yt.mkdir(parents=True)
+    (yt / "clip.mp4").write_bytes(b"media")
+    (yt / "clip.mp4.part").write_bytes(b"partial")
+    (yt / "clip.mp4.part.aria2").write_bytes(b"aria")
+    (yt / "clip.info.json").write_text("{}", encoding="utf-8")
+    notes: list[str] = []
+    moved = repair_frameforge_tree(root, site_folders=True, on_progress=notes.append)
+    assert moved["junk_relocated"] >= 2
+    assert moved["json_moved"] == 1
+    assert (yt / "clip.mp4").is_file()
+    assert not (yt / "clip.mp4.part").exists()
+    assert not (yt / "clip.info.json").exists()
+    assert list((root / "temp" / "junk").iterdir())
+    assert list((root / "metadata").glob("*.info.json"))
+    assert notes

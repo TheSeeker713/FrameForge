@@ -27,6 +27,9 @@ def test_describe_cli_invocation_matches_build_cmd(tmp_path: Path):
     assert snap["yt_dlp_version"] == bundled_yt_dlp_version()
     assert snap["python"]
     assert url in cmd
+    assert "-P" in cmd
+    assert any(str(a).startswith("temp:") for a in cmd)
+    assert any(str(a).startswith("home:") for a in cmd)
     assert cmd[0]
     assert cmd[-1] == url
 

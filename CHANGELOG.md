@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3
+
+- Library migrate writes `temp/library_move_<timestamp>.log` (src/dst/ok/fail). Stale missing `library_items` no longer block re-move. Real 3-file cross-drive Move: `moved=3` ([FIELD_MIGRATE_v0.6.3.md](docs/FIELD_MIGRATE_v0.6.3.md))
+- Settings **Repair folders** shows working state and a completion summary (not silent)
+- Repair relocates `.part` / `.aria2` / `.ytdl` to `temp/junk/` and `.info.json` to `metadata/` (no Recycle)
+- yt-dlp temp outputs use `temp/dl/`; finished media stays in the per-site folder
+
 ## 0.6.2
 
 - Audit named the 1-file migrate abort: progress callbacks sat outside the per-file try, and the runner discarded the in-progress report ([AUDIT_LIBRARY_MIGRATE_v0.6.2.md](docs/AUDIT_LIBRARY_MIGRATE_v0.6.2.md))

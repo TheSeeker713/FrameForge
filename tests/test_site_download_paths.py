@@ -20,7 +20,10 @@ def test_youtube_job_dir_and_opts_contain_youtube(tmp_path: Path):
     assert dest.is_dir()
     dl = YtDlpDownloader(output_dir=dest)
     opts = dl.build_opts()
-    assert "youtube" in str(opts["outtmpl"]).replace("\\", "/")
+    home = str(opts.get("paths", {}).get("home", "")).replace("\\", "/")
+    assert "youtube" in home
+    assert opts["paths"]["temp"]
+    assert "%(id)s" in str(opts["outtmpl"])
     repo.close()
 
 
@@ -31,7 +34,7 @@ def test_x_com_job_dir_contains_x_com(tmp_path: Path):
     assert dest.name == "x.com"
     assert "x.com" in dest.parts
     dl = YtDlpDownloader(output_dir=dest)
-    assert "x.com" in str(dl.build_opts()["outtmpl"]).replace("\\", "/")
+    assert "x.com" in str(dl.build_opts()["paths"]["home"]).replace("\\", "/")
     repo.close()
 
 

@@ -1,8 +1,8 @@
 """FrameForge directory contract: never dump into a bare picked folder.
 
 Policy: keep per-site folders (youtube/, x.com/, …) as media homes.
-Repair moves only loose thumbs, SQLite files, root-level videos, and records junk
-candidates — it never deletes.
+Repair moves loose thumbs, SQLite files, root-level videos, leftover parts into
+temp/junk, and info.json into metadata/. It never Recycles.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from frameforge.library.paths import VIDEO_SUFFIXES, unique_dest
@@ -33,6 +34,7 @@ CONTRACT_DIRS = frozenset(
         "models",
         "upscaled",
         "converted",
+        "metadata",
         PRIVATE_FOLDER.lower(),
     }
 )
@@ -150,22 +152,57 @@ def _media_dirs(root: Path) -> list[Path]:
     return found
 
 
+def _is_partial_artifact(path: Path) -> bool:
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+    if suffix in {".part", ".ytdl", ".temp", ".tmp", ".aria2", ".download"}:
+        return True
+    if name.endswith(".part") or ".part." in name or name.endswith(".aria2"):
+        return True
+    return False
+
+
+def _is_info_json(path: Path) -> bool:
+    return path.name.lower().endswith(".info.json")
+
+
 def repair_frameforge_tree(
     root: str | Path,
     *,
     site_folders: bool = True,
     conn: object | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> dict[str, int]:
-    """Organize thumbs/db/root videos. Keep per-site folders as media homes. Never deletes."""
+    """Organize thumbs/db/root videos. Keep per-site folders as media homes. Never Recycles."""
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     thumbs = root / "thumbnails"
     database = root / "database"
     videos = root / "videos"
+    metadata = root / "metadata"
+    junk = root / "temp" / "junk"
     thumbs.mkdir(parents=True, exist_ok=True)
     database.mkdir(parents=True, exist_ok=True)
     videos.mkdir(parents=True, exist_ok=True)
-    moved = {"thumbs": 0, "db": 0, "videos": 0, "junk_candidates": 0, "thumb_paths_updated": 0}
+    metadata.mkdir(parents=True, exist_ok=True)
+    junk.mkdir(parents=True, exist_ok=True)
+    moved = {
+        "thumbs": 0,
+        "db": 0,
+        "videos": 0,
+        "junk_candidates": 0,
+        "junk_relocated": 0,
+        "json_moved": 0,
+        "thumb_paths_updated": 0,
+    }
+
+    def note(msg: str) -> None:
+        if on_progress:
+            try:
+                on_progress(msg)
+            except Exception:  # noqa: BLE001
+                log.exception("Repair progress callback failed")
+
     if not root.is_dir():
         return moved
     for child in list(root.iterdir()):
@@ -197,6 +234,7 @@ def repair_frameforge_tree(
                 moved["videos"] += 1
     if site_folders:
         media = _media_dirs(root)
+        note(f"Scanning {len(media)} media folder(s)…")
         for folder in media:
             for path in list(folder.rglob("*")):
                 if not path.is_file():
@@ -208,14 +246,34 @@ def repair_frameforge_tree(
                         moved["thumbs"] += 1
                         if conn is not None:
                             moved["thumb_paths_updated"] += _remap_thumb_path(conn, path, dest)
-        moved["junk_candidates"] = _count_junk(media)
+                        note(f"Thumbs moved: {moved['thumbs']}")
+                    continue
+                if _is_info_json(path):
+                    dest = _move_unique(path, metadata)
+                    if dest is not None:
+                        moved["json_moved"] += 1
+                    continue
+                zero = False
+                try:
+                    zero = path.stat().st_size == 0
+                except OSError:
+                    zero = False
+                if _is_partial_artifact(path) or (zero and suffix in VIDEO_SUFFIXES):
+                    dest = _move_unique(path, junk)
+                    if dest is not None:
+                        moved["junk_relocated"] += 1
+                        note(f"Junk relocated: {moved['junk_relocated']}")
+        moved["junk_candidates"] = moved["junk_relocated"] + _count_junk(media)
     log.info(
-        "Folder repair at %s: thumbs=%s db=%s videos=%s junk_candidates=%s thumb_paths_updated=%s",
+        "Folder repair at %s: thumbs=%s db=%s videos=%s junk_relocated=%s json_moved=%s",
         root,
         moved["thumbs"],
         moved["db"],
         moved["videos"],
-        moved["junk_candidates"],
-        moved["thumb_paths_updated"],
+        moved["junk_relocated"],
+        moved["json_moved"],
+    )
+    note(
+        f"Done: {moved['thumbs']} thumbs, {moved['junk_relocated']} junk, {moved['json_moved']} info.json"
     )
     return moved

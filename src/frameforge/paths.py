@@ -17,6 +17,7 @@ SUBDIRS = (
     "thumbnails",
     "database",
     "videos",
+    "metadata",
 )
 
 
@@ -85,6 +86,14 @@ def videos_dir() -> Path:
 
 def thumbnails_dir() -> Path:
     return frameforge_root() / "thumbnails"
+
+
+def metadata_dir() -> Path:
+    return frameforge_root() / "metadata"
+
+
+def junk_dir() -> Path:
+    return temp_dir() / "junk"
 
 
 def db_path() -> Path:

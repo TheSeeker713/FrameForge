@@ -28,7 +28,15 @@ def empty_library_state(
     pending_count: int = 0,
     orphan_count: int = 0,
 ) -> ft.Container:
-    if onboarded and orphan_count:
+    if onboarded and pending_count:
+        title = "Downloads waiting to import"
+        body = (
+            f"{pending_count} completed download(s) are not in Library yet. "
+            "Import them here. Scan still finds files already under the Library folder."
+        )
+        cta = "Import completed downloads"
+        click = on_import or on_setup
+    elif onboarded and orphan_count:
         title = "Library folder has unindexed videos"
         body = (
             f"{orphan_count} video file(s) are on disk under your Library folder but not in the index. "
@@ -530,6 +538,32 @@ def confirm_reset_library_dialog(*, on_yes: Any, on_close: Any) -> ft.AlertDialo
         bgcolor=COLORS["surface"],
     )
     dlg.data = {"kind": "reset_library"}
+    return dlg
+
+
+def repair_summary_dialog(
+    stats: dict[str, int],
+    *,
+    error: str | None = None,
+    on_close: Any,
+) -> ft.AlertDialog:
+    lines = [
+        f"Thumbs moved: {int(stats.get('thumbs', 0))}",
+        f"Database files moved: {int(stats.get('db', 0))}",
+        f"Root videos moved: {int(stats.get('videos', 0))}",
+        f"Junk relocated to temp/junk: {int(stats.get('junk_relocated', 0))}",
+        f"info.json moved to metadata/: {int(stats.get('json_moved', 0))}",
+    ]
+    if error:
+        lines.append(f"Error: {error}")
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Folder repair finished" if not error else "Folder repair failed"),
+        content=ft.Text("\n".join(lines), selectable=True, size=13),
+        actions=[elevated_filled_button("OK", on_click=lambda _e: on_close())],
+        bgcolor=COLORS["surface"],
+    )
+    dlg.data = {"kind": "repair_summary", "stats": stats, "error": error}
     return dlg
 
 

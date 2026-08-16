@@ -94,6 +94,39 @@ def test_run_library_move_progress_callback_error_does_not_abort(tmp_path: Path)
     assert not (tmp_path / "dl" / "b.mp4").exists()
     assert not (tmp_path / "dl" / "c.mp4").exists()
     assert len(store.list_items()) == 3
+    assert report.log_path
+    log_text = Path(report.log_path).read_text(encoding="utf-8")
+    assert "OK" in log_text
+    assert log_text.count("OK ") == 3
+    repo.close()
+
+
+def test_library_move_skips_part_files_and_purges_stale_rows(tmp_path: Path):
+    from frameforge.library.ingest import completed_jobs_not_in_library, purge_missing_library_items
+
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    gone = _clip(tmp_path / "dl" / "gone.mp4")
+    job = _completed_job(repo, gone, title="gone")
+    ingest_dir = store.ingest_dir()
+    dest = ingest_dir / "gone.mp4"
+    dest.write_bytes(b"was-here")
+    store.add_item(path=dest, title="gone", job_id=job.id)
+    dest.unlink()
+    assert store.get_by_job_id(job.id) is not None
+    gone.write_bytes(b"media-again")
+    dropped = purge_missing_library_items(store)
+    assert dropped == 1
+    assert store.get_by_job_id(job.id) is None
+    pending = completed_jobs_not_in_library(repo, store)
+    assert [j.id for j in pending] == [job.id]
+    part = tmp_path / "dl" / "clip.mp4.part"
+    part.write_bytes(b"partial")
+    report = run_library_move(repo, store, pending, extra_paths=[part])
+    assert report.moved == 1
+    assert report.disk_found == 0
+    assert part.is_file()
     repo.close()
 
 

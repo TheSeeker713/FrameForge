@@ -27,9 +27,42 @@ def job_media_file(job: Job) -> Path | None:
         if not raw:
             continue
         path = Path(raw)
-        if path.is_file():
+        if path.is_file() and path.stat().st_size > 0 and is_migrate_video(path):
             return path
     return None
+
+
+def is_migrate_video(path: Path) -> bool:
+    """Finished video only — never .part / aria2 / json."""
+    from frameforge.library.paths import is_video_file
+
+    if not is_video_file(path):
+        return False
+    name = path.name.lower()
+    if name.endswith(".part") or ".part." in name or name.endswith(".aria2") or name.endswith(".ytdl"):
+        return False
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def purge_missing_library_items(store: LibraryStore) -> int:
+    """Drop index rows whose file is gone after heal. Does not delete media (there is none).
+
+    Stale rows with a job_id must not block a later Move of the same download.
+    """
+    from frameforge.library.scan import heal_item, videos_by_filename
+
+    by_name = videos_by_filename(store.root())
+    dropped = 0
+    for item in list(store.list_items(include_private=True)):
+        healed = heal_item(store, item, by_name)
+        if Path(healed.path).is_file():
+            continue
+        store.remove_item(item.id)
+        dropped += 1
+    return dropped
 
 
 def completed_jobs_not_in_library(repo: JobRepository, store: LibraryStore) -> list[Job]:
@@ -37,7 +70,9 @@ def completed_jobs_not_in_library(repo: JobRepository, store: LibraryStore) -> l
     pending: list[Job] = []
     for job in repo.list_jobs("completed", include_queue_hidden=True):
         if store.get_by_job_id(job.id):
-            continue
+            existing = store.get_by_job_id(job.id)
+            if existing is not None and Path(existing.path).is_file():
+                continue
         path = job_media_file(job)
         if path is None:
             continue

@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.3 (field migrate + repair UX + temp/final paths)
+
+- See [V0.6.3_COMPLETE.md](V0.6.3_COMPLETE.md), [FIELD_MIGRATE_v0.6.3.md](FIELD_MIGRATE_v0.6.3.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
+- Suite: `python -m pytest -q` → **469 passed / 0 skipped / 0 failed**.
+- Tests: `tests/test_library_move.py`, `tests/test_folder_layout.py`, `tests/test_site_download_paths.py`.
+
 ## v0.6.2 (migrate abort + site-folder repair)
 
 - See [V0.6.2_COMPLETE.md](V0.6.2_COMPLETE.md), [AUDIT_LIBRARY_MIGRATE_v0.6.2.md](AUDIT_LIBRARY_MIGRATE_v0.6.2.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).

@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.2 (library migrate batch + download-root repair)
+## Status: v0.6.3 (field migrate log + repair UX + download temp paths)
 
-Package version is **0.6.2**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6.2_COMPLETE.md](V0.6.2_COMPLETE.md), [AUDIT_LIBRARY_MIGRATE_v0.6.2.md](AUDIT_LIBRARY_MIGRATE_v0.6.2.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
+Package version is **0.6.3**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6.3_COMPLETE.md](V0.6.3_COMPLETE.md), [FIELD_MIGRATE_v0.6.3.md](FIELD_MIGRATE_v0.6.3.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
 
 ## Phase 0 – Foundation
 

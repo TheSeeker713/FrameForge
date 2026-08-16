@@ -85,7 +85,14 @@ class SequentialWorker:
         opts = paused.options()
         out_dir = opts.get("download_output_dir")
         if out_dir:
-            parts = collect_partial_artifacts(out_dir)
+            from frameforge.paths import temp_dir
+
+            extra = [temp_dir() / "dl"]
+            from pathlib import Path
+
+            nested = Path(out_dir) / ".ff-temp"
+            extra.append(nested)
+            parts = collect_partial_artifacts(out_dir, extra_dirs=extra)
             self.repo.merge_options(
                 job_id,
                 {"partial_paths": parts, "download_output_dir": str(out_dir)},

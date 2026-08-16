@@ -28,6 +28,7 @@ from frameforge.ui_flet.components.library import (
     build_library_toolbar,
     confirm_remove_dialog,
     confirm_reset_library_dialog,
+    repair_summary_dialog,
     create_collection_dialog,
     duplicate_report_dialog,
     empty_library_state,
@@ -232,6 +233,9 @@ class FrameForgeUi:
         self._library_move_hook: Any | None = None
         self._library_scan_roots: list[Path] | None = None
         self._tree_repair_thread: threading.Thread | None = None
+        self._repair_busy = False
+        self._repair_status: ft.Text | None = None
+        self._repair_button: Any | None = None
         self._move_status: ft.Text | None = None
         self._move_file: ft.Text | None = None
         self._move_bar: ft.ProgressBar | None = None
@@ -1172,6 +1176,7 @@ class FrameForgeUi:
                 on_setup=self.on_library_opened,
                 on_import=self.import_completed_downloads,
                 on_scan=self.scan_library_folder,
+                pending_count=pending,
                 orphan_count=len(orphans),
             )
             self.library_empty.visible = show_empty
@@ -1340,10 +1345,10 @@ class FrameForgeUi:
             self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
         self._library_prompt_deferred = False
         try:
-            from frameforge.library.scan import scan_library_folder
+            from frameforge.library.scan import scan_ingest_folder
 
             if self.library.root():
-                scan_library_folder(self.library)
+                scan_ingest_folder(self.library)
         except Exception:
             log.exception("Post-migrate library folder scan failed")
         self.refresh_library()
@@ -1366,6 +1371,9 @@ class FrameForgeUi:
             return []
         if self.library_move_running:
             return []
+        from frameforge.library.ingest import purge_missing_library_items
+
+        purge_missing_library_items(self.library)
         pending_jobs = self._pending_library_jobs()
         pending_disk = self._pending_disk_videos()
         if not pending_jobs and not pending_disk:
@@ -2195,6 +2203,17 @@ class FrameForgeUi:
         if self.bridge.settings_open and self.settings_dialog is not None:
             return self.dialogs.open("settings", self.settings_dialog)
 
+        if self._repair_status is None:
+            self._repair_status = ft.Text("", size=12, color=COLORS["text_secondary"])
+        if self._repair_button is None:
+            self._repair_button = ft.OutlinedButton(
+                content="Repair folders",
+                on_click=lambda _e: self.repair_folders(),
+            )
+        self._repair_button.disabled = bool(self._repair_busy)
+        if self._repair_busy:
+            self._repair_status.value = self._repair_status.value or "Repairing folders…"
+
         self.settings_dialog = build_settings_dialog(
             self.repo,
             on_close=self.close_dialog,
@@ -2205,6 +2224,8 @@ class FrameForgeUi:
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
             on_repair_folders=self.repair_folders,
+            repair_status=self._repair_status,
+            repair_button=self._repair_button,
         )
         return self.dialogs.open("settings", self.settings_dialog)
 
@@ -2224,13 +2245,31 @@ class FrameForgeUi:
     def repair_folders(self, _e: Any = None) -> None:
         self._start_tree_repair(toast=True)
 
+    def _apply_repair_progress(self, message: str) -> None:
+        if self._repair_status is not None:
+            self._repair_status.value = message
+        page = self.page
+        if page is not None:
+            try:
+                page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
     def _start_tree_repair(self, *, toast: bool = False) -> None:
         thread = self._tree_repair_thread
         if thread is not None and thread.is_alive():
+            self._apply_repair_progress("Repairing folders… (already running)")
             if toast:
                 self._show_toast("Folder repair already running")
             return
+        self._repair_busy = True
+        if self._repair_button is not None:
+            self._repair_button.disabled = True
+        self._apply_repair_progress("Repairing folders…")
         db = self.repo.db_path
+
+        def on_progress(message: str) -> None:
+            self._marshal_ui(lambda m=message: self._apply_repair_progress(m))
 
         def _run() -> None:
             from frameforge.db.repository import JobRepository
@@ -2238,22 +2277,50 @@ class FrameForgeUi:
             from frameforge.paths import frameforge_root
 
             repo = JobRepository(db)
+            error: str | None = None
             try:
-                stats = repair_frameforge_tree(frameforge_root(), site_folders=True, conn=repo.conn)
-            except Exception:  # noqa: BLE001
+                stats = repair_frameforge_tree(
+                    frameforge_root(),
+                    site_folders=True,
+                    conn=repo.conn,
+                    on_progress=on_progress,
+                )
+            except Exception as exc:  # noqa: BLE001
                 log.exception("Folder repair failed")
-                stats = {"thumbs": 0, "db": 0, "videos": 0, "junk_candidates": 0, "thumb_paths_updated": 0}
+                stats = {
+                    "thumbs": 0,
+                    "db": 0,
+                    "videos": 0,
+                    "junk_candidates": 0,
+                    "junk_relocated": 0,
+                    "json_moved": 0,
+                    "thumb_paths_updated": 0,
+                }
+                error = str(exc)
             finally:
                 try:
                     repo.close()
                 except Exception:  # noqa: BLE001
                     pass
-            self._marshal_ui(lambda: self._on_tree_repair_done(stats, toast=toast))
+            self._marshal_ui(lambda: self._on_tree_repair_done(stats, toast=toast, error=error))
 
         self._tree_repair_thread = threading.Thread(target=_run, name="frameforge-tree-repair", daemon=True)
         self._tree_repair_thread.start()
 
-    def _on_tree_repair_done(self, stats: dict[str, int], *, toast: bool = False) -> None:
+    def _on_tree_repair_done(
+        self, stats: dict[str, int], *, toast: bool = False, error: str | None = None
+    ) -> None:
+        self._repair_busy = False
+        if self._repair_button is not None:
+            self._repair_button.disabled = False
+        summary = (
+            f"Repair: {int(stats.get('thumbs', 0))} thumbs, "
+            f"{int(stats.get('junk_relocated', 0))} junk → temp/junk, "
+            f"{int(stats.get('json_moved', 0))} info.json → metadata/"
+        )
+        if error:
+            summary = f"Repair failed: {error}"
+        self._apply_repair_progress(summary)
         try:
             self.refresh_queue(force=True)
         except Exception:
@@ -2263,9 +2330,9 @@ class FrameForgeUi:
         except Exception:
             log.exception("Library refresh after folder repair failed")
         if toast:
-            self._show_toast(
-                f"Repair: {int(stats.get('thumbs', 0))} thumbs, {int(stats.get('db', 0))} db, "
-                f"{int(stats.get('junk_candidates', 0))} junk candidates"
+            self.dialogs.open(
+                "repair_summary",
+                repair_summary_dialog(stats, error=error, on_close=self.close_dialog),
             )
 
     def _on_keyboard(self, e: Any) -> None:

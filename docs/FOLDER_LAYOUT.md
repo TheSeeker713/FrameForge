@@ -13,9 +13,12 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 | `downloads/` | Legacy download folder |
 | `upscaled/`, `converted/` | Post-process output (per-site children) |
 | `thumbnails/` | Queue/Library preview images |
+| `metadata/` | yt-dlp `.info.json` after a successful download (and repair leftovers) |
 | `database/frameforge.db` | SQLite WAL database (`-wal` / `-shm` sit beside it) |
 | `cookies/`, `archive/` | Auth cookies and download archive |
-| `temp/`, `models/` | Working files and ONNX models |
+| `temp/` | Working files; `temp/dl/` yt-dlp/aria2 **in-flight** parts; `temp/junk/` leftover `.part` / `.aria2` / `.ytdl` (not Recycled) |
+| `temp/library_move_*.log` | Per-file Library migrate log |
+| `models/` | ONNX models |
 
 On init, `ensure_output_tree()` creates these subfolders and **repairs loose files at the FrameForge root only** (fast, so CLI and import stay snappy):
 
@@ -25,13 +28,16 @@ On init, `ensure_output_tree()` creates these subfolders and **repairs loose fil
 
 **Per-site folders stay as media homes** (`youtube/`, `x.com/`, `samplelib.com/`, `videos/`, `downloads/`, …). Videos are not relocated out of those folders.
 
-On GUI attach (background thread, does not freeze startup) and via **Settings → Repair folders**:
+On GUI attach (background thread, does not freeze startup) and via **Settings → Repair folders** (button shows **Repairing folders…**, then a **summary dialog** with counts):
 
 - Image thumbs sitting **next to videos** in every site/media folder → `thumbnails/` (name collision: `name (2).ext`)
 - `jobs.options_json.thumbnail_path` and `library_items.thumb_path` are updated when those files move
-- `.part` / `.ytdl` / `.temp` / zero-byte files are **counted as junk candidates only** — never auto-deleted (use Library → Junk files…)
+- Leftover `.part` / `*.part.aria2` / `.ytdl` / zero-byte videos → `temp/junk/` (not Recycled; Junk UI can still Recycle later)
+- Leftover `.info.json` in site folders → `metadata/`
 
-Repair never deletes. Existing files already in the right subfolder are left alone.
+**New downloads:** yt-dlp `paths.temp` is `temp/dl/`; `paths.home` is the per-site folder. Finished media lands in `youtube/` etc. `.info.json` is moved to `metadata/` after success. Library ingest ignores non-video files.
+
+Repair never Recycles. Existing files already in the right subfolder are left alone.
 
 ## Library pick
 
