@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.1 (Library grid, migrate scan, folder layout)
+
+- See [V0.6.1_COMPLETE.md](V0.6.1_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
+- Suite: `python -m pytest -q` → **452 passed / 0 skipped / 0 failed**.
+- Tests: `tests/test_library_grid.py`, `tests/test_library_move.py`, `tests/test_folder_layout.py`, `tests/test_library_reset.py`, `tests/test_library_dedupe.py`, `tests/test_library_junk.py`.
+
 ## v0.6.0 (Library + collections + Private)
 
 - See [V0.6_COMPLETE.md](V0.6_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md).

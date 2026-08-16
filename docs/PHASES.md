@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.0 (Library + collections + Private)
+## Status: v0.6.1 (Library grid, migrate scan, folder layout)
 
-Package version is **0.6.0**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6_COMPLETE.md](V0.6_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md), [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md).
+Package version is **0.6.1**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6.1_COMPLETE.md](V0.6.1_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md), [V0.6_COMPLETE.md](V0.6_COMPLETE.md).
 
 ## Phase 0 – Foundation
 

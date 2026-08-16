@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1
+
+- Library grid shows one playable card per indexed file; click thumb/card plays in the default player
+- Missing paths re-found under `library_root`; **Scan library folder** indexes disk orphans
+- Migrate scans completed jobs **and** videos under the download tree; progress stays until a summary (not toast-only)
+- Library pick creates `<picked>/FrameForge/Library/…`; init repairs thumbs/db/loose videos into subfolders ([FOLDER_LAYOUT.md](docs/FOLDER_LAYOUT.md))
+- Settings → Advanced or `.\scripts\reset_library.ps1` resets onboarding without deleting media
+- Duplicate merge by normalized title + size + duration (Recycle Bin for extras)
+- Junk triage (`.part` / sidecars / zero-byte) — Recycle Bin only, or Keep / Move
+
 ## 0.6.0
 
 - Library tab replaces Thumbnails: local folder + SQLite only (no cloud)
