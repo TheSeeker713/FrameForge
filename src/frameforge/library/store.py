@@ -31,8 +31,11 @@ SORTS = ("date", "title", "resolution", "source")
 class LibraryStore:
     def __init__(self, repo: JobRepository) -> None:
         self.repo = repo
-        self.conn = repo.conn
         self.ensure_defaults()
+
+    @property
+    def conn(self):
+        return self.repo.conn
 
     def ensure_defaults(self) -> None:
         row = self.conn.execute("SELECT COUNT(*) AS c FROM library_collections").fetchone()

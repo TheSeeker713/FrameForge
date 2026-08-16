@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.4 (upscale disk precheck + temp frame cleanup)
+## Status: v0.6.5 (SQLite thread-local connections)
 
-Package version is **0.6.4**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [UPSCALE_DISK.md](UPSCALE_DISK.md). This does **not** stream frames; long 1080p jobs are refused when disk/duration limits hit.
+Package version is **0.6.5**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential WAL worker unchanged; each thread has its own SQLite connection. See [SQLITE_THREADING.md](SQLITE_THREADING.md). Upscale PNG disk guard remains as in 0.6.4 ([UPSCALE_DISK.md](UPSCALE_DISK.md)).
 
 ## Phase 0 – Foundation
 

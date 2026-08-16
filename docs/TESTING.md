@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.5 (SQLite thread safety)
+
+- See [SQLITE_THREADING.md](SQLITE_THREADING.md).
+- Tests: `tests/test_sqlite_threading.py` (real on-disk DB; concurrent list/progress/claim; `OperationalError` → `db_error` not yt-dlp `unknown`).
+- Suite: `python -m pytest -q` → **484 passed / 0 skipped / 0 failed** (2026-08-16).
+
 ## v0.6.4 (upscale disk guard)
 
 - See [UPSCALE_DISK.md](UPSCALE_DISK.md).

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from frameforge.db.connection import connect
+from frameforge.db.connection import connect, retry_sqlite
 from frameforge.db.migrate import migrate
 
 ACTIVE_DOWNLOAD_STATUSES = ("downloading",)
@@ -147,13 +148,48 @@ class Job:
 class JobRepository:
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        self.conn = connect(self.db_path)
-        self._lock = __import__("threading").RLock()
-        migrate(self.conn)
+        self._local = threading.local()
+        self._conns: dict[int, sqlite3.Connection] = {}
+        self._conns_lock = threading.Lock()
+        self._migrate_lock = threading.Lock()
+        self._migrated = False
+        self._closed = False
+        _ = self.conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Connection for *this* thread only. Never share the object across threads."""
+        if self._closed:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+        ident = threading.get_ident()
+        existing = getattr(self._local, "conn", None)
+        if existing is not None:
+            try:
+                existing.execute("SELECT 1")
+                return existing
+            except sqlite3.ProgrammingError:
+                existing = None
+        conn = connect(self.db_path, check_same_thread=True)
+        self._local.conn = conn
+        with self._conns_lock:
+            self._conns[ident] = conn
+        with self._migrate_lock:
+            if not self._migrated:
+                migrate(conn)
+                self._migrated = True
+        return conn
 
     def close(self) -> None:
-        with self._lock:
-            self.conn.close()
+        self._closed = True
+        with self._conns_lock:
+            conns = list(self._conns.values())
+            self._conns.clear()
+        for conn in conns:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        self._local.conn = None
 
     def enqueue(
         self,
@@ -190,25 +226,30 @@ class JobRepository:
         return self.get(int(cur.lastrowid))
 
     def get(self, job_id: int) -> Job:
-        with self._lock:
+        def _read() -> Job:
             row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             if not row:
                 raise KeyError(f"job {job_id} not found")
             return Job.from_row(row)
 
+        return retry_sqlite(_read)
+
     def list_jobs(self, status: str | None = None, *, include_queue_hidden: bool = False) -> list[Job]:
-        vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
-        if status:
-            rows = self.conn.execute(
-                f"SELECT * FROM jobs WHERE status = ?{vis} ORDER BY priority DESC, id ASC",
-                (status,),
-            ).fetchall()
-        else:
-            where = "1=1" if include_queue_hidden else QUEUE_VISIBLE_SQL
-            rows = self.conn.execute(
-                f"SELECT * FROM jobs WHERE {where} ORDER BY priority DESC, id ASC"
-            ).fetchall()
-        return [Job.from_row(r) for r in rows]
+        def _read() -> list[Job]:
+            vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
+            if status:
+                rows = self.conn.execute(
+                    f"SELECT * FROM jobs WHERE status = ?{vis} ORDER BY priority DESC, id ASC",
+                    (status,),
+                ).fetchall()
+            else:
+                where = "1=1" if include_queue_hidden else QUEUE_VISIBLE_SQL
+                rows = self.conn.execute(
+                    f"SELECT * FROM jobs WHERE {where} ORDER BY priority DESC, id ASC"
+                ).fetchall()
+            return [Job.from_row(r) for r in rows]
+
+        return retry_sqlite(_read)
 
     def list_jobs_for_playlist(self, playlist_id: str) -> list[Job]:
         rows = self.conn.execute(
@@ -307,11 +348,14 @@ class JobRepository:
         return self.hide_from_history(ids)
 
     def count_by_status(self, status: str, *, include_queue_hidden: bool = False) -> int:
-        vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
-        row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM jobs WHERE status = ?{vis}", (status,)
-        ).fetchone()
-        return int(row["c"])
+        def _read() -> int:
+            vis = "" if include_queue_hidden else f" AND {QUEUE_VISIBLE_SQL}"
+            row = self.conn.execute(
+                f"SELECT COUNT(*) AS c FROM jobs WHERE status = ?{vis}", (status,)
+            ).fetchone()
+            return int(row["c"])
+
+        return retry_sqlite(_read)
 
     def update_status(
         self,
@@ -320,41 +364,53 @@ class JobRepository:
         *,
         error: str | None = None,
         progress: float | None = None,
+        options_patch: dict[str, Any] | None = None,
     ) -> Job:
-        now = utc_now()
-        job = self.get(job_id)
-        started = job.started_at
-        finished = job.finished_at
-        if status in ACTIVE_STAGE_STATUSES and not started:
-            started = now
-        if status in ("completed", "failed", "cancelled"):
-            finished = now
-        if status == PAUSED_STATUS:
-            finished = None
-        prog = job.progress if progress is None else progress
-        self.conn.execute(
-            """
-            UPDATE jobs
-            SET status = ?, error = ?, progress = ?, updated_at = ?,
-                started_at = ?, finished_at = ?
-            WHERE id = ?
-            """,
-            (status, error, prog, now, started, finished, job_id),
-        )
-        self.conn.commit()
-        return self.get(job_id)
+        def _write() -> Job:
+            now = utc_now()
+            job = self.get(job_id)
+            started = job.started_at
+            finished = job.finished_at
+            if status in ACTIVE_STAGE_STATUSES and not started:
+                started = now
+            if status in ("completed", "failed", "cancelled"):
+                finished = now
+            if status == PAUSED_STATUS:
+                finished = None
+            prog = job.progress if progress is None else progress
+            options_json = job.options_json
+            if options_patch:
+                opts = job.options()
+                opts.update(options_patch)
+                options_json = json.dumps(opts)
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error = ?, progress = ?, updated_at = ?,
+                    started_at = ?, finished_at = ?, options_json = ?
+                WHERE id = ?
+                """,
+                (status, error, prog, now, started, finished, options_json, job_id),
+            )
+            self.conn.commit()
+            return self.get(job_id)
+
+        return retry_sqlite(_write)
 
     def merge_options(self, job_id: int, patch: dict[str, Any]) -> Job:
         """Shallow-merge keys into the job's options_json."""
-        job = self.get(job_id)
-        opts = job.options()
-        opts.update(patch)
-        self.conn.execute(
-            "UPDATE jobs SET options_json = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(opts), utc_now(), job_id),
-        )
-        self.conn.commit()
-        return self.get(job_id)
+        def _write() -> Job:
+            job = self.get(job_id)
+            opts = job.options()
+            opts.update(patch)
+            self.conn.execute(
+                "UPDATE jobs SET options_json = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(opts), utc_now(), job_id),
+            )
+            self.conn.commit()
+            return self.get(job_id)
+
+        return retry_sqlite(_write)
 
     def update_progress(
         self,
@@ -381,14 +437,18 @@ class JobRepository:
             opts.pop("eta_seconds", None)
             opts["speed_str"] = "—"
             opts["eta_str"] = "—"
-        self.conn.execute(
-            """
-            UPDATE jobs SET progress = ?, options_json = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (progress, json.dumps(opts) if opts else None, utc_now(), job_id),
-        )
-        self.conn.commit()
+
+        def _write() -> None:
+            self.conn.execute(
+                """
+                UPDATE jobs SET progress = ?, options_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (progress, json.dumps(opts) if opts else None, utc_now(), job_id),
+            )
+            self.conn.commit()
+
+        retry_sqlite(_write)
 
     def clear_live_progress(self, job_id: int) -> None:
         job = self.get(job_id)
@@ -602,98 +662,113 @@ class JobRepository:
         """
         if job_ids is not None and len(job_ids) == 0:
             return None
-        try:
-            self.conn.execute("BEGIN IMMEDIATE")
-            active = self.conn.execute(
-                "SELECT COUNT(*) AS c FROM jobs WHERE status = 'downloading'"
-            ).fetchone()
-            if int(active["c"]) > 0:
-                self.conn.execute("ROLLBACK")
-                return None
-            # Also block if another stage is actively running under single-worker design
-            busy = self.conn.execute(
-                "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
-            ).fetchone()
-            if int(busy["c"]) > 0:
-                self.conn.execute("ROLLBACK")
-                return None
-            if job_ids is None:
-                row = self.conn.execute(
-                    f"""
-                    SELECT id FROM jobs
-                    WHERE status = 'pending' AND {QUEUE_VISIBLE_SQL}
-                    ORDER BY priority DESC, id ASC
-                    LIMIT 1
+
+        def _claim() -> Job | None:
+            conn = self.conn
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                active = conn.execute(
+                    "SELECT COUNT(*) AS c FROM jobs WHERE status = 'downloading'"
+                ).fetchone()
+                if int(active["c"]) > 0:
+                    conn.execute("ROLLBACK")
+                    return None
+                busy = conn.execute(
+                    "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
+                ).fetchone()
+                if int(busy["c"]) > 0:
+                    conn.execute("ROLLBACK")
+                    return None
+                if job_ids is None:
+                    row = conn.execute(
+                        f"""
+                        SELECT id FROM jobs
+                        WHERE status = 'pending' AND {QUEUE_VISIBLE_SQL}
+                        ORDER BY priority DESC, id ASC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                else:
+                    placeholders = ",".join("?" * len(job_ids))
+                    row = conn.execute(
+                        f"""
+                        SELECT id FROM jobs
+                        WHERE status = 'pending' AND id IN ({placeholders})
+                          AND {QUEUE_VISIBLE_SQL}
+                        ORDER BY priority DESC, id ASC
+                        LIMIT 1
+                        """,
+                        tuple(job_ids),
+                    ).fetchone()
+                if not row:
+                    conn.execute("ROLLBACK")
+                    return None
+                now = utc_now()
+                conn.execute(
                     """
-                ).fetchone()
-            else:
-                placeholders = ",".join("?" * len(job_ids))
-                row = self.conn.execute(
-                    f"""
-                    SELECT id FROM jobs
-                    WHERE status = 'pending' AND id IN ({placeholders})
-                      AND {QUEUE_VISIBLE_SQL}
-                    ORDER BY priority DESC, id ASC
-                    LIMIT 1
+                    UPDATE jobs
+                    SET status = 'downloading', progress = 0, updated_at = ?,
+                        started_at = COALESCE(started_at, ?), error = NULL
+                    WHERE id = ?
                     """,
-                    tuple(job_ids),
-                ).fetchone()
-            if not row:
-                self.conn.execute("ROLLBACK")
-                return None
-            now = utc_now()
-            self.conn.execute(
-                """
-                UPDATE jobs
-                SET status = 'downloading', progress = 0, updated_at = ?,
-                    started_at = COALESCE(started_at, ?), error = NULL
-                WHERE id = ?
-                """,
-                (now, now, row["id"]),
-            )
-            self.conn.execute("COMMIT")
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
-        return self.get(int(row["id"]))
+                    (now, now, row["id"]),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+            return self.get(int(row["id"]))
+
+        return retry_sqlite(_claim)
 
     def claim_next_convert(self) -> Job | None:
         """Atomically claim the next convert_pending job. Blocks if any stage is active."""
-        try:
-            self.conn.execute("BEGIN IMMEDIATE")
-            busy = self.conn.execute(
-                "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
-            ).fetchone()
-            if int(busy["c"]) > 0:
-                self.conn.execute("ROLLBACK")
-                return None
-            row = self.conn.execute(
-                f"""
-                SELECT id FROM jobs
-                WHERE status = ? AND {QUEUE_VISIBLE_SQL}
-                ORDER BY priority DESC, id ASC
-                LIMIT 1
-                """,
-                (CONVERT_PENDING_STATUS,),
-            ).fetchone()
-            if not row:
-                self.conn.execute("ROLLBACK")
-                return None
-            now = utc_now()
-            self.conn.execute(
-                """
-                UPDATE jobs
-                SET status = 'converting', progress = 0, updated_at = ?,
-                    started_at = COALESCE(started_at, ?), error = NULL
-                WHERE id = ?
-                """,
-                (now, now, row["id"]),
-            )
-            self.conn.execute("COMMIT")
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
-        return self.get(int(row["id"]))
+
+        def _claim() -> Job | None:
+            conn = self.conn
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                busy = conn.execute(
+                    "SELECT COUNT(*) AS c FROM jobs WHERE status IN ('downloading', 'upscaling', 'converting')"
+                ).fetchone()
+                if int(busy["c"]) > 0:
+                    conn.execute("ROLLBACK")
+                    return None
+                row = conn.execute(
+                    f"""
+                    SELECT id FROM jobs
+                    WHERE status = ? AND {QUEUE_VISIBLE_SQL}
+                    ORDER BY priority DESC, id ASC
+                    LIMIT 1
+                    """,
+                    (CONVERT_PENDING_STATUS,),
+                ).fetchone()
+                if not row:
+                    conn.execute("ROLLBACK")
+                    return None
+                now = utc_now()
+                conn.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'converting', progress = 0, updated_at = ?,
+                        started_at = COALESCE(started_at, ?), error = NULL
+                    WHERE id = ?
+                    """,
+                    (now, now, row["id"]),
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+            return self.get(int(row["id"]))
+
+        return retry_sqlite(_claim)
 
     def recover_interrupted(self) -> list[int]:
         """Reset interrupted active stages after a process restart.

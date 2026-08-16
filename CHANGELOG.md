@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.5
+
+- SQLite: thread-local connections (`check_same_thread=True`), WAL kept; GUI and worker no longer share one Connection ([SQLITE_THREADING.md](docs/SQLITE_THREADING.md))
+- Transient `OperationalError` on claim/progress requeues the job; exhausted DB failures use category `db_error` (not yt-dlp `unknown`); `_fail_stuck_active_stages` ignores a single transient lock
+
 ## 0.6.4
 
 - Upscale PNG pipeline: estimate peak temp and refuse with category `disk_space` when free space is insufficient; default 15-minute duration cap (`upscale_limit`) until streaming lands ([UPSCALE_DISK.md](docs/UPSCALE_DISK.md))

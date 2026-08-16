@@ -24,6 +24,7 @@ JS_RUNTIME = "js_runtime"
 OUTPUT_MISSING = "output_missing"
 DISK_SPACE = "disk_space"
 UPSCALE_LIMIT = "upscale_limit"
+DB_ERROR = "db_error"
 UNKNOWN = "unknown"
 
 CATEGORIES = (
@@ -40,6 +41,7 @@ CATEGORIES = (
     OUTPUT_MISSING,
     DISK_SPACE,
     UPSCALE_LIMIT,
+    DB_ERROR,
     UNKNOWN,
 )
 
@@ -167,6 +169,16 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         return DISK_SPACE
     if "upscale refused" in lower and "max allowed" in lower:
         return UPSCALE_LIMIT
+    if (
+        "cannot start a transaction" in lower
+        or "cannot commit transaction" in lower
+        or "no transaction is active" in lower
+        or "database is locked" in lower
+        or "database is busy" in lower
+        or "sqlite3.operationalerror" in lower
+        or ("operationalerror" in lower and "sqlite" in lower)
+    ):
+        return DB_ERROR
     if _BOT_RE.search(text):
         return BOT_CHECK
     if _RATE_RE.search(text):
@@ -234,6 +246,7 @@ def human_cause(category: str) -> str:
         OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
         DISK_SPACE: "This upscale needs more free disk space for temporary PNG frames.",
         UPSCALE_LIMIT: "This clip is longer than the PNG-pipeline duration cap (streaming is not shipped yet).",
+        DB_ERROR: "The local queue database hit a lock or transaction error (not a yt-dlp failure).",
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
 
@@ -286,6 +299,8 @@ def suggested_actions(category: str) -> list[str]:
             "Raise max upscale duration in Settings (PNG pipeline still uses huge temp)",
             "Skip this clip until streaming upscale ships",
         ]
+    if category == DB_ERROR:
+        return ["Retry this job", "Restart FrameForge if the queue stays stuck"]
     return ["Retry failed", "Inspect the error message"]
 
 
@@ -350,7 +365,6 @@ def annotate_job_error(
     job = repo.get(job_id)
     url = url or job.url
     cat = classify_error(message, status=status)
-    repo.update_status(job_id, status, error=str(message))
     patch: dict[str, Any] = {
         "error_category": cat,
         "error_cause": human_cause(cat) or "The download failed.",
@@ -372,7 +386,7 @@ def annotate_job_error(
         if archive_hit:
             patch["archive_hit"] = True
             patch["force_redownload"] = True
-    return repo.merge_options(job_id, patch)
+    return repo.update_status(job_id, status, error=str(message), options_patch=patch)
 
 
 def option_patch_from_exc(exc: BaseException) -> dict[str, Any]:

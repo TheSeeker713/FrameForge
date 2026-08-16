@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
+from frameforge.db.connection import is_transient_sqlite
 from frameforge.db.repository import Job, JobRepository
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
@@ -15,6 +17,7 @@ from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 JobHandler = Callable[[Job, JobRepository], None]
 
 MAX_WORKER_EVENTS = 200
+SQLITE_REQUEUE_MAX = 3
 
 
 @dataclass
@@ -320,17 +323,64 @@ class SequentialWorker:
                         self.disarm()
                     time.sleep(self.poll_interval)
             except Exception as exc:  # noqa: BLE001
-                # Never kill the background loop; fail any stuck active stage.
+                # Never kill the background loop. Transient sqlite must not cascade
+                # into failing a recoverable in-flight job.
+                if isinstance(exc, sqlite3.OperationalError) or is_transient_sqlite(exc):
+                    time.sleep(max(self.poll_interval, 0.05))
+                    continue
                 self._fail_stuck_active_stages(f"Worker recovered from internal error: {exc}")
                 time.sleep(self.poll_interval)
 
     def _fail_stuck_active_stages(self, reason: str) -> None:
         from frameforge.errors import annotate_job_error
 
+        if is_transient_sqlite(reason):
+            return
         for status in ("downloading", "upscaling", "converting"):
             for job in list(self.repo.list_jobs(status)):
                 annotate_job_error(self.repo, job.id, reason, url=job.url)
                 self._maybe_fail_pause(job.id)
+
+    def _is_sqlite_infra(self, exc: BaseException) -> bool:
+        return isinstance(exc, sqlite3.OperationalError) or is_transient_sqlite(exc)
+
+    def _handle_sqlite_infra(self, job_id: int, exc: BaseException, *, stage: str) -> bool:
+        """Requeue a recoverable job on transient sqlite. True if handled.
+
+        After SQLITE_REQUEUE_MAX attempts, persist category db_error (not yt-dlp unknown).
+        """
+        if not self._is_sqlite_infra(exc):
+            return False
+        from frameforge.errors import annotate_job_error
+
+        try:
+            job = self.repo.get(job_id)
+            n = int(job.options().get("db_retry_count") or 0) + 1
+            msg = f"sqlite3.{type(exc).__name__}: {exc}"
+            recoverable = job.status in (
+                "downloading",
+                "upscaling",
+                "converting",
+                "pending",
+                "download_completed",
+                "convert_pending",
+            )
+            if n <= SQLITE_REQUEUE_MAX and recoverable:
+                self.repo.merge_options(job_id, {"db_retry_count": n})
+                if job.status == "downloading":
+                    self.repo.update_status(job_id, "pending", error=None)
+                elif job.status == "upscaling":
+                    self.repo.update_status(job_id, "download_completed", error=None)
+                elif job.status == "converting":
+                    self.repo.update_status(job_id, "convert_pending", error=None)
+                self._record_event(job_id, f"{stage}_db_retry")
+                return True
+            annotate_job_error(self.repo, job_id, msg, url=job.url)
+            self._record_event(job_id, f"{stage}_fail")
+            self._maybe_fail_pause(job_id)
+            return True
+        except sqlite3.OperationalError:
+            return True
 
     def _eligible_pending_count(self) -> int:
         with self._lock:
@@ -456,6 +506,8 @@ class SequentialWorker:
             self._record_event(job.id, "download_end")
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._handle_sqlite_infra(job.id, exc, stage="download"):
+                return True
             if self._preserve_paused(job.id, exc):
                 self._record_event(job.id, "download_pause")
                 return True
@@ -490,6 +542,8 @@ class SequentialWorker:
             self._record_event(job.id, "upscale_end")
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._handle_sqlite_infra(job.id, exc, stage="upscale"):
+                return True
             if self._preserve_paused(job.id, exc):
                 self._record_event(job.id, "upscale_pause")
                 return True
@@ -522,6 +576,8 @@ class SequentialWorker:
             self._record_event(job.id, "convert_end")
             return True
         except Exception as exc:  # noqa: BLE001
+            if self._handle_sqlite_infra(job.id, exc, stage="convert"):
+                return True
             if self._preserve_paused(job.id, exc):
                 self._record_event(job.id, "convert_pause")
                 return True
