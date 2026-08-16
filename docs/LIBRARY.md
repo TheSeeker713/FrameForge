@@ -12,10 +12,11 @@ Onboarding is two steps. **`library_root` and `library_onboarded` are separate.*
 
 1. First Library open if `library_onboarded` is not set → step A: pick a library root (any drive). Only `library_root` is saved.
 2. Step B (same session, wizard stays open / resumes here if you reopen Library): scan completed jobs that still have a file on disk and are not in `library_items`. Show the count plus a short sample list.
-   - **Move to Library** — move into `library_root/Uncategorized/` (filename kept; job paths update only after the destination exists). Progress shows N of M. On success, set `library_onboarded`.
+   - **Move to Library** — files move on a **background worker thread** (never the Flet UI thread). Destination is `library_root/Uncategorized/` (filename kept; job paths update only after the destination exists). The wizard shows a determinate progress bar, “Moving N of M…”, the current filename, and **Cancel**. Per-file errors are logged and counted; the rest of the batch continues. On a clean finish with nothing left to move, set `library_onboarded`. Cancel stops before the next file; already-moved files stay in Library (no rollback).
    - **Skip for now** — keep `library_root`, set `library_onboarded`, leave files in the download folders. Import later from the empty-state **Import completed downloads** button.
-3. If a move fails mid-way, `library_onboarded` stays false and the transfer step stays up with retry.
-4. Later opens (already onboarded): if new completed downloads are not in the index, a modal offers “N new downloads — Move to Library?” **Yes** / **Not now**.
+3. If a move fails or is cancelled with files still outside Library, `library_onboarded` stays false and the transfer step stays up with a moved/failed/skipped summary so you can retry or skip.
+4. **Quit during a move:** X / Quit signals cancel, waits up to ~2.5s for the worker, then continues normal shutdown. `prevent_close` is released immediately so the window is never stuck behind a freeze.
+5. Later opens (already onboarded): if new completed downloads are not in the index, a modal offers “N new downloads — Move to Library?” **Yes** / **Not now**.
 
 Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 
