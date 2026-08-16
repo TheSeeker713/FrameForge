@@ -45,3 +45,9 @@ def test_ui_reset_library_reopens_onboarding(tmp_path: Path):
     assert ui.library.root() is None
     assert ui.dialogs.kind == "library_onboard"
     ui.shutdown()
+
+
+def test_reset_library_state_script_exists():
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "reset_library.ps1").is_file()
+    assert (root / "scripts" / "reset_library_state.ps1").is_file()

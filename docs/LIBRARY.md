@@ -20,7 +20,7 @@ Onboarding is two steps. **`library_root` and `library_onboarded` are separate.*
 
 Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 
-**Reset (dev / retest):** Settings → Advanced → **Reset Library onboarding**, or `.\scripts\reset_library.ps1` / `python -m frameforge --reset-library`. Clears the index, collections, watch folders, `library_root`, and `library_onboarded`. **Does not delete media files.**
+**Reset (dev / retest):** Settings → Advanced → **Reset Library onboarding**, or `.\scripts\reset_library.ps1` / `.\scripts\reset_library_state.ps1` / `python -m frameforge --reset-library`. Clears the index, collections, watch folders, `library_root`, and `library_onboarded`. **Does not delete media files.** After reset, onboarding is pick folder → `<pick>/FrameForge/Library/Uncategorized` → scan **all** download-tree videos (every site folder) → Move with progress → summary → playable grid.
 
 ## Layout
 

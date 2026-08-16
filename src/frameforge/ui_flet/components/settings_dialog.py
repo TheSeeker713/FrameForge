@@ -256,7 +256,7 @@ def build_settings_dialog(
                 "Advanced",
                 ft.Text(
                     "Reset Library onboarding to retest first-run. Index and flags are cleared; "
-                    "media files stay on disk. Same as scripts/reset_library.ps1.",
+                    "media files stay on disk. Same as scripts/reset_library.ps1 and reset_library_state.ps1.",
                     color=COLORS["text_secondary"],
                     size=12,
                 ),
