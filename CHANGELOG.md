@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.4
+
+- Upscale PNG pipeline: estimate peak temp and refuse with category `disk_space` when free space is insufficient; default 15-minute duration cap (`upscale_limit`) until streaming lands ([UPSCALE_DISK.md](docs/UPSCALE_DISK.md))
+- Delete `temp/<job>/frames` after a successful mux (and after terminal fail unless debug keep-frames); Repair sweeps orphan frame dirs older than 24h without touching `temp/dl`
+
 ## 0.6.3
 
 - Library migrate writes `temp/library_move_<timestamp>.log` (src/dst/ok/fail). Stale missing `library_items` no longer block re-move. Real 3-file cross-drive Move: `moved=3` ([FIELD_MIGRATE_v0.6.3.md](docs/FIELD_MIGRATE_v0.6.3.md))

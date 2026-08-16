@@ -304,7 +304,9 @@ class FrameForgeUi:
         cat = str(payload.get("category") or "")
         js_runtime = cat == "js_runtime"
         output_missing = cat == "output_missing"
-        hide_auth = js_runtime or output_missing
+        disk_space = cat == "disk_space"
+        upscale_limit = cat == "upscale_limit"
+        hide_auth = js_runtime or output_missing or disk_space or upscale_limit
         browser_pick = ft.Dropdown(
             label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
             value="firefox",
@@ -365,8 +367,12 @@ class FrameForgeUi:
                             "The file is missing on disk. Retry (force if the archive is stale), "
                             "open the folder, or skip this job. This is not a cookie/login problem."
                             if output_missing
-                            else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
-                            "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                            else (
+                                str(payload.get("error") or payload.get("cause") or "")
+                                if disk_space or upscale_limit
+                                else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
+                                "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                            )
                         ),
                         color=COLORS["text_secondary"],
                         size=12,
@@ -2279,11 +2285,17 @@ class FrameForgeUi:
             repo = JobRepository(db)
             error: str | None = None
             try:
+                raw_hours = repo.get_setting("upscale_frames_orphan_hours", "24")
+                try:
+                    hours = float(raw_hours)
+                except (TypeError, ValueError):
+                    hours = 24.0
                 stats = repair_frameforge_tree(
                     frameforge_root(),
                     site_folders=True,
                     conn=repo.conn,
                     on_progress=on_progress,
+                    orphan_frame_hours=hours,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Folder repair failed")
@@ -2295,6 +2307,7 @@ class FrameForgeUi:
                     "junk_relocated": 0,
                     "json_moved": 0,
                     "thumb_paths_updated": 0,
+                    "orphan_frames": 0,
                 }
                 error = str(exc)
             finally:
@@ -2317,6 +2330,7 @@ class FrameForgeUi:
             f"Repair: {int(stats.get('thumbs', 0))} thumbs, "
             f"{int(stats.get('junk_relocated', 0))} junk → temp/junk, "
             f"{int(stats.get('json_moved', 0))} info.json → metadata/"
+            f", {int(stats.get('orphan_frames', 0))} orphan frame dirs"
         )
         if error:
             summary = f"Repair failed: {error}"

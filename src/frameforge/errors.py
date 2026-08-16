@@ -22,6 +22,8 @@ BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
 JS_RUNTIME = "js_runtime"
 OUTPUT_MISSING = "output_missing"
+DISK_SPACE = "disk_space"
+UPSCALE_LIMIT = "upscale_limit"
 UNKNOWN = "unknown"
 
 CATEGORIES = (
@@ -36,12 +38,14 @@ CATEGORIES = (
     CANCELLED,
     JS_RUNTIME,
     OUTPUT_MISSING,
+    DISK_SPACE,
+    UPSCALE_LIMIT,
     UNKNOWN,
 )
 
-# Failures that should pause a bulk run (bot/auth, missing EJS, missing output, hard unknown).
+# Failures that should pause a bulk run (bot/auth, missing EJS, missing output, disk, hard unknown).
 FAIL_PAUSE_CATEGORIES = frozenset(
-    {AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, OUTPUT_MISSING, UNKNOWN}
+    {AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, OUTPUT_MISSING, DISK_SPACE, UPSCALE_LIMIT, UNKNOWN}
 )
 STDERR_TAIL_LINES = 12
 STDERR_TAIL_CHARS = 2000
@@ -159,6 +163,10 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         or "file is missing on disk" in lower
     ):
         return OUTPUT_MISSING
+    if "not enough disk space" in lower or "disk space for upscale" in lower:
+        return DISK_SPACE
+    if "upscale refused" in lower and "max allowed" in lower:
+        return UPSCALE_LIMIT
     if _BOT_RE.search(text):
         return BOT_CHECK
     if _RATE_RE.search(text):
@@ -224,6 +232,8 @@ def human_cause(category: str) -> str:
             "YouTube needs Deno (or Node) plus yt-dlp-ejs to solve n/signature challenges."
         ),
         OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
+        DISK_SPACE: "This upscale needs more free disk space for temporary PNG frames.",
+        UPSCALE_LIMIT: "This clip is longer than the PNG-pipeline duration cap (streaming is not shipped yet).",
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
 
@@ -264,6 +274,17 @@ def suggested_actions(category: str) -> list[str]:
             "Retry this job (force re-download if the archive is stale)",
             "Open the download folder",
             "Skip & resume queue",
+        ]
+    if category == DISK_SPACE:
+        return [
+            "Free disk space on the FrameForge temp drive",
+            "Retry this job",
+            "Skip & resume queue",
+        ]
+    if category == UPSCALE_LIMIT:
+        return [
+            "Raise max upscale duration in Settings (PNG pipeline still uses huge temp)",
+            "Skip this clip until streaming upscale ships",
         ]
     return ["Retry failed", "Inspect the error message"]
 
@@ -323,6 +344,7 @@ def annotate_job_error(
     *,
     status: str = "failed",
     url: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> Any:
     """Persist human error + error_category (and auth hint when applicable)."""
     job = repo.get(job_id)
@@ -335,6 +357,8 @@ def annotate_job_error(
         "error_actions": suggested_actions(cat),
         "error_stderr_tail": stderr_tail(message),
     }
+    if extra:
+        patch.update(extra)
     if cat in (AUTH_REQUIRED, BOT_CHECK):
         patch["auth_required"] = True
         patch["auth_hint"] = auth_action_hint(url)
@@ -349,3 +373,13 @@ def annotate_job_error(
             patch["archive_hit"] = True
             patch["force_redownload"] = True
     return repo.merge_options(job_id, patch)
+
+
+def option_patch_from_exc(exc: BaseException) -> dict[str, Any]:
+    patch = getattr(exc, "option_patch", None)
+    if callable(patch):
+        data = patch()
+        return data if isinstance(data, dict) else {}
+    if isinstance(patch, dict):
+        return dict(patch)
+    return {}

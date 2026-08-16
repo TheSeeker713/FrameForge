@@ -16,7 +16,7 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 | `metadata/` | yt-dlp `.info.json` after a successful download (and repair leftovers) |
 | `database/frameforge.db` | SQLite WAL database (`-wal` / `-shm` sit beside it) |
 | `cookies/`, `archive/` | Auth cookies and download archive |
-| `temp/` | Working files; `temp/dl/` yt-dlp/aria2 **in-flight** parts; `temp/junk/` leftover `.part` / `.aria2` / `.ytdl` (not Recycled) |
+| `temp/` | Working files; `temp/dl/` yt-dlp/aria2 **in-flight** parts; `temp/junk/` leftover `.part` / `.aria2` / `.ytdl` (not Recycled); `temp/<job>/frames/` PNG extract (deleted after successful upscale; orphan sweep on Repair) |
 | `temp/library_move_*.log` | Per-file Library migrate log |
 | `models/` | ONNX models |
 

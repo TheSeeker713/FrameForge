@@ -78,6 +78,15 @@ def build_settings_dialog(
         value=repo.get_setting("ram_warning_pct", "90"),
         width=160,
     )
+    upscale_max_min = ft.TextField(
+        label="Max upscale duration (minutes)",
+        value=str(repo.get_setting("upscale_max_duration_min", "15") or "15"),
+        width=220,
+    )
+    keep_frames = ft.Switch(
+        label="Keep upscale PNG frames (debug)",
+        value=str(repo.get_setting("upscale_keep_frames", "0") or "0") == "1",
+    )
     tray = ft.Switch(
         label="Close to system tray",
         value=repo.get_setting("close_to_tray", "0") == "1",
@@ -164,6 +173,13 @@ def build_settings_dialog(
         )
         if ram.value:
             repo.set_setting("ram_warning_pct", str(ram.value).strip())
+        raw_upscale_min = str(upscale_max_min.value or "15").strip() or "15"
+        try:
+            upscale_min = max(0.0, min(24 * 60, float(raw_upscale_min)))
+        except ValueError:
+            upscale_min = 15.0
+        repo.set_setting("upscale_max_duration_min", str(upscale_min))
+        repo.set_setting("upscale_keep_frames", "1" if keep_frames.value else "0")
         if on_save:
             on_save()
         if on_close:
@@ -202,6 +218,14 @@ def build_settings_dialog(
             _card(
                 "AI and Upscaling",
                 upscale,
+                ft.Text(
+                    "PNG-pipeline disk guard: refuse if temp frames would fill the drive. "
+                    "Duration cap (default 15 min) until streaming upscale ships. See docs/UPSCALE_DISK.md.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                upscale_max_min,
+                keep_frames,
                 ft.Text("Pause AI tasks under RAM pressure.", color=COLORS["text_secondary"], size=12),
                 ram,
             ),

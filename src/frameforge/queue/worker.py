@@ -497,9 +497,9 @@ class SequentialWorker:
                 self.repo.merge_options(job.id, {"error_category": "cancelled", "auth_required": False})
                 self._record_event(job.id, "upscale_cancel")
                 return True
-            from frameforge.errors import annotate_job_error
+            from frameforge.errors import annotate_job_error, option_patch_from_exc
 
-            annotate_job_error(self.repo, job.id, str(exc), url=job.url)
+            annotate_job_error(self.repo, job.id, str(exc), url=job.url, extra=option_patch_from_exc(exc))
             self._record_event(job.id, "upscale_fail")
             self._maybe_fail_pause(job.id)
             return True

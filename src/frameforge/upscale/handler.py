@@ -35,6 +35,16 @@ def make_upscale_handler(
         src_path = Path(src)
         # Tier 2.2: refuse 4K / ≥2160p with a clear reason (propagates to failed status)
         assert_upscale_allowed(src_path)
+        raw_cap = repo.get_setting("upscale_max_duration_min", "15") if hasattr(repo, "get_setting") else "15"
+        try:
+            cap = float(raw_cap)
+        except (TypeError, ValueError):
+            cap = 15.0
+        pipe.max_duration_minutes = cap
+        keep = "0"
+        if hasattr(repo, "get_setting"):
+            keep = str(repo.get_setting("upscale_keep_frames", "0") or "0")
+        pipe.keep_frames = keep.strip().lower() in {"1", "true", "yes", "on"}
         out = upscale_output_path_for_job(job, src_path)
 
         def progress_cb(pct: float) -> None:

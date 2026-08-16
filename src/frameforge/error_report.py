@@ -76,6 +76,12 @@ def format_full_error_report(
             lines.append(f"returncode: {inv.get('returncode')}")
         if inv.get("stderr_empty"):
             lines.append("note: no stderr; see invocation log")
+    if opts.get("disk_estimated_bytes") is not None:
+        lines.append(f"disk_estimated_bytes: {opts.get('disk_estimated_bytes')}")
+        lines.append(f"disk_required_bytes: {opts.get('disk_required_bytes')}")
+        lines.append(f"disk_free_bytes: {opts.get('disk_free_bytes')}")
+        if opts.get("disk_volume"):
+            lines.append(f"disk_volume: {opts.get('disk_volume')}")
     if job is not None:
         panel = format_error_panel(job)
         if panel and panel not in "\n".join(lines):

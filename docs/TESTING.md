@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.4 (upscale disk guard)
+
+- See [UPSCALE_DISK.md](UPSCALE_DISK.md).
+- Suite: `python -m pytest -q` → **476 passed / 1 skipped / 0 failed** (2026-08-16). Skip: live sample clip can finish before the pause window.
+- Tests: `tests/test_upscale_disk.py` (estimate, refuse, cleanup). Does **not** claim streaming or hour-long 1080p.
+
 ## v0.6.3 (field migrate + repair UX + temp/final paths)
 
 - See [V0.6.3_COMPLETE.md](V0.6.3_COMPLETE.md), [FIELD_MIGRATE_v0.6.3.md](FIELD_MIGRATE_v0.6.3.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).

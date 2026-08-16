@@ -553,6 +553,7 @@ def repair_summary_dialog(
         f"Root videos moved: {int(stats.get('videos', 0))}",
         f"Junk relocated to temp/junk: {int(stats.get('junk_relocated', 0))}",
         f"info.json moved to metadata/: {int(stats.get('json_moved', 0))}",
+        f"Orphan upscale frame dirs removed: {int(stats.get('orphan_frames', 0))}",
     ]
     if error:
         lines.append(f"Error: {error}")

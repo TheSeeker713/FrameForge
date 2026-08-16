@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.3 (field migrate log + repair UX + download temp paths)
+## Status: v0.6.4 (upscale disk precheck + temp frame cleanup)
 
-Package version is **0.6.3**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6.3_COMPLETE.md](V0.6.3_COMPLETE.md), [FIELD_MIGRATE_v0.6.3.md](FIELD_MIGRATE_v0.6.3.md), [LIBRARY.md](LIBRARY.md), [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
+Package version is **0.6.4**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [UPSCALE_DISK.md](UPSCALE_DISK.md). This does **not** stream frames; long 1080p jobs are refused when disk/duration limits hit.
 
 ## Phase 0 – Foundation
 

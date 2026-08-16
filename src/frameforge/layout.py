@@ -172,6 +172,7 @@ def repair_frameforge_tree(
     site_folders: bool = True,
     conn: object | None = None,
     on_progress: Callable[[str], None] | None = None,
+    orphan_frame_hours: float | None = None,
 ) -> dict[str, int]:
     """Organize thumbs/db/root videos. Keep per-site folders as media homes. Never Recycles."""
     root = Path(root)
@@ -194,6 +195,7 @@ def repair_frameforge_tree(
         "junk_relocated": 0,
         "json_moved": 0,
         "thumb_paths_updated": 0,
+        "orphan_frames": 0,
     }
 
     def note(msg: str) -> None:
@@ -264,16 +266,22 @@ def repair_frameforge_tree(
                         moved["junk_relocated"] += 1
                         note(f"Junk relocated: {moved['junk_relocated']}")
         moved["junk_candidates"] = moved["junk_relocated"] + _count_junk(media)
+    from frameforge.upscale.disk import DEFAULT_ORPHAN_HOURS, sweep_orphan_frame_dirs
+
+    hours = DEFAULT_ORPHAN_HOURS if orphan_frame_hours is None else float(orphan_frame_hours)
+    moved["orphan_frames"] = sweep_orphan_frame_dirs(root / "temp", max_age_hours=hours)
     log.info(
-        "Folder repair at %s: thumbs=%s db=%s videos=%s junk_relocated=%s json_moved=%s",
+        "Folder repair at %s: thumbs=%s db=%s videos=%s junk_relocated=%s json_moved=%s orphan_frames=%s",
         root,
         moved["thumbs"],
         moved["db"],
         moved["videos"],
         moved["junk_relocated"],
         moved["json_moved"],
+        moved.get("orphan_frames", 0),
     )
     note(
-        f"Done: {moved['thumbs']} thumbs, {moved['junk_relocated']} junk, {moved['json_moved']} info.json"
+        f"Done: {moved['thumbs']} thumbs, {moved['junk_relocated']} junk, "
+        f"{moved['json_moved']} info.json, {moved.get('orphan_frames', 0)} orphan frame dirs"
     )
     return moved
