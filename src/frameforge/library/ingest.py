@@ -104,6 +104,7 @@ def ingest_completed_jobs(
     *,
     on_progress: Callable[[int, int, Job], None] | None = None,
 ) -> list[IngestResult]:
+    """Synchronous helper for tests. GUI must use LibraryMoveRunner instead."""
     if store.root() is None:
         raise RuntimeError("Library root is not set")
     batch = jobs if jobs is not None else completed_jobs_not_in_library(repo, store)

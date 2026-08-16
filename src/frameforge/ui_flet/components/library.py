@@ -169,11 +169,15 @@ def onboarding_dialog(
     on_close: Any,
     progress: tuple[int, int] | None = None,
     error: str | None = None,
+    moving: bool = False,
+    on_cancel: Any | None = None,
+    progress_column: ft.Control | None = None,
+    summary: str | None = None,
 ) -> ft.AlertDialog:
     """Two-step wizard: pick folder, then Move / Skip. Does not mark onboarded by itself."""
     sample_titles = sample_titles or []
     if step == "move" and root_label:
-        title = "Move completed downloads"
+        title = "Moving files" if moving else "Move completed downloads"
         intro = (
             f"Library folder: {root_label}\n\n"
             f"{pending_count} completed download(s) can be moved into "
@@ -187,9 +191,13 @@ def onboarding_dialog(
             spacing=2,
             width=460,
         )
-        if progress:
+        sample.visible = not moving
+        if progress_column is not None:
+            prog_ctrl: ft.Control = progress_column
+            prog_ctrl.visible = bool(moving) or bool(summary)
+        elif progress:
             done, total = progress
-            prog_ctrl: ft.Control = ft.Column(
+            prog_ctrl = ft.Column(
                 [
                     ft.Text(f"Moving {done} of {total}…", size=12, color=COLORS["text_primary"]),
                     ft.ProgressBar(value=(done / total) if total else 0, width=420),
@@ -197,19 +205,26 @@ def onboarding_dialog(
                 spacing=6,
             )
         else:
-            prog_ctrl = ft.Container(height=0)
+            prog_ctrl = ft.Container(height=0, visible=False)
         err = ft.Text(error or "", color=COLORS["danger"], size=12, visible=bool(error))
-        move_label = "Move to Library" if pending_count else "Finish"
-        actions = [
-            elevated_outlined_button("Choose different folder…", on_click=lambda _e: on_choose()),
-            elevated_outlined_button("Skip for now", on_click=lambda _e: on_skip()),
-            elevated_filled_button(move_label, on_click=lambda _e: on_move()),
-        ]
+        sum_txt = ft.Text(summary or "", size=12, color=COLORS["text_primary"], visible=bool(summary))
+        if moving:
+            actions = [
+                elevated_outlined_button("Cancel", on_click=lambda _e: on_cancel and on_cancel()),
+            ]
+        else:
+            move_label = "Move to Library" if pending_count else "Finish"
+            actions = [
+                elevated_outlined_button("Choose different folder…", on_click=lambda _e: on_choose()),
+                elevated_outlined_button("Skip for now", on_click=lambda _e: on_skip()),
+                elevated_filled_button(move_label, on_click=lambda _e: on_move()),
+            ]
         body = ft.Column(
             [
                 ft.Text(intro, color=COLORS["text_secondary"], size=13, selectable=True),
                 sample,
                 prog_ctrl,
+                sum_txt,
                 err,
             ],
             spacing=10,
@@ -251,6 +266,10 @@ def onboarding_dialog(
         "sample": sample_titles,
         "progress": progress,
         "error": error,
+        "moving": moving,
+        "summary": summary,
+        "cancel": on_cancel,
+        "progress_column": progress_column,
     }
     return dlg
 

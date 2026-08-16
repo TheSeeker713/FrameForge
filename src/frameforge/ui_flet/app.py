@@ -47,6 +47,7 @@ from frameforge.ui_flet.window_chrome import USE_CUSTOM_TITLE_BAR, apply_page_ch
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
 QUIT_HARD_EXIT_DELAY_SEC = 0.35
+LIBRARY_MOVE_JOIN_SEC = 2.5
 CLOSE_DEBOUNCE_SEC = 0.25
 
 
@@ -216,6 +217,14 @@ class FrameForgeUi:
         self._library_prompt_deferred = False
         self._library_move_progress: tuple[int, int] | None = None
         self._library_onboard_error: str | None = None
+        self._library_mover: Any | None = None
+        self._library_moving = False
+        self._library_move_summary: str | None = None
+        self._library_move_hook: Any | None = None
+        self._move_status: ft.Text | None = None
+        self._move_file: ft.Text | None = None
+        self._move_bar: ft.ProgressBar | None = None
+        self._move_progress_column: ft.Column | None = None
         self.private_session_password: str | None = None
         self._pending_private_packs: list[Any] = []
         self.floating: ft.Container | None = None
@@ -1142,10 +1151,163 @@ class FrameForgeUi:
             on_move=self.confirm_library_move,
             on_skip=self.skip_library_onboarding,
             on_close=self.close_dialog,
-            progress=self._library_move_progress,
+            progress=self._library_move_progress if isinstance(self._library_move_progress, tuple) else None,
             error=self._library_onboard_error,
+            moving=self._library_moving,
+            on_cancel=self.cancel_library_move,
+            progress_column=self._ensure_move_progress_column(),
+            summary=self._library_move_summary,
         )
         return self.dialogs.open("library_onboard", dlg, replace=True)
+
+    def _ensure_move_progress_column(self) -> ft.Column:
+        if self._move_progress_column is None:
+            self._move_status = ft.Text("Moving 0 of 0…", size=13, color=COLORS["text_primary"])
+            self._move_file = ft.Text("", size=12, color=COLORS["text_secondary"], max_lines=1)
+            self._move_bar = ft.ProgressBar(value=0, width=420)
+            self._move_progress_column = ft.Column(
+                [self._move_status, self._move_file, self._move_bar],
+                spacing=6,
+                visible=False,
+            )
+        self._move_progress_column.visible = bool(self._library_moving) or bool(self._library_move_summary)
+        return self._move_progress_column
+
+    def _marshal_ui(self, fn: Any) -> None:
+        if self._exiting or self._shutdown_complete:
+            return
+        page = self.page
+        if page is None:
+            fn()
+            return
+        if page.__class__.__name__ == "FakePage":
+            fn()
+            return
+        runner = getattr(page, "run_task", None)
+        if callable(runner):
+            async def _on_loop() -> None:
+                fn()
+
+            try:
+                runner(_on_loop)
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        fn()
+
+    @property
+    def library_move_running(self) -> bool:
+        mover = self._library_mover
+        return bool(self._library_moving or (mover is not None and getattr(mover, "running", False)))
+
+    def wait_library_move(self, timeout: float = 10.0) -> bool:
+        mover = self._library_mover
+        if mover is None:
+            return True
+        return bool(mover.join(timeout))
+
+    def cancel_library_move(self, _e: Any = None) -> None:
+        mover = self._library_mover
+        if mover is not None:
+            mover.request_cancel()
+
+    def _apply_move_progress(self, progress: Any) -> None:
+        self._library_move_progress = (int(progress.index), int(progress.total))
+        if self._move_status is not None:
+            self._move_status.value = f"Moving {progress.index} of {progress.total}…"
+        if self._move_file is not None:
+            name = str(progress.current_name or "")
+            self._move_file.value = name if len(name) <= 80 else name[:77] + "…"
+        if self._move_bar is not None:
+            total = int(progress.total) or 1
+            self._move_bar.value = min(1.0, max(0.0, int(progress.index) / total))
+        if self._move_progress_column is not None:
+            self._move_progress_column.visible = True
+        page = self.page
+        if page is not None:
+            try:
+                page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _on_library_move_done(self, report: Any) -> None:
+        from frameforge.library.ingest import completed_jobs_not_in_library
+
+        self._library_moving = False
+        if self._move_progress_column is not None:
+            self._move_progress_column.visible = False
+        if self._exiting or self._shutdown_complete:
+            return
+        self._library_move_summary = getattr(report, "summary", None)
+        finishing = not self.library.is_onboarded()
+        remaining = completed_jobs_not_in_library(self.repo, self.library) if self.library.root() else []
+        cancelled = bool(getattr(report, "cancelled", False))
+        if finishing and remaining and (cancelled or report.failed):
+            self._library_onboard_error = (
+                None if cancelled else ("; ".join(report.errors[:3]) or f"{len(remaining)} file(s) still to move")
+            )
+            self.open_library_onboarding()
+            self._show_toast(report.summary)
+            return
+        if finishing and not remaining:
+            self.library.mark_onboarded()
+        elif finishing and remaining and not cancelled:
+            self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
+            self.open_library_onboarding()
+            self._show_toast(report.summary)
+            return
+        self._library_prompt_deferred = False
+        self._library_move_progress = None
+        self.close_dialog()
+        self.refresh_library()
+        self.refresh_queue(force=True)
+        if report.moved:
+            self._show_toast(report.summary)
+        self._library_move_summary = None
+
+    def confirm_library_move(self, _e: Any = None) -> list[Any]:
+        from frameforge.library.ingest import completed_jobs_not_in_library
+        from frameforge.library.mover import LibraryMoveRunner, MoveProgress, MoveReport
+
+        if self.library.root() is None:
+            return []
+        if self.library_move_running:
+            return []
+        pending = completed_jobs_not_in_library(self.repo, self.library)
+        if not pending:
+            if not self.library.is_onboarded():
+                self.library.mark_onboarded()
+            self.close_dialog()
+            self.refresh_library()
+            return []
+        self._library_onboard_error = None
+        self._library_move_summary = None
+        self._library_moving = True
+        self._ensure_move_progress_column()
+        self._apply_move_progress(MoveProgress(index=0, total=len(pending), current_name="Starting…"))
+        self.open_library_onboarding()
+
+        mover = LibraryMoveRunner(self.repo.db_path)
+        mover.between_files = self._library_move_hook
+        self._library_mover = mover
+
+        def on_progress(progress: MoveProgress) -> None:
+            self._marshal_ui(lambda: self._apply_move_progress(progress))
+
+        def on_done(report: MoveReport) -> None:
+            self._marshal_ui(lambda: self._on_library_move_done(report))
+
+        mover.start(
+            [j.id for j in pending],
+            on_progress=on_progress,
+            on_done=None if self.page is None else on_done,
+        )
+        if self.page is None:
+            mover.join()
+            if mover.report is not None:
+                self._on_library_move_done(mover.report)
+            return list(mover.report.results) if mover.report else []
+        return []
 
     def import_completed_downloads(self, _e: Any = None) -> ft.AlertDialog | None:
         """Empty-state CTA: never leave the user stuck with no import path."""
@@ -1209,52 +1371,15 @@ class FrameForgeUi:
     def skip_library_onboarding(self, _e: Any = None) -> None:
         if self.library.root() is None:
             return
+        if self.library_move_running:
+            self.cancel_library_move()
+            return
         self.library.mark_onboarded()
         self._library_onboard_error = None
         self._library_move_progress = None
+        self._library_move_summary = None
         self.close_dialog()
         self.refresh_library()
-
-    def confirm_library_move(self, _e: Any = None) -> list[Any]:
-        from frameforge.library.ingest import completed_jobs_not_in_library, ingest_completed_jobs
-
-        if self.library.root() is None:
-            return []
-        finishing = not self.library.is_onboarded()
-        self._library_onboard_error = None
-
-        def _progress(done: int, total: int, job: Any) -> None:
-            self._library_move_progress = (done, total)
-            if finishing and self.page is not None:
-                self.open_library_onboarding()
-
-        try:
-            results = ingest_completed_jobs(self.repo, self.library, on_progress=_progress)
-        except Exception as exc:  # noqa: BLE001
-            self._library_move_progress = None
-            self._library_onboard_error = str(exc)
-            if finishing:
-                self.open_library_onboarding()
-            self._show_toast("Move failed — retry or skip")
-            return []
-        remaining = completed_jobs_not_in_library(self.repo, self.library)
-        if remaining and finishing:
-            self._library_move_progress = None
-            self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
-            self.open_library_onboarding()
-            return results
-        if finishing:
-            self.library.mark_onboarded()
-        self._library_prompt_deferred = False
-        self._library_move_progress = None
-        self._library_onboard_error = None
-        self.close_dialog()
-        self.refresh_library()
-        self.refresh_queue(force=True)
-        n = len(results)
-        if n:
-            self._show_toast(f"Moved {n} file{'s' if n != 1 else ''} into Library")
-        return results
 
     def set_library_search(self, value: str) -> None:
         self.library_search = value or ""
@@ -1956,9 +2081,11 @@ class FrameForgeUi:
         self._commit_quit()
 
     def _commit_quit(self) -> None:
-        """Quit: release prevent_close, kill children, destroy window, hard-exit.
+        """Quit: release prevent_close, cancel library move, kill children, destroy window.
 
-        Never waits on the Flet event loop. Watchdog at 3s always kill+`_exit(0)`.
+        prevent_close is cleared first so X is never stuck behind a move. Library
+        worker is signalled and joined up to LIBRARY_MOVE_JOIN_SEC; a watchdog
+        still hard-exits if teardown hangs. Never waits on the Flet event loop.
         """
         if self._shutdown_complete:
             if self.exit_process_on_quit:
@@ -1968,9 +2095,15 @@ class FrameForgeUi:
             return
         self._exiting = True
         self._release_native_close()
-        self._arm_exit_watchdog(SHUTDOWN_WATCHDOG_SEC)
+        move_running = self.library_move_running
+        self.cancel_library_move()
+        self._arm_exit_watchdog(5.0 if move_running else SHUTDOWN_WATCHDOG_SEC)
         try:
             self.close_dialog()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.wait_library_move(LIBRARY_MOVE_JOIN_SEC)
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -2015,6 +2148,11 @@ class FrameForgeUi:
         self._schedule_tick()
 
     def shutdown(self) -> None:
+        try:
+            self.cancel_library_move()
+            self.wait_library_move(LIBRARY_MOVE_JOIN_SEC)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self.worker.stop(timeout=2)
         except Exception:  # noqa: BLE001
