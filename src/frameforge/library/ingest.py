@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,12 +101,17 @@ def ingest_completed_jobs(
     repo: JobRepository,
     store: LibraryStore,
     jobs: list[Job] | None = None,
+    *,
+    on_progress: Callable[[int, int, Job], None] | None = None,
 ) -> list[IngestResult]:
     if store.root() is None:
         raise RuntimeError("Library root is not set")
     batch = jobs if jobs is not None else completed_jobs_not_in_library(repo, store)
     results: list[IngestResult] = []
-    for job in batch:
+    total = len(batch)
+    for i, job in enumerate(batch, 1):
+        if on_progress:
+            on_progress(i, total, job)
         results.append(move_into_library(repo, store, job))
     return results
 

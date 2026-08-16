@@ -8,10 +8,16 @@ The **Library** tab replaced **Thumbnails**. Preview images still cache under `%
 
 ## Onboarding
 
-1. First open of Library: pick a library root folder.
-2. FrameForge scans **completed** jobs that still have a file on disk.
-3. Confirm to **move** those files into `library_root/Uncategorized/` (filename kept; job `download_path` / `output_path` updated only after the destination exists).
-4. Later opens: if new completed downloads are not in the index, a modal offers “N new downloads — Move to Library?” **Yes** / **Not now**.
+Onboarding is two steps. **`library_root` and `library_onboarded` are separate.** Choosing a folder does **not** finish setup.
+
+1. First Library open if `library_onboarded` is not set → step A: pick a library root (any drive). Only `library_root` is saved.
+2. Step B (same session, wizard stays open / resumes here if you reopen Library): scan completed jobs that still have a file on disk and are not in `library_items`. Show the count plus a short sample list.
+   - **Move to Library** — move into `library_root/Uncategorized/` (filename kept; job paths update only after the destination exists). Progress shows N of M. On success, set `library_onboarded`.
+   - **Skip for now** — keep `library_root`, set `library_onboarded`, leave files in the download folders. Import later from the empty-state **Import completed downloads** button.
+3. If a move fails mid-way, `library_onboarded` stays false and the transfer step stays up with retry.
+4. Later opens (already onboarded): if new completed downloads are not in the index, a modal offers “N new downloads — Move to Library?” **Yes** / **Not now**.
+
+Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 
 ## Layout
 
@@ -45,4 +51,4 @@ See [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md). Copies into a password zip; origin
 
 ## Schema
 
-Migration 4: `library_items`, `library_collections`, `library_item_collections`, `library_watch_folders`. Settings keys: `library_root`, `library_onboarded`.
+Migration 4: `library_items`, `library_collections`, `library_item_collections`, `library_watch_folders`. Settings keys: `library_root` (folder pick), `library_onboarded` (set only after Move succeeds or Skip).

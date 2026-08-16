@@ -19,19 +19,29 @@ def _date_label(raw: str | None) -> str:
     return str(raw).split("T", 1)[0]
 
 
-def empty_library_state(*, onboarded: bool, on_setup: Any | None = None) -> ft.Container:
+def empty_library_state(
+    *,
+    onboarded: bool,
+    on_setup: Any | None = None,
+    on_import: Any | None = None,
+    pending_count: int = 0,
+) -> ft.Container:
     if onboarded:
         title = "No clips in Library yet"
-        body = "Completed downloads can be moved here. Queue playback still works from the Queue tab."
-        cta = "Move completed downloads"
+        body = (
+            "Completed downloads can be imported here. Queue playback still works from the Queue tab."
+        )
+        cta = "Import completed downloads"
+        click = on_import or on_setup
     else:
         title = "Set up your Library"
         body = (
             "Library is a local folder plus SQLite metadata on this PC. "
             "No cloud, no accounts, no sync."
         )
-        cta = "Choose Library folder"
-    btn = elevated_filled_button(cta, on_click=lambda _e: on_setup and on_setup())
+        cta = "Continue setup" if pending_count or on_setup else "Choose Library folder"
+        click = on_setup
+    btn = elevated_filled_button(cta, on_click=lambda _e: click and click())
     return ft.Container(
         expand=True,
         alignment=ft.Alignment.CENTER,
@@ -45,7 +55,7 @@ def empty_library_state(*, onboarded: bool, on_setup: Any | None = None) -> ft.C
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             width=420,
         ),
-        data={"kind": "library_empty"},
+        data={"kind": "library_empty", "cta": cta},
     )
 
 
@@ -149,21 +159,65 @@ def Path_name(path: str) -> str:
 
 def onboarding_dialog(
     *,
+    step: str,
     root_label: str | None,
     pending_count: int,
+    sample_titles: list[str] | None = None,
     on_choose: Any,
     on_move: Any,
+    on_skip: Any,
     on_close: Any,
+    progress: tuple[int, int] | None = None,
+    error: str | None = None,
 ) -> ft.AlertDialog:
-    root_text = root_label or "No folder selected"
-    move_label = f"Move {pending_count} file{'s' if pending_count != 1 else ''}"
-    move_btn = elevated_filled_button(move_label, on_click=lambda _e: on_move())
-    move_btn.disabled = not root_label or pending_count <= 0
-    finish = elevated_outlined_button("Done", on_click=lambda _e: on_close())
-    dlg = ft.AlertDialog(
-        modal=False,
-        title=ft.Text("Set up your Library"),
-        content=ft.Column(
+    """Two-step wizard: pick folder, then Move / Skip. Does not mark onboarded by itself."""
+    sample_titles = sample_titles or []
+    if step == "move" and root_label:
+        title = "Move completed downloads"
+        intro = (
+            f"Library folder: {root_label}\n\n"
+            f"{pending_count} completed download(s) can be moved into "
+            "Uncategorized (filenames kept). Queue items stay playable."
+        )
+        sample_lines = sample_titles[:8]
+        if pending_count > len(sample_lines):
+            sample_lines = [*sample_lines, f"… and {pending_count - len(sample_lines)} more"]
+        sample = ft.Column(
+            [ft.Text(t, size=12, color=COLORS["text_secondary"], max_lines=1) for t in sample_lines],
+            spacing=2,
+            width=460,
+        )
+        if progress:
+            done, total = progress
+            prog_ctrl: ft.Control = ft.Column(
+                [
+                    ft.Text(f"Moving {done} of {total}…", size=12, color=COLORS["text_primary"]),
+                    ft.ProgressBar(value=(done / total) if total else 0, width=420),
+                ],
+                spacing=6,
+            )
+        else:
+            prog_ctrl = ft.Container(height=0)
+        err = ft.Text(error or "", color=COLORS["danger"], size=12, visible=bool(error))
+        move_label = "Move to Library" if pending_count else "Finish"
+        actions = [
+            elevated_outlined_button("Choose different folder…", on_click=lambda _e: on_choose()),
+            elevated_outlined_button("Skip for now", on_click=lambda _e: on_skip()),
+            elevated_filled_button(move_label, on_click=lambda _e: on_move()),
+        ]
+        body = ft.Column(
+            [
+                ft.Text(intro, color=COLORS["text_secondary"], size=13, selectable=True),
+                sample,
+                prog_ctrl,
+                err,
+            ],
+            spacing=10,
+            width=460,
+        )
+    else:
+        title = "Set up your Library"
+        body = ft.Column(
             [
                 ft.Text(
                     "Library lives on this PC: a folder you choose plus SQLite metadata. "
@@ -172,27 +226,32 @@ def onboarding_dialog(
                     color=COLORS["text_secondary"],
                     size=13,
                 ),
-                ft.Text(f"Library folder: {root_text}", selectable=True),
-                ft.Text(
-                    f"{pending_count} completed download(s) can be moved into "
-                    "Library/Uncategorized (filenames kept)."
-                    if pending_count
-                    else "No completed downloads with files on disk yet.",
-                    color=COLORS["text_secondary"],
-                    size=12,
-                ),
+                ft.Text("Step 1 of 2 — choose a Library folder (any drive).", size=13),
             ],
             spacing=10,
             width=460,
-        ),
-        actions=[
-            elevated_outlined_button("Choose folder…", on_click=lambda _e: on_choose()),
-            move_btn,
-            finish,
-        ],
+        )
+        actions = [
+            elevated_outlined_button("Cancel", on_click=lambda _e: on_close()),
+            elevated_filled_button("Choose folder…", on_click=lambda _e: on_choose()),
+        ]
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text(title),
+        content=body,
+        actions=actions,
         bgcolor=COLORS["surface"],
     )
-    dlg.data = {"move": move_btn, "pending": pending_count, "root": root_label}
+    dlg.data = {
+        "step": step,
+        "move": on_move,
+        "skip": on_skip,
+        "pending": pending_count,
+        "root": root_label,
+        "sample": sample_titles,
+        "progress": progress,
+        "error": error,
+    }
     return dlg
 
 

@@ -214,6 +214,8 @@ class FrameForgeUi:
         self.library_filter_collection_id: int | None = None
         self.library_filter_flag: str | None = None
         self._library_prompt_deferred = False
+        self._library_move_progress: tuple[int, int] | None = None
+        self._library_onboard_error: str | None = None
         self.private_session_password: str | None = None
         self._pending_private_packs: list[Any] = []
         self.floating: ft.Container | None = None
@@ -1037,7 +1039,7 @@ class FrameForgeUi:
     def _pending_library_jobs(self):
         from frameforge.library.ingest import completed_jobs_not_in_library
 
-        if not self.library.is_onboarded() or self.library.root() is None:
+        if self.library.root() is None:
             return []
         return completed_jobs_not_in_library(self.repo, self.library)
 
@@ -1092,12 +1094,14 @@ class FrameForgeUi:
         self.library_grid.controls = cells
         show_empty = len(items) == 0
         if self.library_empty is not None:
-            self.library_empty.visible = show_empty
-            self.library_empty.content = empty_library_state(
+            state = empty_library_state(
                 onboarded=self.library.is_onboarded(),
                 on_setup=self.on_library_opened,
-            ).content
-            self.library_empty.data = {"kind": "library_empty"}
+                on_import=self.import_completed_downloads,
+            )
+            self.library_empty.visible = show_empty
+            self.library_empty.content = state.content
+            self.library_empty.data = state.data
         if self.library_grid is not None:
             self.library_grid.visible = not show_empty
         if self.page is not None:
@@ -1124,18 +1128,34 @@ class FrameForgeUi:
         return None
 
     def open_library_onboarding(self) -> ft.AlertDialog:
-        root = self.library.root()
         from frameforge.library.ingest import completed_jobs_not_in_library
 
+        root = self.library.root()
         pending = completed_jobs_not_in_library(self.repo, self.library) if root else []
+        sample = [str(j.title or j.url or f"#{j.id}") for j in pending[:8]]
         dlg = onboarding_dialog(
+            step="move" if root else "pick",
             root_label=str(root) if root else None,
             pending_count=len(pending),
+            sample_titles=sample,
             on_choose=self.pick_library_root,
             on_move=self.confirm_library_move,
+            on_skip=self.skip_library_onboarding,
             on_close=self.close_dialog,
+            progress=self._library_move_progress,
+            error=self._library_onboard_error,
         )
-        return self.dialogs.open("library_onboard", dlg)
+        return self.dialogs.open("library_onboard", dlg, replace=True)
+
+    def import_completed_downloads(self, _e: Any = None) -> ft.AlertDialog | None:
+        """Empty-state CTA: never leave the user stuck with no import path."""
+        if not self.library.is_onboarded():
+            return self.on_library_opened()
+        pending = self._pending_library_jobs()
+        if pending:
+            return self.open_library_new_files()
+        self._show_toast("No completed downloads left to import")
+        return None
 
     def open_library_new_files(self, _e: Any = None) -> ft.AlertDialog | None:
         pending = self._pending_library_jobs()
@@ -1160,29 +1180,74 @@ class FrameForgeUi:
             runner(self._pick_library_root)
 
     async def _pick_library_root(self) -> None:
+        # Native folder picker cannot sit under a modal. Dismiss the wizard, then restore step B.
+        self.close_dialog()
         picker = self._ensure_file_picker()
         getter = getattr(picker, "get_directory_path", None)
         if not callable(getter):
+            if not self.library.is_onboarded():
+                self.open_library_onboarding()
             return
         path = await getter(dialog_title="Choose Library folder")
         if path:
             self.apply_library_root(path)
+            return
+        if not self.library.is_onboarded():
+            self.open_library_onboarding()
 
-    def apply_library_root(self, path: str | Path) -> None:
-        self.library.complete_onboarding(path)
-        self.close_dialog()
-        pending = self._pending_library_jobs()
+    def apply_library_root(self, path: str | Path) -> ft.AlertDialog | None:
+        """Persist library_root only. Never marks onboarded — that is Move or Skip."""
+        self.library.set_root(path)
+        self._library_onboard_error = None
+        self._library_move_progress = None
         self.refresh_library()
-        if pending:
-            self.open_library_new_files()
+        if self.library.is_onboarded():
+            self._show_toast("Library folder updated")
+            return None
+        return self.open_library_onboarding()
+
+    def skip_library_onboarding(self, _e: Any = None) -> None:
+        if self.library.root() is None:
+            return
+        self.library.mark_onboarded()
+        self._library_onboard_error = None
+        self._library_move_progress = None
+        self.close_dialog()
+        self.refresh_library()
 
     def confirm_library_move(self, _e: Any = None) -> list[Any]:
-        from frameforge.library.ingest import ingest_completed_jobs
+        from frameforge.library.ingest import completed_jobs_not_in_library, ingest_completed_jobs
 
         if self.library.root() is None:
             return []
-        results = ingest_completed_jobs(self.repo, self.library)
+        finishing = not self.library.is_onboarded()
+        self._library_onboard_error = None
+
+        def _progress(done: int, total: int, job: Any) -> None:
+            self._library_move_progress = (done, total)
+            if finishing and self.page is not None:
+                self.open_library_onboarding()
+
+        try:
+            results = ingest_completed_jobs(self.repo, self.library, on_progress=_progress)
+        except Exception as exc:  # noqa: BLE001
+            self._library_move_progress = None
+            self._library_onboard_error = str(exc)
+            if finishing:
+                self.open_library_onboarding()
+            self._show_toast("Move failed — retry or skip")
+            return []
+        remaining = completed_jobs_not_in_library(self.repo, self.library)
+        if remaining and finishing:
+            self._library_move_progress = None
+            self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
+            self.open_library_onboarding()
+            return results
+        if finishing:
+            self.library.mark_onboarded()
         self._library_prompt_deferred = False
+        self._library_move_progress = None
+        self._library_onboard_error = None
         self.close_dialog()
         self.refresh_library()
         self.refresh_queue(force=True)

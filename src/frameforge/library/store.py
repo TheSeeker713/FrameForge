@@ -91,9 +91,18 @@ class LibraryStore:
         self.set_setting(SETTING_ONBOARDED, "1")
 
     def complete_onboarding(self, path: str | Path) -> Path:
+        """Helper for tests: set root and mark finished. The GUI must not call this on folder pick."""
         root = self.set_root(path)
         self.mark_onboarded()
         return root
+
+    def onboarding_step(self) -> str:
+        """pick → move → done. Root without onboarded resumes at the transfer step."""
+        if self.is_onboarded():
+            return "done"
+        if self.root() is not None:
+            return "move"
+        return "pick"
 
     def ingest_dir(self) -> Path:
         root = self.root()

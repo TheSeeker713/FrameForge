@@ -54,8 +54,8 @@ class DialogHost:
         finally:
             self._closing = False
 
-    def open(self, kind: str, dialog: ft.AlertDialog) -> ft.AlertDialog:
-        if self.current is not None and self.kind == kind:
+    def open(self, kind: str, dialog: ft.AlertDialog, *, replace: bool = False) -> ft.AlertDialog:
+        if self.current is not None and self.kind == kind and not replace:
             if kind == "settings":
                 self.ui.settings_focus_count += 1
             page = getattr(self.ui, "page", None)
@@ -68,7 +68,8 @@ class DialogHost:
             return self.current
         if self.current is not None:
             self.close()
-        if kind != "quit":
+        # Onboarding stays modal so the native folder picker cannot dismiss step B.
+        if kind not in {"quit", "library_onboard"}:
             from frameforge.ui_flet.components.modals import wire_closable
 
             wire_closable(dialog, self.close)
@@ -76,6 +77,7 @@ class DialogHost:
         self.kind = kind
         self.open_kinds.append(kind)
         self._set_kind_flag(kind)
+        dialog.open = True
         page = getattr(self.ui, "page", None)
         if page is not None:
             page.show_dialog(dialog)

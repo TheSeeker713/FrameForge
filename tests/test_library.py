@@ -56,10 +56,14 @@ def test_onboarding_sets_root(tmp_path: Path):
     repo = _repo(tmp_path)
     store = LibraryStore(repo)
     root = tmp_path / "MyLib"
-    store.complete_onboarding(root)
-    assert store.is_onboarded()
+    store.set_root(root)
+    assert store.is_onboarded() is False
+    assert store.onboarding_step() == "move"
     assert store.root() == root.resolve()
     assert (root / "Uncategorized").is_dir()
+    store.mark_onboarded()
+    assert store.is_onboarded()
+    assert store.onboarding_step() == "done"
     repo.close()
 
 
@@ -89,6 +93,18 @@ def test_move_updates_paths_and_second_open_only_new(tmp_path: Path):
     assert [p.id for p in pending] == [job2.id]
     ingest_completed_jobs(repo, store, pending)
     assert completed_jobs_not_in_library(repo, store) == []
+    repo.close()
+
+
+def test_ingest_reports_progress(tmp_path: Path):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    ticks: list[tuple[int, int]] = []
+    _completed_job(repo, _clip(tmp_path / "dl" / "p1.mp4"), title="p1")
+    _completed_job(repo, _clip(tmp_path / "dl" / "p2.mp4"), title="p2", url="https://www.youtube.com/watch?v=pppp")
+    ingest_completed_jobs(repo, store, on_progress=lambda d, t, _j: ticks.append((d, t)))
+    assert ticks == [(1, 2), (2, 2)]
     repo.close()
 
 
@@ -222,17 +238,61 @@ def test_library_tab_label_and_onboarding_dialog(tmp_path: Path):
     ui.reveal_launch = False
     ui.build()
     assert isinstance(ui.library_grid, ft.GridView)
-    dlg = ui.on_library_opened()
-    assert dlg is not None
-    assert "Library" in str(dlg.title.value)
-    ui.apply_library_root(tmp_path / "Lib")
-    assert ui.library.is_onboarded()
     src = _clip(tmp_path / "dl" / "ui.mp4")
     _completed_job(repo, src, title="UI clip")
-    new_dlg = ui.on_library_opened()
-    assert new_dlg is not None
-    assert new_dlg.data["count"] == 1
+    dlg = ui.on_library_opened()
+    assert dlg is not None
+    assert dlg.data["step"] == "pick"
+    assert ui.library.is_onboarded() is False
+    move_dlg = ui.apply_library_root(tmp_path / "Lib")
+    assert ui.library.is_onboarded() is False
+    assert ui.library.root() is not None
+    assert move_dlg is not None
+    assert move_dlg.data["step"] == "move"
+    assert move_dlg.data["pending"] >= 1
+    assert any("UI clip" in t for t in move_dlg.data["sample"])
     ui.confirm_library_move()
+    assert ui.library.is_onboarded()
     assert ui.library.list_items()
+    dest = Path(ui.library.list_items()[0].path)
+    assert dest.is_file()
+    assert dest.parent.name == "Uncategorized"
+    assert not src.exists()
     assert ui.on_library_opened() is None
+    ui.shutdown()
+
+
+def test_onboarding_skip_keeps_download_files(tmp_path: Path):
+    repo = _repo(tmp_path)
+    worker = SequentialWorker(repo, download_handler=lambda j, r: None, poll_interval=0.05)
+    ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
+    ui.reveal_launch = False
+    ui.build()
+    src = _clip(tmp_path / "dl" / "stay.mp4")
+    _completed_job(repo, src, title="Stay")
+    ui.apply_library_root(tmp_path / "Lib")
+    assert ui.library.is_onboarded() is False
+    ui.skip_library_onboarding()
+    assert ui.library.is_onboarded()
+    assert src.is_file()
+    assert ui.library.list_items() == []
+    empty = ui.library_empty
+    assert empty is not None
+    assert "Import" in str(empty.data.get("cta") or empty.content)
+    ui.shutdown()
+
+
+def test_onboarding_resumes_at_move_step(tmp_path: Path):
+    repo = _repo(tmp_path)
+    worker = SequentialWorker(repo, download_handler=lambda j, r: None, poll_interval=0.05)
+    ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
+    ui.build()
+    src = _clip(tmp_path / "dl" / "resume.mp4")
+    _completed_job(repo, src, title="Resume me")
+    ui.library.set_root(tmp_path / "Lib")
+    assert ui.library.is_onboarded() is False
+    dlg = ui.on_library_opened()
+    assert dlg is not None
+    assert dlg.data["step"] == "move"
+    assert dlg.data["pending"] >= 1
     ui.shutdown()
