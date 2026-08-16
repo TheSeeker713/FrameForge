@@ -330,6 +330,65 @@ def new_downloads_dialog(n: int, *, on_yes: Any, on_not_now: Any) -> ft.AlertDia
     return dlg
 
 
+def duplicate_report_dialog(
+    groups: list[Any],
+    *,
+    on_merge: Any,
+    on_close: Any,
+) -> ft.AlertDialog:
+    lines = []
+    extras = 0
+    for group in groups:
+        extras += len(group.extras)
+        names = ", ".join(Path_name(i.path) for i in group.items)
+        lines.append(names)
+    body = (
+        f"{len(groups)} duplicate group(s), {extras} extra file(s).\n"
+        "Keep the higher-resolution / newer file. Recycle Bin for the rest.\n\n"
+        + "\n".join(lines[:12])
+    )
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Duplicate videos"),
+        content=ft.Text(body, size=13, selectable=True),
+        actions=[
+            elevated_outlined_button("Keep all", on_click=lambda _e: on_close()),
+            elevated_filled_button("Merge (Recycle Bin)", on_click=lambda _e: on_merge()),
+        ],
+        bgcolor=COLORS["surface"],
+    )
+    dlg.data = {"groups": len(groups), "extras": extras, "merge": on_merge}
+    return dlg
+
+
+def junk_triage_dialog(
+    files: list[Any],
+    *,
+    on_recycle: Any,
+    on_keep: Any,
+    on_move: Any,
+) -> ft.AlertDialog:
+    lines = [f"{j.reason}: {j.path.name}" for j in files[:20]]
+    body = ft.Text(
+        f"{len(files)} junk file(s). Delete uses Recycle Bin only.\n\n" + "\n".join(lines),
+        size=13,
+        selectable=True,
+    )
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Junk files"),
+        content=body,
+        actions=[
+            elevated_outlined_button("Keep", on_click=lambda _e: on_keep()),
+            elevated_outlined_button("Move…", on_click=lambda _e: on_move()),
+            elevated_filled_button("Delete (Recycle Bin)", on_click=lambda _e: on_recycle()),
+        ],
+        bgcolor=COLORS["surface"],
+    )
+    dlg.data = {"count": len(files), "recycle": on_recycle, "keep": on_keep, "move": on_move}
+    return dlg
+
+
 def add_to_collection_dialog(
     collections: list[Any],
     *,
@@ -534,6 +593,8 @@ def build_library_toolbar(
     on_send_private: Any | None = None,
     on_scan: Any | None = None,
     orphan_count: int = 0,
+    on_dedupe: Any | None = None,
+    on_junk: Any | None = None,
 ) -> ft.Column:
     search_field = ft.TextField(
         hint_text="Search title",
@@ -595,6 +656,8 @@ def build_library_toolbar(
             ft.Container(expand=True),
             move_btn,
             scan_btn,
+            elevated_outlined_button("Duplicates…", on_click=lambda _e: on_dedupe and on_dedupe()),
+            elevated_outlined_button("Junk files…", on_click=lambda _e: on_junk and on_junk()),
             elevated_outlined_button("New collection", on_click=lambda _e: on_new_collection()),
             add_btn,
             upscale_bulk,

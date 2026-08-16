@@ -30,6 +30,10 @@ Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 - If videos exist on disk under the library folder but are not indexed, **Scan library folder** imports those orphans.
 - Empty state with a setup / import / scan CTA. GridView is given a bounded host and builds tiles immediately (not on-demand), so a populated library is never a blank gray panel.
 
+**Duplicates:** toolbar **Duplicates…** groups files by normalized title (bracket `[id]` segments ignored) + file size + duration (ffprobe, cached on the row). Keep higher resolution / newer mtime; extras go to Recycle Bin.
+
+**Junk:** toolbar **Junk files…** lists `.part` / `.ytdl` / `.temp` / zero-byte / orphan sidecars. **Delete** uses Recycle Bin only; **Keep** leaves them; **Move…** relocates to a folder you pick.
+
 ## Collections (primary folder + extra tags)
 
 Seeded **Types** (folders): Music Videos, Tutorials, Documentaries, Shorts & Clips, Movies, Series, Live & Streams, Podcasts & Talk, Uncategorized.

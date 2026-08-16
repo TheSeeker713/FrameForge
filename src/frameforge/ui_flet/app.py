@@ -29,7 +29,9 @@ from frameforge.ui_flet.components.library import (
     confirm_remove_dialog,
     confirm_reset_library_dialog,
     create_collection_dialog,
+    duplicate_report_dialog,
     empty_library_state,
+    junk_triage_dialog,
     library_tile,
     new_downloads_dialog,
     onboarding_dialog,
@@ -1137,6 +1139,8 @@ class FrameForgeUi:
                 on_send_private=self.open_send_private,
                 on_scan=self.scan_library_folder,
                 orphan_count=len(orphans),
+                on_dedupe=self.open_library_dedupe,
+                on_junk=self.open_library_junk,
             )
             if self.library_body is not None and self.library_body.controls:
                 self.library_body.controls[0] = toolbar
@@ -1493,6 +1497,91 @@ class FrameForgeUi:
         else:
             self._show_toast("No new videos found on disk")
         return len(added)
+
+    def open_library_dedupe(self, _e: Any = None) -> ft.AlertDialog | None:
+        from frameforge.library.dedupe import find_duplicate_groups
+
+        groups = find_duplicate_groups(self.library)
+        if not groups:
+            self._show_toast("No duplicates found")
+            return None
+        self._pending_dedupe_groups = groups
+        dlg = duplicate_report_dialog(
+            groups,
+            on_merge=self.confirm_library_dedupe,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("library_dedupe", dlg)
+
+    def confirm_library_dedupe(self, _e: Any = None) -> None:
+        from frameforge.library.dedupe import merge_duplicate_groups
+
+        groups = getattr(self, "_pending_dedupe_groups", None)
+        report = merge_duplicate_groups(self.library, groups, recycle=self.reveal_launch)
+        self._pending_dedupe_groups = None
+        self.close_dialog()
+        self.refresh_library()
+        self._show_toast(report.summary)
+
+    def _junk_scan_roots(self) -> list[Path]:
+        roots: list[Path] = []
+        lib = self.library.root()
+        if lib is not None:
+            roots.append(lib)
+            if lib.parent.name.lower() == "frameforge":
+                roots.append(lib.parent)
+        roots.extend(self._migrate_disk_roots())
+        return roots
+
+    def open_library_junk(self, _e: Any = None) -> ft.AlertDialog | None:
+        from frameforge.library.junk import find_junk
+
+        files = find_junk(self._junk_scan_roots())
+        if not files:
+            self._show_toast("No junk files found")
+            return None
+        self._pending_junk = files
+        dlg = junk_triage_dialog(
+            files,
+            on_recycle=self.confirm_junk_recycle,
+            on_keep=self.close_dialog,
+            on_move=self.pick_junk_move_folder,
+        )
+        return self.dialogs.open("library_junk", dlg)
+
+    def confirm_junk_recycle(self, _e: Any = None) -> None:
+        from frameforge.library.junk import recycle_junk
+
+        files = getattr(self, "_pending_junk", None) or []
+        recycle_junk([j.path for j in files], recycle=self.reveal_launch)
+        self._pending_junk = None
+        self.close_dialog()
+        self._show_toast(f"Sent {len(files)} junk file(s) to Recycle Bin")
+
+    def pick_junk_move_folder(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_junk_move_folder)
+
+    async def _pick_junk_move_folder(self) -> None:
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Move junk files to folder")
+        if path:
+            self.confirm_junk_move(path)
+
+    def confirm_junk_move(self, dest: str | Path) -> None:
+        from frameforge.library.junk import move_junk
+
+        files = getattr(self, "_pending_junk", None) or []
+        move_junk([j.path for j in files], Path(dest))
+        self._pending_junk = None
+        self.close_dialog()
+        self._show_toast(f"Moved {len(files)} junk file(s)")
 
     def play_library_item(self, item_id: int) -> None:
         from frameforge.library.actions import play_library_item
