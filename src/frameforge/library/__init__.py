@@ -3,6 +3,7 @@
 from frameforge.library.actions import can_upscale_library_item, play_library_item, reveal_library_item
 from frameforge.library.ingest import (
     completed_jobs_not_in_library,
+    heal_job_download_paths,
     ingest_completed_jobs,
     job_media_file,
 )
@@ -13,6 +14,7 @@ __all__ = [
     "LibraryStore",
     "can_upscale_library_item",
     "completed_jobs_not_in_library",
+    "heal_job_download_paths",
     "heal_library_paths",
     "ingest_completed_jobs",
     "job_media_file",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.7
+
+- Library Move: chunked cancellable cross-drive copy (no `copy2`), progress bytes, path dedupe, heal missing Uncategorized job paths from youtube/…, Reset dialog no longer vanishes under Settings dismiss ([LIBRARY.md](docs/LIBRARY.md), [AUDIT_FULL_v0.6.3_FIELD.md](docs/AUDIT_FULL_v0.6.3_FIELD.md))
+- **Not claimed fixed** for the live 4.5 GB youtube tree until a field log from that tree shows `OK #2+`
+
 ## 0.6.6
 
 - Worker cancel is typed (`DownloadCancelled` / user status) only — yt-dlp “Cancelled by the uploader” is `not_available` failed, not user-cancelled ([FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [YTDLP_PARITY.md](docs/YTDLP_PARITY.md))

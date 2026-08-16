@@ -22,8 +22,11 @@ class DialogHost:
         self.close_count = 0
         self.open_kinds: list[str] = []
         self._closing = False
+        self._generation = 0
 
-    def close(self, _e: Any = None) -> None:
+    def close(self, _e: Any = None, *, kind: str | None = None) -> None:
+        if kind is not None and self.kind != kind:
+            return
         if self._closing:
             return
         self._closing = True
@@ -67,12 +70,25 @@ class DialogHost:
                     pass
             return self.current
         if self.current is not None:
+            outgoing = self.current
+            try:
+                outgoing.on_dismiss = None
+            except Exception:  # noqa: BLE001
+                pass
             self.close()
-        # Onboarding stays modal so the native folder picker cannot dismiss step B.
-        if kind not in {"quit", "library_onboard"}:
+        self._generation += 1
+        gen = self._generation
+
+        def _scoped_close(_e: Any = None, *, _gen=gen, _kind=kind) -> None:
+            if self._generation != _gen or self.kind != _kind:
+                return
+            self.close(_e)
+
+        # Onboarding and reset stay modal so barrier/settings dismiss cannot eat them.
+        if kind not in {"quit", "library_onboard", "reset_library"}:
             from frameforge.ui_flet.components.modals import wire_closable
 
-            wire_closable(dialog, self.close)
+            wire_closable(dialog, _scoped_close)
         self.current = dialog
         self.kind = kind
         self.open_kinds.append(kind)

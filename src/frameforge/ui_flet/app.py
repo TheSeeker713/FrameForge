@@ -54,7 +54,7 @@ log = logging.getLogger(__name__)
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
 QUIT_HARD_EXIT_DELAY_SEC = 0.35
-LIBRARY_MOVE_JOIN_SEC = 2.5
+LIBRARY_MOVE_JOIN_SEC = 15.0
 CLOSE_DEBOUNCE_SEC = 0.25
 
 
@@ -1082,10 +1082,13 @@ class FrameForgeUi:
         self.refresh_library()
 
     def _pending_library_jobs(self):
-        from frameforge.library.ingest import completed_jobs_not_in_library
+        from frameforge.library.ingest import completed_jobs_not_in_library, heal_job_download_paths
 
         if self.library.root() is None:
             return []
+        roots = self._migrate_disk_roots()
+        if roots:
+            heal_job_download_paths(self.repo, download_roots=roots, library_root=self.library.root())
         return completed_jobs_not_in_library(self.repo, self.library)
 
     def _migrate_disk_roots(self) -> list[Path]:
@@ -1308,7 +1311,12 @@ class FrameForgeUi:
                 self._move_status.value = f"Moving {progress.index} of {progress.total}…"
             if self._move_file is not None:
                 name = str(progress.current_name or "")
-                self._move_file.value = name if len(name) <= 80 else name[:77] + "…"
+                copied = int(getattr(progress, "bytes_copied", 0) or 0)
+                total_b = int(getattr(progress, "bytes_total", 0) or 0)
+                if total_b >= 1_000_000_000 and copied:
+                    pct = min(100, int(100 * copied / total_b))
+                    name = f"{name} — {pct}%"
+                self._move_file.value = name if len(name) <= 96 else name[:93] + "…"
             if self._move_bar is not None:
                 total = int(progress.total) or 1
                 self._move_bar.value = min(1.0, max(0.0, int(progress.index) / total))
@@ -1409,6 +1417,7 @@ class FrameForgeUi:
         mover.start(
             [j.id for j in pending_jobs],
             extra_paths=pending_disk,
+            download_roots=self._migrate_disk_roots(),
             on_progress=on_progress,
             on_done=None if self.page is None else on_done,
         )
@@ -2222,7 +2231,7 @@ class FrameForgeUi:
 
         self.settings_dialog = build_settings_dialog(
             self.repo,
-            on_close=self.close_dialog,
+            on_close=lambda _e=None: self.dialogs.close(_e, kind="settings"),
             on_open_cookies=self.open_cookies_folder,
             library=self.library,
             on_pick_library_root=self.pick_library_root,
@@ -2236,13 +2245,16 @@ class FrameForgeUi:
         return self.dialogs.open("settings", self.settings_dialog)
 
     def open_reset_library(self, _e: Any = None) -> ft.AlertDialog:
-        dlg = confirm_reset_library_dialog(on_yes=self.confirm_reset_library, on_close=self.close_dialog)
+        dlg = confirm_reset_library_dialog(
+            on_yes=self.confirm_reset_library,
+            on_close=lambda _e=None: self.dialogs.close(_e, kind="reset_library"),
+        )
         return self.dialogs.open("reset_library", dlg)
 
     def confirm_reset_library(self, _e: Any = None) -> None:
         from frameforge.library.reset import reset_library_state
 
-        reset_library_state(self.library)
+        reset_library_state(self.library, download_roots=self._migrate_disk_roots())
         self.close_dialog()
         self.refresh_library()
         self._show_toast("Library onboarding reset — media files were not deleted")

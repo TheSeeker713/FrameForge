@@ -169,11 +169,9 @@ def test_run_library_move_file2_error_still_moves_file3(tmp_path: Path, monkeypa
     from frameforge.library import ingest as ingest_mod
 
     real = ingest_mod.move_into_library
-    seen = {"n": 0}
 
     def wrap(repo, store, job, **kwargs):
-        seen["n"] += 1
-        if seen["n"] == 2:
+        if job.title == "bad":
             raise OSError("forced error on file 2")
         return real(repo, store, job, **kwargs)
 
@@ -378,3 +376,98 @@ def test_ui_move_keeps_summary_not_toast_only(tmp_path: Path):
     assert ui.library_visible_count == 2
     ui.dismiss_library_move_summary()
     ui.shutdown()
+
+
+def test_build_move_work_dedupes_same_path(tmp_path: Path):
+    from frameforge.library.mover import build_move_work
+
+    repo = _repo(tmp_path)
+    src = _clip(tmp_path / "dl" / "clip [Zy7EXDONlTY].mp4", data=b"shared")
+    j1 = _completed_job(repo, src, title="one")
+    j2 = _completed_job(
+        repo, src, title="two", url="https://www.youtube.com/watch?v=bbbbbbbbbbb"
+    )
+    j3 = _completed_job(
+        repo, src, title="three", url="https://www.youtube.com/watch?v=ccccccccccc"
+    )
+    work = build_move_work([j1, j2, j3])
+    assert len(work) == 1
+    primary, extras, _disk, path, size = work[0]
+    assert primary.id == j1.id
+    assert [e.id for e in extras] == [j2.id, j3.id]
+    assert path.resolve() == src.resolve()
+    assert size == len(b"shared")
+    repo.close()
+
+
+def test_run_library_move_dedupes_and_updates_duplicate_jobs(tmp_path: Path):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    src = _clip(tmp_path / "dl" / "clip [Zy7EXDONlTY].mp4", data=b"shared-bytes")
+    j1 = _completed_job(repo, src, title="one")
+    j2 = _completed_job(
+        repo, src, title="two", url="https://www.youtube.com/watch?v=bbbbbbbbbbb"
+    )
+    report = run_library_move(repo, store, [j1, j2])
+    assert report.moved == 1
+    assert report.failed == 0
+    dest = Path(repo.get(j1.id).download_path)
+    assert dest.is_file()
+    assert Path(repo.get(j2.id).download_path) == dest
+    assert not src.exists()
+    repo.close()
+
+
+def test_heal_missing_library_job_path_finds_youtube_file(tmp_path: Path):
+    from frameforge.library.ingest import heal_job_download_paths, job_media_file
+
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    lib = store.set_root(tmp_path / "KDrive")
+    youtube = _clip(
+        tmp_path / "youtube" / "Agentic AI [Zy7EXDONlTY].mp4",
+        data=b"real-bytes",
+    )
+    missing = lib / "Uncategorized" / "Agentic AI [Zy7EXDONlTY].mp4"
+    job = _completed_job(repo, youtube, title="Agentic")
+    repo.set_paths(job.id, download_path=str(missing), output_path=str(missing))
+    assert job_media_file(repo.get(job.id)) is None
+    n = heal_job_download_paths(repo, download_roots=[tmp_path], library_root=lib)
+    assert n == 1
+    loaded = repo.get(job.id)
+    assert Path(loaded.download_path).resolve() == youtube.resolve()
+    assert job_media_file(loaded) is not None
+    pending = completed_jobs_not_in_library(repo, store)
+    assert [j.id for j in pending] == [job.id]
+    disk = [tmp_path / "youtube" / youtube.name]
+    from frameforge.library.mover import build_move_work
+
+    work = build_move_work(pending, disk)
+    assert len(work) == 1
+    repo.close()
+
+
+def test_run_library_move_cancel_during_chunked_copy(tmp_path: Path, monkeypatch):
+    from frameforge.library import transfer as t
+
+    monkeypatch.setattr(t, "same_volume", lambda _a, _b: False)
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    src = _clip(tmp_path / "dl" / "big.mp4", data=b"z" * 8000)
+    _completed_job(repo, src, title="big")
+    cancel = threading.Event()
+
+    def on_progress(p) -> None:
+        if p.copying and p.bytes_copied >= 128:
+            cancel.set()
+
+    report = run_library_move(repo, store, cancel=cancel, on_progress=on_progress, chunk_size=128)
+    assert report.cancelled is True
+    assert report.moved == 0
+    assert src.is_file()
+    log_text = Path(report.log_path).read_text(encoding="utf-8") if report.log_path else ""
+    assert "ABORT in-copy" in log_text
+    assert "OK " not in log_text
+    repo.close()

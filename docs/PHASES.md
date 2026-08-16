@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.6 (cancel is typed exceptions only)
+## Status: v0.6.7 (Library Move chunked copy — field gate open)
 
-Package version is **0.6.6**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential WAL worker; thread-local SQLite (0.6.5). User cancel is `DownloadCancelled` / status only — yt-dlp “Cancelled by the uploader” is a failed `not_available` job. See [FAIL_PAUSE.md](FAIL_PAUSE.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).
+Package version is **0.6.7**. Cross-drive Library Move uses chunked copy with cancel; duplicate paths transfer once; missing Uncategorized job paths can be healed from the download tree. **Do not claim the live 4.5 GB youtube tree is fixed** until `temp/library_move_*.log` from that tree shows `OK #2+`. See [LIBRARY.md](LIBRARY.md) and [AUDIT_FULL_v0.6.3_FIELD.md](AUDIT_FULL_v0.6.3_FIELD.md).
 
 ## Phase 0 – Foundation
 

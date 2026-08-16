@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,8 +11,10 @@ from frameforge.db.repository import Job, JobRepository
 from frameforge.library.models import LibraryItem
 from frameforge.library.paths import paths_equal, unique_dest
 from frameforge.library.store import LibraryStore
-from frameforge.library.taxonomy import KIND_TYPE, source_label_from_job
+from frameforge.library.taxonomy import INGEST_FOLDER, source_label_from_job
 from frameforge.library.transfer import transfer_file
+
+_YT_BRACKET_RE = re.compile(r"\[([A-Za-z0-9_-]{11})\]")
 
 
 @dataclass
@@ -20,6 +23,80 @@ class IngestResult:
     moved: bool
     source_path: Path
     dest_path: Path
+
+
+def youtube_id_from_filename(name: str) -> str | None:
+    match = _YT_BRACKET_RE.search(name)
+    return match.group(1) if match else None
+
+
+def index_download_media(roots: list[Path]) -> tuple[dict[str, Path], dict[str, Path]]:
+    """Map basename and YouTube [id] → first video found under download roots."""
+    by_name: dict[str, Path] = {}
+    by_id: dict[str, Path] = {}
+    for root in roots:
+        folder = Path(root)
+        if not folder.is_dir():
+            continue
+        for path in folder.rglob("*"):
+            if not is_migrate_video(path):
+                continue
+            by_name.setdefault(path.name.lower(), path)
+            vid = youtube_id_from_filename(path.name)
+            if vid:
+                by_id.setdefault(vid.lower(), path)
+    return by_name, by_id
+
+
+def _path_under_library(missing: Path, library_root: Path | None) -> bool:
+    parts = {p.lower() for p in missing.parts}
+    if INGEST_FOLDER.lower() in parts:
+        return True
+    if library_root is None:
+        return False
+    try:
+        missing.resolve().relative_to(Path(library_root).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def heal_job_download_paths(
+    repo: JobRepository,
+    *,
+    download_roots: list[Path],
+    library_root: Path | None = None,
+) -> int:
+    """If job paths point at missing Uncategorized/library files, restore the download-tree original.
+
+    Does not copy. Used before Move so multi-GB work is not ordered by stale K: rows.
+    """
+    by_name, by_id = index_download_media(list(download_roots))
+    healed = 0
+    for job in repo.list_jobs("completed", include_queue_hidden=True):
+        if job_media_file(job) is not None:
+            continue
+        for raw in (job.download_path, job.output_path):
+            if not raw:
+                continue
+            missing = Path(raw)
+            if missing.is_file():
+                continue
+            if not _path_under_library(missing, library_root):
+                continue
+            found = by_name.get(missing.name.lower())
+            if found is None:
+                vid = youtube_id_from_filename(missing.name)
+                if vid:
+                    hit = by_id.get(vid.lower())
+                    if hit is not None and hit.suffix.lower() == missing.suffix.lower():
+                        found = hit
+            if found is None or not found.is_file():
+                continue
+            _update_job_paths(repo, job, missing, found)
+            healed += 1
+            break
+    return healed
 
 
 def job_media_file(job: Job) -> Path | None:
@@ -98,6 +175,11 @@ def move_into_library(
     job: Job,
     *,
     dest_dir: Path | None = None,
+    cancel: object | None = None,
+    on_copy_progress: Callable[[int, int], None] | None = None,
+    log_line: Callable[[str], None] | None = None,
+    file_index: int | None = None,
+    chunk_size: int | None = None,
 ) -> IngestResult:
     src = job_media_file(job)
     if src is None:
@@ -110,7 +192,15 @@ def move_into_library(
         moved = False
     else:
         dest = unique_dest(folder, src.name)
-        dest = transfer_file(src, dest)
+        kwargs: dict = {
+            "cancel": cancel,
+            "on_progress": on_copy_progress,
+            "log_line": log_line,
+            "file_index": file_index,
+        }
+        if chunk_size is not None:
+            kwargs["chunk_size"] = chunk_size
+        dest = transfer_file(src, dest, **kwargs)
         moved = True
         _update_job_paths(repo, job, src, dest)
     uncat = store.uncategorized()
@@ -129,7 +219,17 @@ def move_into_library(
     return IngestResult(item=item, moved=moved, source_path=src, dest_path=dest)
 
 
-def move_path_into_library(store: LibraryStore, src: Path, *, dest_dir: Path | None = None) -> IngestResult:
+def move_path_into_library(
+    store: LibraryStore,
+    src: Path,
+    *,
+    dest_dir: Path | None = None,
+    cancel: object | None = None,
+    on_copy_progress: Callable[[int, int], None] | None = None,
+    log_line: Callable[[str], None] | None = None,
+    file_index: int | None = None,
+    chunk_size: int | None = None,
+) -> IngestResult:
     """Move or index a loose video file (no queue job) into Uncategorized."""
     src = Path(src)
     if not src.is_file():
@@ -153,7 +253,15 @@ def move_path_into_library(store: LibraryStore, src: Path, *, dest_dir: Path | N
         moved = False
     else:
         dest = unique_dest(folder, src.name)
-        dest = transfer_file(src, dest)
+        kwargs: dict = {
+            "cancel": cancel,
+            "on_progress": on_copy_progress,
+            "log_line": log_line,
+            "file_index": file_index,
+        }
+        if chunk_size is not None:
+            kwargs["chunk_size"] = chunk_size
+        dest = transfer_file(src, dest, **kwargs)
         moved = True
     uncat = store.uncategorized()
     item = store.add_item(

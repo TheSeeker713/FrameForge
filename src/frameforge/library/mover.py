@@ -13,7 +13,9 @@ import threading
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.library.ingest import (
+    _update_job_paths,
     completed_jobs_not_in_library,
+    heal_job_download_paths,
     is_migrate_video,
     job_media_file,
     move_into_library,
@@ -21,6 +23,7 @@ from frameforge.library.ingest import (
     purge_missing_library_items,
 )
 from frameforge.library.store import LibraryStore
+from frameforge.library.transfer import TransferCancelled
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class MoveProgress:
     skipped: int = 0
     cancelled: bool = False
     finished: bool = False
+    bytes_copied: int = 0
+    bytes_total: int = 0
+    copying: bool = False
 
 
 @dataclass
@@ -107,6 +113,67 @@ def _label_for(job: Job | None, path: Path | None) -> str:
     return "file"
 
 
+def _resolve_media(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except OSError:
+        return path
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return int(path.stat().st_size)
+    except OSError:
+        return 0
+
+
+def _copy_label(name: str, size: int) -> str:
+    if size >= 1_000_000_000:
+        return f"{name} ({size / 1_000_000_000:.1f} GB)"
+    if size >= 1_000_000:
+        return f"{name} ({size / 1_000_000:.1f} MB)"
+    return name
+
+
+def build_move_work(
+    jobs: list[Job],
+    extra_paths: list[Path] | None = None,
+) -> list[tuple[Job | None, list[Job], Path | None, Path, int]]:
+    """Dedupe by resolved source path. Returns (primary_job, extra_jobs, disk_path, src, size)."""
+    groups: dict[str, tuple[Job | None, list[Job], Path | None, Path, int]] = {}
+    order: list[str] = []
+    for job in jobs:
+        media = job_media_file(job)
+        if media is None:
+            key = f"missing:{job.id}"
+            groups[key] = (job, [], None, Path(job.download_path or job.output_path or "."), 0)
+            order.append(key)
+            continue
+        src = _resolve_media(media)
+        key = str(src).lower()
+        if key in groups:
+            primary, extras, disk, path, size = groups[key]
+            extras.append(job)
+            groups[key] = (primary, extras, disk, path, size)
+            continue
+        groups[key] = (job, [], None, src, _file_size(src))
+        order.append(key)
+    job_keys = set(groups)
+    for raw in extra_paths or []:
+        path = Path(raw)
+        if not path.is_file() or not is_migrate_video(path):
+            continue
+        src = _resolve_media(path)
+        key = str(src).lower()
+        if key in job_keys or key in groups:
+            continue
+        groups[key] = (None, [], path, src, _file_size(src))
+        order.append(key)
+    items = [groups[k] for k in order]
+    items.sort(key=lambda row: (row[4], row[3].name.lower()))
+    return items
+
+
 def run_library_move(
     repo: JobRepository,
     store: LibraryStore,
@@ -116,41 +183,30 @@ def run_library_move(
     cancel: threading.Event | None = None,
     on_progress: Callable[[MoveProgress], None] | None = None,
     between_files: Callable[[Any], None] | None = None,
+    download_roots: list[Path] | None = None,
+    chunk_size: int | None = None,
 ) -> MoveReport:
     """Move completed downloads and loose download-tree videos into the library.
 
-    Checks *cancel* before each file. UI callers must run this off the Flet thread.
+    Checks *cancel* before each file and during chunked cross-drive copy.
+    UI callers must run this off the Flet thread.
     """
     if store.root() is None:
         raise RuntimeError("Library root is not set")
     log_file = _new_move_log()
     dropped = purge_missing_library_items(store)
     _log_line(log_file, f"start library_root={store.root()} purged_missing={dropped}")
+    roots = list(download_roots or [])
+    if roots:
+        healed = heal_job_download_paths(repo, download_roots=roots, library_root=store.root())
+        if healed:
+            _log_line(log_file, f"healed_job_paths={healed}")
     batch_jobs = jobs if jobs is not None else completed_jobs_not_in_library(repo, store)
-    job_files = set()
-    for job in batch_jobs:
-        media = job_media_file(job)
-        if media is not None:
-            try:
-                job_files.add(media.resolve())
-            except OSError:
-                job_files.add(media)
-    disk: list[Path] = []
-    for raw in extra_paths or []:
-        path = Path(raw)
-        if not path.is_file() or not is_migrate_video(path):
-            continue
-        try:
-            resolved = path.resolve()
-        except OSError:
-            resolved = path
-        if resolved in job_files:
-            continue
-        disk.append(path)
-    report = MoveReport(disk_found=len(disk), log_path=str(log_file) if log_file else None)
-    _log_line(log_file, f"batch jobs={len(batch_jobs)} disk={len(disk)}")
-    work: list[tuple[Job | None, Path | None]] = [(j, None) for j in batch_jobs]
-    work.extend((None, p) for p in disk)
+    work = build_move_work(batch_jobs, extra_paths)
+    job_count = sum(1 for row in work if row[0] is not None)
+    disk_count = sum(1 for row in work if row[0] is None)
+    report = MoveReport(disk_found=disk_count, log_path=str(log_file) if log_file else None)
+    _log_line(log_file, f"batch jobs={job_count} disk={disk_count} unique={len(work)}")
     total = len(work)
 
     def _emit(progress: MoveProgress) -> None:
@@ -162,12 +218,12 @@ def run_library_move(
             log.exception("Library move progress callback failed at %s/%s", progress.index, progress.total)
 
     try:
-        for i, (job, path) in enumerate(work, 1):
+        for i, (job, extras, path, src, size) in enumerate(work, 1):
             if cancel is not None and cancel.is_set():
                 report.cancelled = True
                 report.skipped += total - i + 1
                 break
-            label = _label_for(job, path)
+            label = _copy_label(_label_for(job, path or src), size)
             ident = f"#{job.id}" if job is not None else "disk"
             _emit(
                 MoveProgress(
@@ -177,6 +233,7 @@ def run_library_move(
                     moved=report.moved,
                     failed=report.failed,
                     skipped=report.skipped,
+                    bytes_total=size,
                 )
             )
             if between_files is not None:
@@ -188,19 +245,49 @@ def run_library_move(
                 report.cancelled = True
                 report.skipped += total - i + 1
                 break
-            src: Path | None = path if job is None else job_media_file(job)
+
+            def _on_bytes(copied: int, total_bytes: int, *, _i=i, _label=label) -> None:
+                _emit(
+                    MoveProgress(
+                        index=_i,
+                        total=total,
+                        current_name=_label,
+                        moved=report.moved,
+                        failed=report.failed,
+                        skipped=report.skipped,
+                        bytes_copied=copied,
+                        bytes_total=total_bytes,
+                        copying=True,
+                    )
+                )
+
+            xfer = {
+                "cancel": cancel,
+                "on_copy_progress": _on_bytes,
+                "log_line": lambda m, _log=log_file: _log_line(_log, m),
+                "file_index": i,
+            }
+            if chunk_size is not None:
+                xfer["chunk_size"] = chunk_size
             try:
                 if job is not None:
-                    result = move_into_library(repo, store, job)
+                    result = move_into_library(repo, store, job, **xfer)
+                    for extra in extras:
+                        _update_job_paths(repo, extra, src, result.dest_path)
                 else:
                     assert path is not None
-                    result = move_path_into_library(store, path)
+                    result = move_path_into_library(store, path, **xfer)
                 report.results.append(result)
                 report.moved += 1
                 _log_line(
                     log_file,
                     f"OK {ident} src={result.source_path} dst={result.dest_path}",
                 )
+            except TransferCancelled:
+                report.cancelled = True
+                report.skipped += total - i + 1
+                _log_line(log_file, f"ABORT in-copy {ident} src={src}")
+                break
             except Exception as exc:  # noqa: BLE001 — one bad file must not abort the batch
                 report.failed += 1
                 report.errors.append(f"{ident} {label}: {exc}")
@@ -251,6 +338,8 @@ class LibraryMoveRunner:
         self.between_files: Callable[[Any], None] | None = None
         self.job_ids: list[int] = []
         self.extra_paths: list[Path] = []
+        self.download_roots: list[Path] = []
+        self.chunk_size: int | None = None
 
     @property
     def running(self) -> bool:
@@ -271,8 +360,10 @@ class LibraryMoveRunner:
         job_ids: list[int],
         *,
         extra_paths: list[Path] | None = None,
+        download_roots: list[Path] | None = None,
         on_progress: Callable[[MoveProgress], None] | None = None,
         on_done: Callable[[MoveReport], None] | None = None,
+        chunk_size: int | None = None,
     ) -> None:
         if self.running:
             raise RuntimeError("A library move is already running")
@@ -280,6 +371,8 @@ class LibraryMoveRunner:
         self.report = None
         self.job_ids = list(job_ids)
         self.extra_paths = [Path(p) for p in extra_paths or []]
+        self.download_roots = [Path(p) for p in download_roots or []]
+        self.chunk_size = chunk_size
 
         def _run() -> None:
             repo = JobRepository(self.db_path)
@@ -303,6 +396,8 @@ class LibraryMoveRunner:
                     cancel=self.cancel,
                     on_progress=on_progress,
                     between_files=self.between_files,
+                    download_roots=self.download_roots,
+                    chunk_size=self.chunk_size,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("LibraryMoveRunner crashed; preserving partial report moved=%s", report.moved)

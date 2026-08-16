@@ -259,3 +259,17 @@ Suite **469 passed** does not exercise this failure mode.
 | Why always the same file | Stable `id ASC` + job 2 still on C: because copy never completes; jobs 3 & 23 are the same path |
 | Reset auto-dismiss | Settings `on_dismiss` + single-dialog `replace` + `wire_closable` non-modal |
 | Does reset clear flags when it “succeeds”? | **Yes, if `confirm_reset_library` runs.** Field symptom is it **does not run**. Even then, **job paths stay wrong.** |
+
+---
+
+## 11. Follow-up (v0.6.7 code — field gate still open)
+
+Shipped in package **0.6.7**:
+
+- Cross-drive copy is chunked (`copyfileobj`-style loop), logs `COPY #n bytes=a/b`, honors cancel **during** copy. Dest-side `.ffpartial` is removed on abort; source is kept. No `shutil.copy2` in `library/transfer.py`.
+- Work list is **deduped** by resolved source path (jobs 2/3/23 → one transfer) and **smallest-first**.
+- Missing Uncategorized/library `download_path` values are healed from the download tree (`*[id].mp4`) before Move. Reset can revert those job paths (does not delete media).
+- DialogHost: Settings `on_dismiss` cannot close `reset_library`; `library_new` dismiss cannot close `library_onboard`. Reset stays modal until the user chooses.
+- Quit join wait is 15s after cancel so a chunk can finish; cancel is cooperative.
+
+**Field gate:** this machine’s youtube tree is **not claimed fixed** until a new `temp\library_move_*.log` from **that** tree contains `OK` for a second file (`OK #2+`). Pytest and the 3-file probe still do not count. See [LIBRARY.md](LIBRARY.md).

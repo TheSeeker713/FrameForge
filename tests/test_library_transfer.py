@@ -1,13 +1,28 @@
-"""Cross-volume library transfer: copy2 → verify size → unlink source."""
+"""Cross-volume library transfer: chunked copy → verify size → unlink source."""
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
-from frameforge.library.transfer import same_volume, transfer_file, volume_key
+import pytest
+
+from frameforge.library.transfer import (
+    TransferCancelled,
+    same_volume,
+    transfer_file,
+    volume_key,
+)
 
 
-def test_volume_key_uses_drive_letter():
+def test_transfer_module_has_no_uninterruptible_copy2():
+    import inspect
+
+    from frameforge.library import transfer as t
+
+    source = inspect.getsource(t)
+    assert "copy2" not in source
+    assert "TransferCancelled" in source
     assert volume_key(r"C:\Users\me\a.mp4") == "c:"
     assert volume_key(r"K:\JEREMY'S FILES\video\a.mp4") == "k:"
     assert same_volume(Path(r"C:\a\b.mp4"), Path(r"C:\x\y.mp4"))
@@ -44,6 +59,7 @@ def test_transfer_cross_volume_copy_verify_unlink(tmp_path: Path, monkeypatch):
     assert out.is_file()
     assert out.read_bytes() == b"cross-drive-payload"
     assert not src.exists()
+    assert not Path(str(dest) + ".ffpartial").exists()
 
 
 def test_transfer_rename_oserror_falls_back_to_copy(tmp_path: Path, monkeypatch):
@@ -69,20 +85,44 @@ def test_transfer_size_mismatch_keeps_source(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(t, "same_volume", lambda _a, _b: False)
 
-    def short_copy(a, b):
-        Path(b).parent.mkdir(parents=True, exist_ok=True)
-        Path(b).write_bytes(b"xx")
+    def short_copy(src, dest, **kwargs):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"xx")
 
-    monkeypatch.setattr(t.shutil, "copy2", short_copy)
+    monkeypatch.setattr(t, "_chunked_copy_file", short_copy)
     src = tmp_path / "dl" / "clip.mp4"
     dest = tmp_path / "Lib" / "clip.mp4"
     src.parent.mkdir(parents=True)
     src.write_bytes(b"full-payload")
-    try:
+    with pytest.raises(OSError, match="Size mismatch"):
         t.transfer_file(src, dest)
-        raise AssertionError("expected OSError")
-    except OSError as exc:
-        assert "Size mismatch" in str(exc)
     assert src.is_file()
     assert src.read_bytes() == b"full-payload"
     assert not dest.exists()
+    assert not Path(str(dest) + ".ffpartial").exists()
+
+
+def test_transfer_cancel_mid_file_keeps_source(tmp_path: Path, monkeypatch):
+    from frameforge.library import transfer as t
+
+    monkeypatch.setattr(t, "same_volume", lambda _a, _b: False)
+    src = tmp_path / "dl" / "big.mp4"
+    dest = tmp_path / "Lib" / "Uncategorized" / "big.mp4"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x" * 4000)
+    cancel = threading.Event()
+    ticks: list[tuple[int, int]] = []
+
+    def on_progress(copied: int, total: int) -> None:
+        ticks.append((copied, total))
+        if copied >= 64:
+            cancel.set()
+
+    with pytest.raises(TransferCancelled):
+        t.transfer_file(src, dest, cancel=cancel, on_progress=on_progress, chunk_size=64)
+    assert src.is_file()
+    assert src.read_bytes() == b"x" * 4000
+    assert not dest.exists()
+    assert not Path(str(dest) + ".ffpartial").exists()
+    assert ticks
+    assert ticks[0][0] > 0

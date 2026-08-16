@@ -529,7 +529,9 @@ def confirm_reset_library_dialog(*, on_yes: Any, on_close: Any) -> ft.AlertDialo
         title=ft.Text("Reset Library onboarding"),
         content=ft.Text(
             "Clear the Library index, collections, and onboarding flags so first-run setup "
-            "runs again. Media files on disk are not deleted."
+            "runs again. Media files on disk are not deleted. Job rows that still point at "
+            "missing Uncategorized paths are restored to the matching file under the download "
+            "folders (youtube/…) when one exists."
         ),
         actions=[
             elevated_outlined_button("Cancel", on_click=lambda _e: on_close()),

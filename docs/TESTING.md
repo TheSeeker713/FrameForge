@@ -63,6 +63,13 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.7 (Library Move chunked copy)
+
+- See [LIBRARY.md](LIBRARY.md), [AUDIT_FULL_v0.6.3_FIELD.md](AUDIT_FULL_v0.6.3_FIELD.md).
+- Tests: `tests/test_library_transfer.py` (cancel mid-copy), `tests/test_library_move.py` (dedupe, heal, in-copy abort), `tests/test_library_reset.py` (Settings dismiss vs reset dialog).
+- **Field:** not claimed until a real-tree log shows `OK #2+`.
+- Suite: `python -m pytest -q` → **497 passed / 0 skipped / 0 failed** (2026-08-16).
+
 ## v0.6.6 (cancel classification)
 
 - See [FAIL_PAUSE.md](FAIL_PAUSE.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).
