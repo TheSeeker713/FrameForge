@@ -24,9 +24,19 @@ def empty_library_state(
     onboarded: bool,
     on_setup: Any | None = None,
     on_import: Any | None = None,
+    on_scan: Any | None = None,
     pending_count: int = 0,
+    orphan_count: int = 0,
 ) -> ft.Container:
-    if onboarded:
+    if onboarded and orphan_count:
+        title = "Library folder has unindexed videos"
+        body = (
+            f"{orphan_count} video file(s) are on disk under your Library folder but not in the index. "
+            "Scan to show them here."
+        )
+        cta = "Scan library folder"
+        click = on_scan or on_import
+    elif onboarded:
         title = "No clips in Library yet"
         body = (
             "Completed downloads can be imported here. Queue playback still works from the Queue tab."
@@ -55,8 +65,19 @@ def empty_library_state(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             width=420,
         ),
-        data={"kind": "library_empty", "cta": cta},
+        data={"kind": "library_empty", "cta": cta, "orphan_count": orphan_count},
     )
+
+
+def _thumb_src(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    from pathlib import Path
+
+    path = Path(raw)
+    if path.is_file():
+        return str(path)
+    return None
 
 
 def library_tile(
@@ -70,18 +91,25 @@ def library_tile(
     on_favorite: Any | None = None,
     on_watch_later: Any | None = None,
 ) -> ft.Container:
-    thumb = item.thumb_path or ""
-    preview: ft.Control
+    thumb = _thumb_src(item.thumb_path)
+    preview_inner: ft.Control
     if thumb:
-        preview = ft.Image(src=thumb, width=200, height=112, fit=ft.BoxFit.COVER)
+        preview_inner = ft.Image(src=thumb, width=200, height=112, fit=ft.BoxFit.COVER)
     else:
-        preview = ft.Container(
+        preview_inner = ft.Container(
             width=200,
             height=112,
             bgcolor=COLORS["select"],
             alignment=ft.Alignment.CENTER,
             content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color=COLORS["text_secondary"]),
         )
+    preview = ft.Container(
+        content=preview_inner,
+        width=200,
+        height=112,
+        on_click=lambda _e, i=item.id: on_play and on_play(i),
+        data={"play": item.id},
+    )
     upscale_ok = can_upscale_library_item(item)
     upscale_btn = ft.TextButton(
         content="Upscale",
@@ -476,6 +504,8 @@ def build_library_toolbar(
     on_bulk_remove: Any | None = None,
     on_bulk_delete: Any | None = None,
     on_send_private: Any | None = None,
+    on_scan: Any | None = None,
+    orphan_count: int = 0,
 ) -> ft.Column:
     search_field = ft.TextField(
         hint_text="Search title",
@@ -508,6 +538,11 @@ def build_library_toolbar(
         on_click=lambda _e: on_move_new and on_move_new(),
     )
     move_btn.visible = pending_new > 0
+    scan_btn = elevated_outlined_button(
+        f"Scan library folder ({orphan_count})",
+        on_click=lambda _e: on_scan and on_scan(),
+    )
+    scan_btn.visible = orphan_count > 0
     add_btn = elevated_outlined_button(
         "Add to collection…",
         on_click=lambda _e: on_add_collection(),
@@ -531,6 +566,7 @@ def build_library_toolbar(
             flag_menu,
             ft.Container(expand=True),
             move_btn,
+            scan_btn,
             elevated_outlined_button("New collection", on_click=lambda _e: on_new_collection()),
             add_btn,
             upscale_bulk,
@@ -548,6 +584,9 @@ def build_library_toolbar(
         "source": source_menu,
         "flag": flag_menu,
         "move": move_btn,
+        "scan": scan_btn,
         "add": add_btn,
+        "count": count,
+        "orphan_count": orphan_count,
     }
-    return ft.Column([row], spacing=4)
+    return ft.Column([row], spacing=4, data={"count": count, "orphan_count": orphan_count})

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -43,6 +44,8 @@ from frameforge.ui_flet.queue_chrome import queue_chrome_spec
 from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import COLORS, TAB_LABELS
 from frameforge.ui_flet.window_chrome import USE_CUSTOM_TITLE_BAR, apply_page_chrome, build_custom_title_bar
+
+log = logging.getLogger(__name__)
 
 _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
@@ -204,10 +207,13 @@ class FrameForgeUi:
         self.queue_chrome: ft.Container | None = None
         self.history_list: ft.ListView | None = None
         self.library_grid: ft.GridView | None = None
+        self.library_grid_host: ft.Container | None = None
+        self.library_stack: ft.Stack | None = None
         self.library_empty: ft.Container | None = None
         self.library_toolbar: ft.Control | None = None
         self.library_body: ft.Column | None = None
         self.thumbs_grid: ft.GridView | None = None
+        self.library_visible_count: int = 0
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
         self.library_sort: str = "date"
@@ -442,12 +448,27 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.library_grid = ft.GridView(expand=True, runs_count=4, max_extent=240, spacing=8)
+        self.library_grid = ft.GridView(
+            expand=True,
+            runs_count=4,
+            max_extent=220,
+            child_aspect_ratio=0.72,
+            spacing=8,
+            run_spacing=8,
+            padding=8,
+            build_controls_on_demand=False,
+        )
         self.thumbs_grid = self.library_grid
-        self.library_empty = ft.Container(visible=False)
+        self.library_grid_host = ft.Container(expand=True, content=self.library_grid)
+        self.library_empty = ft.Container(visible=False, expand=True)
+        self.library_stack = ft.Stack(
+            [self.library_grid_host, self.library_empty],
+            expand=True,
+            fit=ft.StackFit.EXPAND,
+        )
         self.library_toolbar = ft.Container()
         self.library_body = ft.Column(
-            [self.library_toolbar, self.library_empty, self.library_grid],
+            [self.library_toolbar, self.library_stack],
             expand=True,
             spacing=8,
         )
@@ -1055,13 +1076,25 @@ class FrameForgeUi:
     def refresh_library(self) -> None:
         if self.library_grid is None:
             return
-        items = self.library.list_items(
-            search=self.library_search or None,
-            source=self.library_filter_source,
-            collection_id=self.library_filter_collection_id,
-            flag=self.library_filter_flag,
-            sort=self.library_sort,
-        )
+        from frameforge.library.scan import list_playable_items, orphan_videos
+
+        try:
+            items = list_playable_items(
+                self.library,
+                search=self.library_search or None,
+                source=self.library_filter_source,
+                collection_id=self.library_filter_collection_id,
+                flag=self.library_filter_flag,
+                sort=self.library_sort,
+            )
+        except Exception:
+            log.exception("Failed to load library items")
+            items = []
+        try:
+            orphans = orphan_videos(self.library) if self.library.root() else []
+        except Exception:
+            log.exception("Failed to scan library folder for orphans")
+            orphans = []
         pending = len(self._pending_library_jobs()) if self.library.is_onboarded() else 0
         if self.library_toolbar is not None:
             toolbar = build_library_toolbar(
@@ -1083,41 +1116,53 @@ class FrameForgeUi:
                 on_bulk_remove=lambda: self.confirm_library_remove(delete_files=False),
                 on_bulk_delete=lambda: self.confirm_library_remove(delete_files=True),
                 on_send_private=self.open_send_private,
+                on_scan=self.scan_library_folder,
+                orphan_count=len(orphans),
             )
             if self.library_body is not None and self.library_body.controls:
                 self.library_body.controls[0] = toolbar
             self.library_toolbar = toolbar
-        cells = [
-            library_tile(
-                item,
-                selected=item.id in self.library_selected_ids,
-                on_play=self.play_library_item,
-                on_reveal=self.reveal_library_item,
-                on_upscale=self.upscale_library_item,
-                on_toggle=self.toggle_library_selected,
-                on_favorite=self.toggle_library_favorite,
-                on_watch_later=self.toggle_library_watch_later,
-            )
-            for item in items
-        ]
+        cells: list[Any] = []
+        for item in items:
+            try:
+                cells.append(
+                    library_tile(
+                        item,
+                        selected=item.id in self.library_selected_ids,
+                        on_play=self.play_library_item,
+                        on_reveal=self.reveal_library_item,
+                        on_upscale=self.upscale_library_item,
+                        on_toggle=self.toggle_library_selected,
+                        on_favorite=self.toggle_library_favorite,
+                        on_watch_later=self.toggle_library_watch_later,
+                    )
+                )
+            except Exception:
+                log.exception("Library tile failed for item %s (%s)", item.id, item.path)
         self.library_grid.controls = cells
-        show_empty = len(items) == 0
+        self.library_visible_count = len(cells)
+        show_empty = len(cells) == 0
         if self.library_empty is not None:
             state = empty_library_state(
                 onboarded=self.library.is_onboarded(),
                 on_setup=self.on_library_opened,
                 on_import=self.import_completed_downloads,
+                on_scan=self.scan_library_folder,
+                orphan_count=len(orphans),
             )
             self.library_empty.visible = show_empty
+            self.library_empty.expand = show_empty
             self.library_empty.content = state.content
             self.library_empty.data = state.data
+        if self.library_grid_host is not None:
+            self.library_grid_host.visible = not show_empty
         if self.library_grid is not None:
             self.library_grid.visible = not show_empty
         if self.page is not None:
             try:
                 self.page.update()
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.exception("page.update failed after library refresh")
 
     def _on_tabs_change(self, e: Any = None) -> None:
         idx = getattr(self.tabs, "selected_index", None) if self.tabs is not None else None
@@ -1404,13 +1449,30 @@ class FrameForgeUi:
             self.library_selected_ids.add(item_id)
         self.refresh_library()
 
+    def scan_library_folder(self, _e: Any = None) -> int:
+        from frameforge.library.scan import scan_library_folder
+
+        if self.library.root() is None:
+            return 0
+        added = scan_library_folder(self.library)
+        self.refresh_library()
+        if added:
+            self._show_toast(f"Indexed {len(added)} video{'s' if len(added) != 1 else ''} from disk")
+        else:
+            self._show_toast("No new videos found on disk")
+        return len(added)
+
     def play_library_item(self, item_id: int) -> None:
         from frameforge.library.actions import play_library_item
+        from frameforge.library.scan import heal_item
         from frameforge.util.reveal import RevealError
 
         try:
-            play_library_item(self.library.get(item_id), launch=self.reveal_launch)
+            item = heal_item(self.library, self.library.get(item_id))
+            play_library_item(item, launch=self.reveal_launch)
         except RevealError:
+            self._show_toast("File not found — cannot play")
+        except KeyError:
             self._show_toast("File not found — cannot play")
 
     def reveal_library_item(self, item_id: int) -> None:

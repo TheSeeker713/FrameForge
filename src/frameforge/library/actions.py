@@ -23,15 +23,17 @@ def upscale_blocked_reason(item: LibraryItem) -> str | None:
     return None
 
 
-def play_library_item(item: LibraryItem, *, launch: bool = True) -> Path:
+def _existing_media(item: LibraryItem) -> Path:
     path = Path(item.path)
-    if not path.is_file():
-        raise RevealError(f"Path does not exist: {path}")
-    return open_in_default_player(path, launch=launch)
+    if path.is_file():
+        return path
+    raise RevealError(f"Path does not exist: {path}")
+
+
+def play_library_item(item: LibraryItem, *, launch: bool = True) -> Path:
+    """Open the media file with the OS default player (`os.startfile` on Windows)."""
+    return open_in_default_player(_existing_media(item), launch=launch)
 
 
 def reveal_library_item(item: LibraryItem, *, launch: bool = True) -> Path:
-    path = Path(item.path)
-    if not path.is_file():
-        raise RevealError(f"Path does not exist: {path}")
-    return reveal_file(path, launch=launch)
+    return reveal_file(_existing_media(item), launch=launch)

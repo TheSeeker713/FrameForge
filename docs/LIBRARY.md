@@ -22,9 +22,11 @@ Re-opening Library with a root but `library_onboarded=false` resumes at step B.
 
 ## Layout
 
-- Grid: thumb, title, source, resolution, date
-- Play (default player), Reveal in Explorer (`explorer /select,path` only — no shell theme changes), Upscale when height is known and **&lt; 2160**
-- Empty state with a setup / move CTA
+- Grid: one card per **playable** indexed file (title, thumb if the thumb file exists, resolution). Count in the toolbar equals visible cards.
+- Missing `library_items.path` is re-found under `library_root` by filename before the grid loads.
+- Click thumb or card → Play via the Windows default player (`os.startfile`). Reveal uses `explorer /select,path` only (no shell theme changes). Upscale when height is known and **&lt; 2160**.
+- If videos exist on disk under the library folder but are not indexed, **Scan library folder** imports those orphans.
+- Empty state with a setup / import / scan CTA. GridView is given a bounded host and builds tiles immediately (not on-demand), so a populated library is never a blank gray panel.
 
 ## Collections (primary folder + extra tags)
 
