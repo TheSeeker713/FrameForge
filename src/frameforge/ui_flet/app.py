@@ -231,6 +231,7 @@ class FrameForgeUi:
         self._library_move_summary: str | None = None
         self._library_move_hook: Any | None = None
         self._library_scan_roots: list[Path] | None = None
+        self._tree_repair_thread: threading.Thread | None = None
         self._move_status: ft.Text | None = None
         self._move_file: ft.Text | None = None
         self._move_bar: ft.ProgressBar | None = None
@@ -2203,6 +2204,7 @@ class FrameForgeUi:
             on_pick_watch_folder=self.pick_watch_folder,
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
+            on_repair_folders=self.repair_folders,
         )
         return self.dialogs.open("settings", self.settings_dialog)
 
@@ -2218,6 +2220,53 @@ class FrameForgeUi:
         self.refresh_library()
         self._show_toast("Library onboarding reset — media files were not deleted")
         self.on_library_opened()
+
+    def repair_folders(self, _e: Any = None) -> None:
+        self._start_tree_repair(toast=True)
+
+    def _start_tree_repair(self, *, toast: bool = False) -> None:
+        thread = self._tree_repair_thread
+        if thread is not None and thread.is_alive():
+            if toast:
+                self._show_toast("Folder repair already running")
+            return
+        db = self.repo.db_path
+
+        def _run() -> None:
+            from frameforge.db.repository import JobRepository
+            from frameforge.layout import repair_frameforge_tree
+            from frameforge.paths import frameforge_root
+
+            repo = JobRepository(db)
+            try:
+                stats = repair_frameforge_tree(frameforge_root(), site_folders=True, conn=repo.conn)
+            except Exception:  # noqa: BLE001
+                log.exception("Folder repair failed")
+                stats = {"thumbs": 0, "db": 0, "videos": 0, "junk_candidates": 0, "thumb_paths_updated": 0}
+            finally:
+                try:
+                    repo.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            self._marshal_ui(lambda: self._on_tree_repair_done(stats, toast=toast))
+
+        self._tree_repair_thread = threading.Thread(target=_run, name="frameforge-tree-repair", daemon=True)
+        self._tree_repair_thread.start()
+
+    def _on_tree_repair_done(self, stats: dict[str, int], *, toast: bool = False) -> None:
+        try:
+            self.refresh_queue(force=True)
+        except Exception:
+            log.exception("Queue refresh after folder repair failed")
+        try:
+            self.refresh_library()
+        except Exception:
+            log.exception("Library refresh after folder repair failed")
+        if toast:
+            self._show_toast(
+                f"Repair: {int(stats.get('thumbs', 0))} thumbs, {int(stats.get('db', 0))} db, "
+                f"{int(stats.get('junk_candidates', 0))} junk candidates"
+            )
 
     def _on_keyboard(self, e: Any) -> None:
         key = getattr(e, "key", None)
@@ -2360,6 +2409,7 @@ class FrameForgeUi:
         self._ensure_file_picker()
         page.add(self.build())
         self._schedule_tick()
+        self._start_tree_repair(toast=False)
 
     def shutdown(self) -> None:
         try:

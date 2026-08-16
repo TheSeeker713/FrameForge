@@ -17,13 +17,21 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 | `cookies/`, `archive/` | Auth cookies and download archive |
 | `temp/`, `models/` | Working files and ONNX models |
 
-On init, `ensure_output_tree()` creates these subfolders and **repairs** a chaotic root:
+On init, `ensure_output_tree()` creates these subfolders and **repairs loose files at the FrameForge root only** (fast, so CLI and import stay snappy):
 
 - Loose `*.jpg` / `*.jpeg` / `*.png` / `*.webp` at the FrameForge root → `thumbnails/`
-- Loose `frameforge.db` plus `-wal`/`-shm` → `database/`
+- Loose `frameforge.db` plus `-wal`/`-shm` / leftover `frameforge.db.*` → `database/` (never overwrites a live `database/frameforge.db`)
 - Loose video files at the FrameForge root → `videos/`
 
-Existing files already in the right subfolder are left alone. Repair never deletes.
+**Per-site folders stay as media homes** (`youtube/`, `x.com/`, `samplelib.com/`, `videos/`, `downloads/`, …). Videos are not relocated out of those folders.
+
+On GUI attach (background thread, does not freeze startup) and via **Settings → Repair folders**:
+
+- Image thumbs sitting **next to videos** in every site/media folder → `thumbnails/` (name collision: `name (2).ext`)
+- `jobs.options_json.thumbnail_path` and `library_items.thumb_path` are updated when those files move
+- `.part` / `.ytdl` / `.temp` / zero-byte files are **counted as junk candidates only** — never auto-deleted (use Library → Junk files…)
+
+Repair never deletes. Existing files already in the right subfolder are left alone.
 
 ## Library pick
 

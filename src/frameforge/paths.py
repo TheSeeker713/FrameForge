@@ -98,5 +98,5 @@ def ensure_output_tree() -> Path:
     root.mkdir(parents=True, exist_ok=True)
     for name in SUBDIRS:
         (root / name).mkdir(parents=True, exist_ok=True)
-    repair_frameforge_tree(root)
+    repair_frameforge_tree(root, site_folders=False)
     return root

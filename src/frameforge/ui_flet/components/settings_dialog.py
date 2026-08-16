@@ -35,6 +35,7 @@ def build_settings_dialog(
     on_pick_watch_folder: Any | None = None,
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
+    on_repair_folders: Any | None = None,
 ) -> ft.AlertDialog:
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
@@ -235,6 +236,20 @@ def build_settings_dialog(
                 ft.OutlinedButton(
                     content="Set / change Private password",
                     on_click=lambda _e: on_set_private_password and on_set_private_password(),
+                ),
+            ),
+            _card(
+                "Folders",
+                ft.Text(
+                    "Keep per-site download folders. Move thumbs next to videos into thumbnails/, "
+                    "loose SQLite into database/. Junk candidates are listed, never auto-deleted. "
+                    "Runs in the background so the window stays responsive.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.OutlinedButton(
+                    content="Repair folders",
+                    on_click=lambda _e: on_repair_folders and on_repair_folders(),
                 ),
             ),
             _card(
