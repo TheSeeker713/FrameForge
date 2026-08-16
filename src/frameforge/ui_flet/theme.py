@@ -27,7 +27,7 @@ RADIUS_PILL = 999
 FONT_FAMILY = "Segoe UI"
 WINDOW_WIDTH = 1100
 WINDOW_HEIGHT = 720
-TAB_LABELS: tuple[str, ...] = ("Queue", "History", "Thumbnails")
+TAB_LABELS: tuple[str, ...] = ("Queue", "History", "Library")
 
 # Widget elevation only — never page.window.shadow (that revives the drag ghost).
 ELEVATION_REST: dict[str, Any] = {

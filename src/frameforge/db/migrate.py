@@ -61,6 +61,55 @@ MIGRATIONS: dict[int, str] = {
     3: """
     ALTER TABLE jobs ADD COLUMN extractor TEXT;
     """,
+    4: """
+    CREATE TABLE IF NOT EXISTS library_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id INTEGER,
+        title TEXT,
+        source TEXT,
+        path TEXT NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        duration REAL,
+        thumb_path TEXT,
+        date_added TEXT NOT NULL,
+        date_modified TEXT,
+        is_private INTEGER NOT NULL DEFAULT 0,
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        watch_later INTEGER NOT NULL DEFAULT 0,
+        primary_collection_id INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_library_items_path
+        ON library_items(path);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_library_items_job
+        ON library_items(job_id) WHERE job_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_library_items_private
+        ON library_items(is_private);
+    CREATE INDEX IF NOT EXISTS idx_library_items_added
+        ON library_items(date_added);
+
+    CREATE TABLE IF NOT EXISTS library_collections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        is_seeded INTEGER NOT NULL DEFAULT 0,
+        folder_name TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE(name, kind)
+    );
+
+    CREATE TABLE IF NOT EXISTS library_item_collections (
+        item_id INTEGER NOT NULL,
+        collection_id INTEGER NOT NULL,
+        PRIMARY KEY (item_id, collection_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS library_watch_folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        path TEXT NOT NULL UNIQUE,
+        import_mode TEXT NOT NULL DEFAULT 'index'
+    );
+    """,
 }
 
 

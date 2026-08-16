@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+- Library tab replaces Thumbnails: local folder + SQLite only (no cloud)
+- First-open onboarding picks a library root and can move completed downloads into `Uncategorized/`
+- Later opens prompt only for **new** completed files not yet indexed
+- Seeded sources/types/subjects; custom collections; tag-to-folder sort (one primary path, extra tags)
+- Upscale from Library when height < 2160; Queue playback unchanged
+- Settings: change library root (re-index warning), extra watch folders (index or import)
+- Private: local password, **copy** into ZipCrypto zip, optional `.ffpriv` disguise, Keep / Recycle Bin / Move originals
+- Docs: `docs/LIBRARY.md`, `docs/LIBRARY_PRIVATE.md`, `docs/V0.6_COMPLETE.md`
+
 ## 0.5.9
 
 - Recover `download_path` after yt-dlp exit 0 via printed path, `*[id].*` glob, recent media, and info.json (`docs/OUTPUT_PATH.md`)

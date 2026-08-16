@@ -36,7 +36,7 @@ DEFAULT_SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("quit", "Quit (exit policy)", "<Control-q>", "Ctrl+Q"),
     Shortcut("tab_queue", "Switch to Queue tab", "<Control-Key-1>", "Ctrl+1"),
     Shortcut("tab_history", "Switch to History tab", "<Control-Key-2>", "Ctrl+2"),
-    Shortcut("tab_thumbnails", "Switch to Thumbnails tab", "<Control-Key-3>", "Ctrl+3"),
+    Shortcut("tab_thumbnails", "Switch to Library tab", "<Control-Key-3>", "Ctrl+3"),
     Shortcut("open_settings", "Open Settings", "<Control-comma>", "Ctrl+,"),
     Shortcut("shortcuts_help", "Open Keyboard shortcuts help", "<F1>", "F1"),
 )

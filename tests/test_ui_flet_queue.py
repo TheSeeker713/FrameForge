@@ -133,12 +133,14 @@ def test_history_filter_and_redownload_pending(tmp_path: Path):
 
 
 def test_thumbs_grid_and_resource_banner(tmp_path: Path):
+    import flet as ft
+
     ui = _ui(tmp_path)
     job = ui.repo.enqueue("https://example.com/t", title="thumb")
     ui.repo.update_status(job.id, "completed")
     ui.build()
-    assert ui.thumbs_grid is not None
-    assert any(c.data.get("job_id") == job.id for c in ui.thumbs_grid.controls)
+    assert ui.library_grid is not None
+    assert isinstance(ui.library_grid, ft.GridView)
     ui.set_resource_banner("High RAM 91%")
     assert ui.resource_banner.visible is True
     assert "91%" in ui.resource_banner.data["text"]

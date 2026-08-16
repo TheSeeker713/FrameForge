@@ -1,1 +1,1 @@
-"""Flet page shells (Queue, History, Thumbnails)."""
+"""Flet page shells (Queue, History, Library)."""

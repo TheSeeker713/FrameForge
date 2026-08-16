@@ -21,7 +21,7 @@ Plain letter keys are not stolen while the URL/text entry is focused unless **Ct
 | Quit (exit policy) | Ctrl+Q |
 | Queue tab | Ctrl+1 |
 | History tab | Ctrl+2 |
-| Thumbnails tab | Ctrl+3 |
+| Library tab | Ctrl+3 |
 | Open Settings | Ctrl+, |
 | Keyboard shortcuts help | F1 |
 

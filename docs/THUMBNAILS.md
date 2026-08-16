@@ -20,4 +20,4 @@ Thumbnails are copies of public (or cookie-gated) preview images written to your
 ## UI
 
 - Queue and History rows show a 48×36 preview (or a neutral placeholder). Decoded images are cached per path so the 1s GUI tick does not re-open large files.
-- **Thumbnails** tab grids recent jobs that have a local thumb. Click a tile to select that job on Queue/History (`focus_job`).
+- **Library** tab catalogs local files you moved or indexed. Queue and History rows still show a 48×36 preview. Click a completed Queue thumbnail to play.

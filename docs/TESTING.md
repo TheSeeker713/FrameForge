@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.0 (Library + collections + Private)
+
+- See [V0.6_COMPLETE.md](V0.6_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md).
+- Suite: `python -m pytest -q` → **423 passed / 0 skipped / 0 failed**.
+- Tests: `tests/test_library.py`, `tests/test_library_private.py`.
+
 ## v0.5.9 (output path recovery + field UX)
 
 - See [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md), [OUTPUT_PATH.md](OUTPUT_PATH.md).

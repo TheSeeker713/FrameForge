@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import flet as ft
 
 from frameforge.db.repository import JobRepository
+from frameforge.library.store import LibraryStore
 from frameforge.paths import db_path, ensure_output_tree
 from frameforge.pipeline import build_worker
 from frameforge.ui_flet.bridge import UiBridge
@@ -20,6 +21,19 @@ from frameforge.ui_flet.components.job_card import (
     build_job_card,
     build_queue_chrome,
     empty_queue_state,
+)
+from frameforge.ui_flet.components.library import (
+    add_to_collection_dialog,
+    build_library_toolbar,
+    confirm_remove_dialog,
+    create_collection_dialog,
+    empty_library_state,
+    library_tile,
+    new_downloads_dialog,
+    onboarding_dialog,
+    private_disposition_dialog,
+    private_password_dialog,
+    send_private_dialog,
 )
 from frameforge.ui_flet.components.settings_dialog import build_settings_dialog
 from frameforge.ui_flet.components.status_pill import status_from_repo
@@ -123,12 +137,13 @@ def build_hero(*, on_add: Any | None = None, on_import: Any | None = None) -> ft
 def build_tabs(
     queue: ft.Control | None = None,
     history: ft.Control | None = None,
+    library: ft.Control | None = None,
     thumbs: ft.Control | None = None,
 ) -> ft.Tabs:
     views = [
         queue or _placeholder_panel("Queue"),
         history or _placeholder_panel("History"),
-        thumbs or _placeholder_panel("Thumbnails"),
+        library or thumbs or _placeholder_panel("Library"),
     ]
     return ft.Tabs(
         length=len(TAB_LABELS),
@@ -163,6 +178,7 @@ class FrameForgeUi:
     ) -> None:
         ensure_output_tree()
         self.repo = repo or JobRepository(db_path())
+        self.library = LibraryStore(self.repo)
         self.worker = worker or build_worker(self.repo)
         self.bridge = UiBridge(self.repo, self.worker)
         if recover_on_launch:
@@ -186,7 +202,20 @@ class FrameForgeUi:
         self.queue_list: ft.ListView | None = None
         self.queue_chrome: ft.Container | None = None
         self.history_list: ft.ListView | None = None
+        self.library_grid: ft.GridView | None = None
+        self.library_empty: ft.Container | None = None
+        self.library_toolbar: ft.Control | None = None
+        self.library_body: ft.Column | None = None
         self.thumbs_grid: ft.GridView | None = None
+        self.library_selected_ids: set[int] = set()
+        self.library_search: str = ""
+        self.library_sort: str = "date"
+        self.library_filter_source: str | None = None
+        self.library_filter_collection_id: int | None = None
+        self.library_filter_flag: str | None = None
+        self._library_prompt_deferred = False
+        self.private_session_password: str | None = None
+        self._pending_private_packs: list[Any] = []
         self.floating: ft.Container | None = None
         self.resource_banner: ft.Container | None = None
         self.undo_banner: ft.Container | None = None
@@ -402,7 +431,15 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.thumbs_grid = ft.GridView(expand=True, runs_count=4, max_extent=220, spacing=8)
+        self.library_grid = ft.GridView(expand=True, runs_count=4, max_extent=240, spacing=8)
+        self.thumbs_grid = self.library_grid
+        self.library_empty = ft.Container(visible=False)
+        self.library_toolbar = ft.Container()
+        self.library_body = ft.Column(
+            [self.library_toolbar, self.library_empty, self.library_grid],
+            expand=True,
+            spacing=8,
+        )
         self.floating = ft.Container(visible=False)
         queue_body = ft.Column(
             [self.queue_chrome, self.floating, self.queue_list],
@@ -425,7 +462,8 @@ class FrameForgeUi:
             ]
         )
         history_body = ft.Column([hist_filters, self.history_list], expand=True)
-        self.tabs = build_tabs(queue_body, history_body, self.thumbs_grid)
+        self.tabs = build_tabs(queue_body, history_body, self.library_body)
+        self.tabs.on_change = self._on_tabs_change
         controls: list[ft.Control] = [
             self.header,
             self.hero,
@@ -451,7 +489,7 @@ class FrameForgeUi:
         )
         self.refresh_queue(force=True)
         self.refresh_history()
-        self.refresh_thumbs()
+        self.refresh_library()
         return root
 
     def queue_jobs(self) -> list[Any]:
@@ -994,26 +1032,470 @@ class FrameForgeUi:
         self.refresh_history()
 
     def refresh_thumbs(self) -> None:
-        if self.thumbs_grid is None:
+        self.refresh_library()
+
+    def _pending_library_jobs(self):
+        from frameforge.library.ingest import completed_jobs_not_in_library
+
+        if not self.library.is_onboarded() or self.library.root() is None:
+            return []
+        return completed_jobs_not_in_library(self.repo, self.library)
+
+    def refresh_library(self) -> None:
+        if self.library_grid is None:
             return
-        cells = []
-        for job in self.repo.list_history():
-            cells.append(
-                ft.Container(
-                    bgcolor=COLORS["surface"],
-                    border=ft.Border.all(1, COLORS["border"]),
-                    border_radius=12,
-                    padding=8,
-                    content=ft.Column(
-                        [
-                            ft.Text(f"#{job.id}", color=COLORS["text_secondary"], size=11),
-                            ft.Text(job.title or job.url, max_lines=2, color=COLORS["text_primary"]),
-                        ]
-                    ),
-                    data={"job_id": job.id},
-                )
+        items = self.library.list_items(
+            search=self.library_search or None,
+            source=self.library_filter_source,
+            collection_id=self.library_filter_collection_id,
+            flag=self.library_filter_flag,
+            sort=self.library_sort,
+        )
+        pending = len(self._pending_library_jobs()) if self.library.is_onboarded() else 0
+        if self.library_toolbar is not None:
+            toolbar = build_library_toolbar(
+                count=len(items),
+                search=self.library_search,
+                sort=self.library_sort,
+                source=self.library_filter_source,
+                flag=self.library_filter_flag,
+                on_search=self.set_library_search,
+                on_sort=self.set_library_sort,
+                on_source=self.set_library_source,
+                on_flag=self.set_library_flag,
+                on_new_collection=self.open_new_collection,
+                on_add_collection=self.open_add_to_collection,
+                on_move_new=self.open_library_new_files,
+                pending_new=pending,
+                has_selection=bool(self.library_selected_ids),
+                on_bulk_upscale=self.upscale_library_selected,
+                on_bulk_remove=lambda: self.confirm_library_remove(delete_files=False),
+                on_bulk_delete=lambda: self.confirm_library_remove(delete_files=True),
+                on_send_private=self.open_send_private,
             )
-        self.thumbs_grid.controls = cells
+            if self.library_body is not None and self.library_body.controls:
+                self.library_body.controls[0] = toolbar
+            self.library_toolbar = toolbar
+        cells = [
+            library_tile(
+                item,
+                selected=item.id in self.library_selected_ids,
+                on_play=self.play_library_item,
+                on_reveal=self.reveal_library_item,
+                on_upscale=self.upscale_library_item,
+                on_toggle=self.toggle_library_selected,
+                on_favorite=self.toggle_library_favorite,
+                on_watch_later=self.toggle_library_watch_later,
+            )
+            for item in items
+        ]
+        self.library_grid.controls = cells
+        show_empty = len(items) == 0
+        if self.library_empty is not None:
+            self.library_empty.visible = show_empty
+            self.library_empty.content = empty_library_state(
+                onboarded=self.library.is_onboarded(),
+                on_setup=self.on_library_opened,
+            ).content
+            self.library_empty.data = {"kind": "library_empty"}
+        if self.library_grid is not None:
+            self.library_grid.visible = not show_empty
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _on_tabs_change(self, e: Any = None) -> None:
+        idx = getattr(self.tabs, "selected_index", None) if self.tabs is not None else None
+        if e is not None:
+            ctrl = getattr(e, "control", None)
+            idx = getattr(ctrl, "selected_index", idx)
+        if idx == 2:
+            self.on_library_opened()
+
+    def on_library_opened(self, _e: Any = None) -> ft.AlertDialog | None:
+        self.refresh_library()
+        if not self.library.is_onboarded():
+            return self.open_library_onboarding()
+        pending = self._pending_library_jobs()
+        if pending and not self._library_prompt_deferred:
+            return self.open_library_new_files()
+        return None
+
+    def open_library_onboarding(self) -> ft.AlertDialog:
+        root = self.library.root()
+        from frameforge.library.ingest import completed_jobs_not_in_library
+
+        pending = completed_jobs_not_in_library(self.repo, self.library) if root else []
+        dlg = onboarding_dialog(
+            root_label=str(root) if root else None,
+            pending_count=len(pending),
+            on_choose=self.pick_library_root,
+            on_move=self.confirm_library_move,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("library_onboard", dlg)
+
+    def open_library_new_files(self, _e: Any = None) -> ft.AlertDialog | None:
+        pending = self._pending_library_jobs()
+        if not pending:
+            return None
+        dlg = new_downloads_dialog(
+            len(pending),
+            on_yes=self.confirm_library_move,
+            on_not_now=self.defer_library_new_files,
+        )
+        return self.dialogs.open("library_new", dlg)
+
+    def defer_library_new_files(self, _e: Any = None) -> None:
+        self._library_prompt_deferred = True
+        self.close_dialog()
+
+    def pick_library_root(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_library_root)
+
+    async def _pick_library_root(self) -> None:
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Choose Library folder")
+        if path:
+            self.apply_library_root(path)
+
+    def apply_library_root(self, path: str | Path) -> None:
+        self.library.complete_onboarding(path)
+        self.close_dialog()
+        pending = self._pending_library_jobs()
+        self.refresh_library()
+        if pending:
+            self.open_library_new_files()
+
+    def confirm_library_move(self, _e: Any = None) -> list[Any]:
+        from frameforge.library.ingest import ingest_completed_jobs
+
+        if self.library.root() is None:
+            return []
+        results = ingest_completed_jobs(self.repo, self.library)
+        self._library_prompt_deferred = False
+        self.close_dialog()
+        self.refresh_library()
+        self.refresh_queue(force=True)
+        n = len(results)
+        if n:
+            self._show_toast(f"Moved {n} file{'s' if n != 1 else ''} into Library")
+        return results
+
+    def set_library_search(self, value: str) -> None:
+        self.library_search = value or ""
+        self.refresh_library()
+
+    def set_library_sort(self, value: str) -> None:
+        self.library_sort = value or "date"
+        self.refresh_library()
+
+    def set_library_source(self, value: str | None) -> None:
+        self.library_filter_source = value
+        self.refresh_library()
+
+    def set_library_flag(self, value: str | None) -> None:
+        self.library_filter_flag = value
+        self.refresh_library()
+
+    def toggle_library_selected(self, item_id: int) -> None:
+        if item_id in self.library_selected_ids:
+            self.library_selected_ids.discard(item_id)
+        else:
+            self.library_selected_ids.add(item_id)
+        self.refresh_library()
+
+    def play_library_item(self, item_id: int) -> None:
+        from frameforge.library.actions import play_library_item
+        from frameforge.util.reveal import RevealError
+
+        try:
+            play_library_item(self.library.get(item_id), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found — cannot play")
+
+    def reveal_library_item(self, item_id: int) -> None:
+        from frameforge.library.actions import reveal_library_item
+        from frameforge.util.reveal import RevealError
+
+        try:
+            reveal_library_item(self.library.get(item_id), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found — cannot reveal")
+
+    def upscale_library_item(self, item_id: int) -> None:
+        from frameforge.library.actions import can_upscale_library_item, upscale_blocked_reason
+
+        item = self.library.get(item_id)
+        if not can_upscale_library_item(item):
+            self._show_toast(upscale_blocked_reason(item) or "Upscale blocked")
+            return
+        if not item.job_id:
+            self._show_toast("No queue job for this file")
+            return
+        job = self.repo.get(item.job_id)
+        if getattr(job, "upscale_blocked", False):
+            self._show_toast("Upscale blocked: 4K / ≥2160p")
+            return
+        if hasattr(self.worker, "request_upscale_ids"):
+            self.worker.request_upscale_ids([item.job_id])
+        self._show_toast("Queued for upscale")
+        self.refresh_queue(force=True)
+
+    def open_new_collection(self, _e: Any = None) -> ft.AlertDialog:
+        dlg = create_collection_dialog(
+            on_create=self.create_library_collection,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("library_collection", dlg)
+
+    def create_library_collection(self, name: str) -> Any:
+        label = (name or "").strip()
+        if not label:
+            return None
+        col = self.library.create_collection(label)
+        self.close_dialog()
+        self.refresh_library()
+        return col
+
+    def open_add_to_collection(self, _e: Any = None) -> ft.AlertDialog | None:
+        if not self.library_selected_ids:
+            self._show_toast("Select clips first")
+            return None
+        cols = [
+            c
+            for c in self.library.list_collections()
+            if c.kind in {"type", "custom", "subject"}
+        ]
+        dlg = add_to_collection_dialog(
+            cols,
+            on_apply=self.apply_library_collections,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("library_tag", dlg)
+
+    def apply_library_collections(self, collection_ids: list[int]) -> None:
+        from frameforge.library.ingest import assign_to_collection
+
+        ids = sorted(self.library_selected_ids)
+        folder_ids = []
+        tag_ids = []
+        for cid in collection_ids:
+            col = self.library.get_collection(cid)
+            if col.uses_folder:
+                folder_ids.append(cid)
+            else:
+                tag_ids.append(cid)
+        primary = folder_ids[0] if folder_ids else None
+        if primary is not None:
+            assign_to_collection(self.repo, self.library, ids, primary, make_primary=True)
+            for extra in folder_ids[1:]:
+                assign_to_collection(self.repo, self.library, ids, extra, make_primary=False)
+        for cid in tag_ids:
+            assign_to_collection(self.repo, self.library, ids, cid, make_primary=False)
+        self.close_dialog()
+        self.refresh_library()
+
+    def select_library_tab(self) -> None:
+        if self.tabs is not None:
+            self.tabs.selected_index = 2
+        self.on_library_opened()
+
+    def toggle_library_favorite(self, item_id: int) -> None:
+        item = self.library.get(item_id)
+        self.library.set_flags(item_id, is_favorite=not item.is_favorite)
+        self.refresh_library()
+
+    def toggle_library_watch_later(self, item_id: int) -> None:
+        item = self.library.get(item_id)
+        self.library.set_flags(item_id, watch_later=not item.watch_later)
+        self.refresh_library()
+
+    def upscale_library_selected(self) -> None:
+        from frameforge.library.actions import can_upscale_library_item
+
+        job_ids = []
+        for item_id in sorted(self.library_selected_ids):
+            item = self.library.get(item_id)
+            if can_upscale_library_item(item) and item.job_id:
+                job_ids.append(item.job_id)
+        if job_ids and hasattr(self.worker, "request_upscale_ids"):
+            self.worker.request_upscale_ids(job_ids)
+            self._show_toast(f"Queued {len(job_ids)} for upscale")
+        elif not job_ids:
+            self._show_toast("No eligible clips (need height < 2160 and a queue job)")
+        self.refresh_queue(force=True)
+
+    def confirm_library_remove(self, *, delete_files: bool) -> ft.AlertDialog | None:
+        n = len(self.library_selected_ids)
+        if not n:
+            return None
+        dlg = confirm_remove_dialog(
+            n,
+            delete_files=delete_files,
+            on_yes=lambda: self.apply_library_remove(delete_files=delete_files),
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("library_remove", dlg)
+
+    def apply_library_remove(self, *, delete_files: bool) -> None:
+        from frameforge.util.recycle import send_to_recycle_bin
+
+        ids = sorted(self.library_selected_ids)
+        for item_id in ids:
+            item = self.library.get(item_id)
+            path = Path(item.path)
+            self.library.remove_item(item_id)
+            if delete_files and path.is_file():
+                send_to_recycle_bin(path, recycle=self.reveal_launch)
+        self.library_selected_ids.clear()
+        self.close_dialog()
+        self.refresh_library()
+
+    def pick_watch_folder(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_watch_folder)
+
+    async def _pick_watch_folder(self) -> None:
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Add extra folder")
+        if path:
+            self.add_library_watch_folder(path)
+
+    def add_library_watch_folder(self, path: str | Path, *, import_mode: str = "index") -> None:
+        from frameforge.library.ingest import index_folder
+
+        dest = self.library.add_watch_folder(path, import_mode=import_mode)
+        if import_mode == "index":
+            index_folder(self.library, dest)
+        else:
+            from frameforge.library.ingest import import_folder
+
+            import_folder(self.library, dest)
+        self.refresh_library()
+
+    def open_set_private_password(self, _e: Any = None) -> ft.AlertDialog:
+        dlg = private_password_dialog(
+            title="Set Private password",
+            confirm=True,
+            on_submit=self.apply_private_password,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("private_password", dlg)
+
+    def apply_private_password(self, password: str) -> None:
+        from frameforge.library.private import set_private_password
+
+        set_private_password(self.library, password)
+        self.private_session_password = password
+        self.close_dialog()
+        self._show_toast("Private password saved on this PC")
+
+    def open_send_private(self, _e: Any = None) -> ft.AlertDialog | None:
+        from frameforge.library.private import DEFAULT_DISGUISE, has_private_password
+
+        if not self.library_selected_ids:
+            return None
+        if not has_private_password(self.library):
+            return self.open_set_private_password()
+        if not self.private_session_password:
+            return self.open_private_unlock(next_action="send")
+        dlg = send_private_dialog(
+            len(self.library_selected_ids),
+            disguise_default=DEFAULT_DISGUISE,
+            on_confirm=self.confirm_send_private,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("send_private", dlg)
+
+    def open_private_unlock(self, *, next_action: str = "unlock") -> ft.AlertDialog:
+        def submit(pw: str) -> None:
+            from frameforge.library.private import unlock_session
+
+            if not unlock_session(self.library, pw):
+                self._show_toast("Wrong password")
+                return
+            self.private_session_password = pw
+            self.close_dialog()
+            if next_action == "send":
+                self.open_send_private()
+
+        dlg = private_password_dialog(
+            title="Unlock Private",
+            confirm=False,
+            on_submit=submit,
+            on_close=self.close_dialog,
+        )
+        return self.dialogs.open("private_unlock", dlg)
+
+    def confirm_send_private(self, disguise: bool) -> None:
+        from frameforge.library.private import send_to_private
+
+        if not self.private_session_password:
+            self._show_toast("Unlock Private first")
+            return
+        packs = send_to_private(
+            self.library,
+            sorted(self.library_selected_ids),
+            password=self.private_session_password,
+            disguise=disguise,
+        )
+        self._pending_private_packs = packs
+        self.close_dialog()
+        dlg = private_disposition_dialog(
+            on_keep=lambda: self.dispose_private_originals("keep"),
+            on_trash=lambda: self.dispose_private_originals("trash"),
+            on_move=self.pick_private_originals_dest,
+        )
+        self.dialogs.open("private_disposition", dlg)
+
+    def dispose_private_originals(self, mode: str, dest_dir: str | Path | None = None) -> None:
+        from frameforge.library.private import dispose_originals
+
+        originals = [p.original for p in self._pending_private_packs]
+        dispose_originals(
+            self.library,
+            originals,
+            mode=mode,
+            dest_dir=dest_dir,
+            recycle=self.reveal_launch,
+        )
+        self._pending_private_packs = []
+        self.library_selected_ids.clear()
+        self.close_dialog()
+        self.refresh_library()
+
+    def pick_private_originals_dest(self, _e: Any = None) -> None:
+        if self.page is None:
+            self.dispose_private_originals("keep")
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_private_originals_dest)
+
+    async def _pick_private_originals_dest(self) -> None:
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Move originals to folder")
+        if path:
+            self.dispose_private_originals("move", path)
 
     def set_resource_banner(self, text: str | None) -> None:
         if self.resource_banner is None:
@@ -1326,6 +1808,10 @@ class FrameForgeUi:
             self.repo,
             on_close=self.close_dialog,
             on_open_cookies=self.open_cookies_folder,
+            library=self.library,
+            on_pick_library_root=self.pick_library_root,
+            on_pick_watch_folder=self.pick_watch_folder,
+            on_set_private_password=self.open_set_private_password,
         )
         return self.dialogs.open("settings", self.settings_dialog)
 
@@ -1337,6 +1823,9 @@ class FrameForgeUi:
         ctrl = bool(getattr(e, "ctrl", False))
         if ctrl and str(key).upper() in {"Q"}:
             self.handle_window_close()
+            return
+        if ctrl and str(key) in {"3", "Digit3", "Numpad3"}:
+            self.select_library_tab()
 
     def _on_window_event(self, e: Any) -> None:
         et = getattr(e, "type", None)
@@ -1476,7 +1965,7 @@ def build_header_default() -> ft.Row:
 
 
 def build_shell() -> ft.Column:
-    """Light chrome: header + hero + Queue/History/Thumbnails placeholders (no backend)."""
+    """Light chrome: header + hero + Queue/History/Library placeholders (no backend)."""
     return ft.Column(
         expand=True,
         spacing=16,

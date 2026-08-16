@@ -30,6 +30,10 @@ def build_settings_dialog(
     on_save: Any | None = None,
     on_close: Any | None = None,
     on_open_cookies: Any | None = None,
+    library: Any | None = None,
+    on_pick_library_root: Any | None = None,
+    on_pick_watch_folder: Any | None = None,
+    on_set_private_password: Any | None = None,
 ) -> ft.AlertDialog:
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
@@ -198,6 +202,41 @@ def build_settings_dialog(
                 ram,
             ),
             _card(
+                "Library (local only)",
+                ft.Text(
+                    "Changing the library root does not move files automatically. Re-index extra folders after you confirm.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.Text(
+                    f"Library folder: {library.root() if library and library.root() else 'not set'}",
+                    selectable=True,
+                    size=12,
+                    color=COLORS["text_primary"],
+                ),
+                ft.OutlinedButton(
+                    content="Change library folder…",
+                    on_click=lambda _e: on_pick_library_root and on_pick_library_root(),
+                ),
+                ft.OutlinedButton(
+                    content="Add extra folder (index)…",
+                    on_click=lambda _e: on_pick_watch_folder and on_pick_watch_folder(),
+                ),
+            ),
+            _card(
+                "Private",
+                ft.Text(
+                    "Password-gated copies in a zip. Extension disguise hides from casual browsing. "
+                    "Not remote security. Forgotten password cannot be recovered by email.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.OutlinedButton(
+                    content="Set / change Private password",
+                    on_click=lambda _e: on_set_private_password and on_set_private_password(),
+                ),
+            ),
+            _card(
                 "System Behavior",
                 tray,
                 fail_pause,
@@ -207,7 +246,7 @@ def build_settings_dialog(
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         width=480,
-        height=640,
+        height=720,
     )
     dlg = ft.AlertDialog(
         modal=False,

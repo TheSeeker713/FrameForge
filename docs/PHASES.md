@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.5.9 (output path recovery + field UX)
+## Status: v0.6.0 (Library + collections + Private)
 
-Package version is **0.5.9**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md), [OUTPUT_PATH.md](OUTPUT_PATH.md), [UI_SHUTDOWN.md](UI_SHUTDOWN.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SHELL_SAFETY.md](SHELL_SAFETY.md).
+Package version is **0.6.0**. Primary GUI is Flet (`python -m frameforge --gui`). Sequential SQLite WAL worker unchanged. See [V0.6_COMPLETE.md](V0.6_COMPLETE.md), [LIBRARY.md](LIBRARY.md), [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md), [V0.5.9_COMPLETE.md](V0.5.9_COMPLETE.md).
 
 ## Phase 0 – Foundation
 
