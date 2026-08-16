@@ -15,6 +15,8 @@ SUBDIRS = (
     "archive",
     "cookies",
     "thumbnails",
+    "database",
+    "videos",
 )
 
 
@@ -73,17 +75,28 @@ def cookies_dir() -> Path:
     return frameforge_root() / "cookies"
 
 
+def database_dir() -> Path:
+    return frameforge_root() / "database"
+
+
+def videos_dir() -> Path:
+    return frameforge_root() / "videos"
+
+
 def thumbnails_dir() -> Path:
     return frameforge_root() / "thumbnails"
 
 
 def db_path() -> Path:
-    return frameforge_root() / "frameforge.db"
+    return database_dir() / "frameforge.db"
 
 
 def ensure_output_tree() -> Path:
+    from frameforge.layout import repair_frameforge_tree
+
     root = frameforge_root()
     root.mkdir(parents=True, exist_ok=True)
     for name in SUBDIRS:
         (root / name).mkdir(parents=True, exist_ok=True)
+    repair_frameforge_tree(root)
     return root

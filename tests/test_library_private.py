@@ -69,9 +69,9 @@ def test_wrong_password_fails_closed(tmp_path: Path):
     assert verify_password("ok", None) is False
     repo = _repo(tmp_path)
     store = LibraryStore(repo)
-    store.complete_onboarding(tmp_path / "Lib")
+    home = store.complete_onboarding(tmp_path / "Lib")
     set_private_password(store, "ok")
-    clip = tmp_path / "Lib" / "Uncategorized" / "x.mp4"
+    clip = home / "Uncategorized" / "x.mp4"
     clip.parent.mkdir(parents=True, exist_ok=True)
     clip.write_bytes(b"x")
     item = store.add_item(path=clip, title="x")

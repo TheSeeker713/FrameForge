@@ -78,9 +78,13 @@ class LibraryStore:
         return Path(raw)
 
     def set_root(self, path: str | Path) -> Path:
-        root = Path(path).expanduser().resolve()
-        root.mkdir(parents=True, exist_ok=True)
-        (root / INGEST_FOLDER).mkdir(parents=True, exist_ok=True)
+        from frameforge.layout import ensure_library_tree, resolve_library_home, repair_frameforge_tree
+
+        root = resolve_library_home(path)
+        ensure_library_tree(root)
+        forge = root.parent
+        if forge.name.lower() == "frameforge":
+            repair_frameforge_tree(forge)
         self.set_setting(SETTING_ROOT, str(root))
         return root
 

@@ -55,12 +55,15 @@ def test_migration_creates_library_tables(tmp_path: Path):
 def test_onboarding_sets_root(tmp_path: Path):
     repo = _repo(tmp_path)
     store = LibraryStore(repo)
-    root = tmp_path / "MyLib"
-    store.set_root(root)
+    picked = tmp_path / "MyLib"
+    home = store.set_root(picked)
     assert store.is_onboarded() is False
     assert store.onboarding_step() == "move"
-    assert store.root() == root.resolve()
-    assert (root / "Uncategorized").is_dir()
+    assert home == (picked / "FrameForge" / "Library").resolve()
+    assert store.root() == home
+    assert (home / "Uncategorized").is_dir()
+    assert (picked / "FrameForge" / "thumbnails").is_dir()
+    assert (picked / "FrameForge" / "database").is_dir()
     store.mark_onboarded()
     assert store.is_onboarded()
     assert store.onboarding_step() == "done"

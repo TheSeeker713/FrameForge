@@ -1,6 +1,6 @@
 # Library
 
-Local media catalog. **No cloud, no accounts, no telemetry sync.** Metadata lives in the same SQLite file as the download queue (`frameforge.db`). Files live under a folder you choose (any drive).
+Local media catalog. **No cloud, no accounts, no telemetry sync.** Metadata lives in the same SQLite file as the download queue (`database/frameforge.db` under the download FrameForge root). Library **files** live under `<picked>/FrameForge/Library/` — see [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
 
 Queue and History are unchanged: completed downloads stay playable from the Queue thumbnail/row even after they are moved into Library.
 
@@ -10,7 +10,7 @@ The **Library** tab replaced **Thumbnails**. Preview images still cache under `%
 
 Onboarding is two steps. **`library_root` and `library_onboarded` are separate.** Choosing a folder does **not** finish setup.
 
-1. First Library open if `library_onboarded` is not set → step A: pick a library root (any drive). Only `library_root` is saved.
+1. First Library open if `library_onboarded` is not set → step A: pick a library root (any drive). FrameForge creates `<picked>/FrameForge/Library/` and stores that as `library_root` (never the bare picked folder).
 2. Step B (same session, wizard stays open / resumes here if you reopen Library): scan **completed jobs with a file on disk** and **video files under the download tree** (`Downloads/FrameForge/…`) that are not in `library_items`. Show the combined count plus a short sample list.
    - **Move to Library** — files move on a **background worker thread** (never the Flet UI thread). Destination is `library_root/Uncategorized/` (filenames kept; job paths update only after the destination exists). The wizard shows a determinate progress bar, “Moving N of M…”, the current filename, and **Cancel**. The bar stays up until a **summary** (moved / failed / skipped / disk files). Per-file errors are logged and counted; the rest of the batch continues. On a clean finish with nothing left to move, set `library_onboarded`. Cancel stops before the next file; already-moved files stay in Library (no rollback).
    - **Skip for now** — keep `library_root`, set `library_onboarded`, leave files in the download folders. Import later from the empty-state **Import completed downloads** button.

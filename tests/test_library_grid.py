@@ -96,8 +96,8 @@ def test_scan_indexes_disk_orphans(tmp_path: Path):
 def test_play_opens_default_player_path(tmp_path: Path):
     repo = _repo(tmp_path)
     store = LibraryStore(repo)
-    store.complete_onboarding(tmp_path / "Lib")
-    src = _clip(tmp_path / "Lib" / "Uncategorized" / "play.mp4")
+    root = store.complete_onboarding(tmp_path / "Lib")
+    src = _clip(root / "Uncategorized" / "play.mp4")
     item = store.add_item(path=src, title="Play me")
     opened = play_library_item(item, launch=False)
     assert opened.resolve() == src.resolve()

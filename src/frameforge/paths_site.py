@@ -45,6 +45,8 @@ _RESERVED = frozenset(
         "archive",
         "cookies",
         "thumbnails",
+        "database",
+        "videos",
         "frameforge.db",
     }
 )
