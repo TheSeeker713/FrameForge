@@ -112,6 +112,38 @@ def build_settings_dialog(
         label="Use yt-dlp default YouTube clients (no extractor-args)",
         value=str(repo.get_setting("youtube_use_ytdlp_clients", "0") or "0") == "1",
     )
+    from frameforge.download.impersonate import (
+        DEFAULT_MODE as IMPERSONATE_DEFAULT,
+        MODE_ALWAYS,
+        MODE_AUTO,
+        MODE_OFF,
+        impersonate_mode,
+        impersonation_status,
+    )
+
+    _imp_labels = {
+        MODE_AUTO: "Auto (PornHub / MindGeek)",
+        MODE_ALWAYS: "Always",
+        MODE_OFF: "Off",
+    }
+    _imp_from_label = {v: k for k, v in _imp_labels.items()}
+    impersonate_dd = ft.Dropdown(
+        label="Browser impersonate (--impersonate)",
+        value=_imp_labels.get(impersonate_mode(repo), _imp_labels[IMPERSONATE_DEFAULT]),
+        options=[ft.dropdown.Option(lab) for lab in _imp_labels.values()],
+        width=320,
+    )
+    imp_st = impersonation_status()
+    impersonate_tip = ft.Text(
+        (
+            f"Chrome impersonate available (curl_cffi {imp_st.get('curl_cffi_version')}; "
+            f"selected {imp_st.get('selected')})"
+            if imp_st.get("ok")
+            else (imp_st.get("error") or "Chrome impersonate unavailable — run --check-env.")
+        ),
+        color=COLORS["text_secondary"] if imp_st.get("ok") else COLORS["warn"],
+        size=12,
+    )
 
     js = js_runtime_status()
     js_tip = ft.Text(
@@ -171,6 +203,10 @@ def build_settings_dialog(
             "youtube_player_clients",
             str(clients.value or DEFAULT_PLAYER_CLIENTS).strip() or DEFAULT_PLAYER_CLIENTS,
         )
+        repo.set_setting(
+            "impersonate_mode",
+            _imp_from_label.get(str(impersonate_dd.value or ""), IMPERSONATE_DEFAULT),
+        )
         if ram.value:
             repo.set_setting("ram_warning_pct", str(ram.value).strip())
         raw_upscale_min = str(upscale_max_min.value or "15").strip() or "15"
@@ -208,6 +244,8 @@ def build_settings_dialog(
                 innertube,
                 ytdlp_defaults,
                 clients,
+                impersonate_dd,
+                impersonate_tip,
             ),
             _card(
                 "Cookies",
@@ -327,6 +365,7 @@ def build_settings_dialog(
         "upscale": upscale,
         "tray": tray,
         "fail_pause": fail_pause,
+        "impersonate": impersonate_dd,
         "save": save,
         "cancel": cancel,
         "cookies_path": cookies_path,

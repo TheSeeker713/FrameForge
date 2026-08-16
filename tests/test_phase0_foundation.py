@@ -188,3 +188,6 @@ def test_cli_version_and_check_env():
     report = json.loads(proc2.stdout)
     assert report["ok"] is True
     assert report["python"]["ok"] is True
+    assert report["packages"]["curl_cffi"]["ok"] is True
+    assert report["impersonation"]["chrome_available"] is True
+    assert report["impersonation"]["ok"] is True

@@ -29,7 +29,11 @@ def format_full_error_report(
     url = payload.get("url") or getattr(job, "url", None) or ""
     cat = payload.get("category") or opts.get("error_category")
     if not cat and job is not None:
-        cat = classify_error(getattr(job, "error", None), status=getattr(job, "status", None))
+        cat = classify_error(
+            getattr(job, "error", None),
+            status=getattr(job, "status", None),
+            url=url or getattr(job, "url", None),
+        )
     cause = payload.get("cause") or opts.get("error_cause") or (human_cause(cat) if cat else "")
     err = extra_error or payload.get("error") or getattr(job, "error", None) or ""
     stderr = opts.get("error_stderr_tail") or ""
@@ -59,6 +63,7 @@ def format_full_error_report(
         if inv.get("aria2_args"):
             lines.append(f"aria2_args: {inv.get('aria2_args')}")
         lines.append(f"player_client: {inv.get('player_client') or '(none)'}")
+        lines.append(f"impersonate: {inv.get('impersonate') or '(none)'}")
         lines.append(f"format: {inv.get('format') or ''}")
         lines.append(f"ffmpeg_location: {inv.get('ffmpeg_location') or '(not found)'}")
         if inv.get("ffprobe_location"):

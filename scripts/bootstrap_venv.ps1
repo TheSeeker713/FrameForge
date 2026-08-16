@@ -12,4 +12,4 @@ $py = Join-Path $Root ".venv\Scripts\python.exe"
 
 Write-Host "Bootstrap complete:"
 & $py --version
-& $py -m pip show yt-dlp onnxruntime-directml customtkinter | Select-String -Pattern "^(Name|Version)"
+& $py -m pip show yt-dlp curl_cffi onnxruntime-directml customtkinter | Select-String -Pattern "^(Name|Version)"

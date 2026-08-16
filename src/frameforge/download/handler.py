@@ -113,8 +113,10 @@ def make_download_handler(
             )
 
         from frameforge.download.js_runtime import require_js_runtime_for_url
+        from frameforge.download.impersonate import require_impersonate_for_url
 
         require_js_runtime_for_url(job.url)
+        require_impersonate_for_url(job.url, repo=repo)
 
         dl.format_preference = job.format_preference or "best"
         from frameforge.download.cookie_validate import consume_gentle_job

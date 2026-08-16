@@ -2,9 +2,11 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.7 (Library Move chunked copy — field gate open)
+## Status: v0.6.8 (PornHub impersonate + curl_cffi 0.13.0)
 
-Package version is **0.6.7**. Cross-drive Library Move uses chunked copy with cancel; duplicate paths transfer once; missing Uncategorized job paths can be healed from the download tree. **Do not claim the live 4.5 GB youtube tree is fixed** until `temp/library_move_*.log` from that tree shows `OK #2+`. See [LIBRARY.md](LIBRARY.md) and [AUDIT_FULL_v0.6.3_FIELD.md](AUDIT_FULL_v0.6.3_FIELD.md).
+Package version is **0.6.8**. Adult hosts pass `--impersonate chrome` when targets exist. Job-70-style errors are `impersonation_missing`, not `unknown`. **Manual:** a browser-viewable PornHub URL must succeed in-app after cookies; pytest does not download live PH. See [ADULT_SITES.md](ADULT_SITES.md).
+
+Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 
 ## Phase 0 – Foundation
 

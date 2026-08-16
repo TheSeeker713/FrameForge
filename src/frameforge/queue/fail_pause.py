@@ -77,7 +77,9 @@ def maybe_fail_pause(worker: Any, repo: Any, job: Any) -> bool:
     if not fail_pause_enabled(repo) and not fail_pause_on_any(repo):
         return False
     opts = job.options() if hasattr(job, "options") else {}
-    cat = opts.get("error_category") or classify_error(getattr(job, "error", None))
+    cat = opts.get("error_category") or classify_error(
+        getattr(job, "error", None), url=getattr(job, "url", None)
+    )
     if fail_pause_on_any(repo) or should_fail_pause(cat):
         halt = getattr(worker, "halt_after_fail", None)
         if callable(halt):
@@ -93,7 +95,9 @@ def maybe_fail_pause(worker: Any, repo: Any, job: Any) -> bool:
 def fail_pause_payload(job: Any) -> dict[str, Any]:
     """Plain-language modal fields (no Tk)."""
     opts = job.options() if hasattr(job, "options") else {}
-    cat = opts.get("error_category") or classify_error(getattr(job, "error", None))
+    cat = opts.get("error_category") or classify_error(
+        getattr(job, "error", None), url=getattr(job, "url", None)
+    )
     archive_hit = bool(opts.get("archive_hit")) or "archive lists this video" in str(
         getattr(job, "error", None) or ""
     ).lower()

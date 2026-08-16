@@ -303,6 +303,7 @@ class FrameForgeUi:
         resume_btn.visible = False
         cat = str(payload.get("category") or "")
         js_runtime = cat == "js_runtime"
+        impersonation_missing = cat == "impersonation_missing"
         output_missing = cat == "output_missing"
         disk_space = cat == "disk_space"
         upscale_limit = cat == "upscale_limit"
@@ -364,6 +365,12 @@ class FrameForgeUi:
                         "This is not a cookie/login problem."
                         if js_runtime
                         else (
+                            "Browser impersonation is missing or unsupported. "
+                            "Install curl_cffi==0.13.0, run python -m frameforge --check-env, "
+                            "accept the age gate in a browser, import cookies, then retry. "
+                            "Do not upgrade curl_cffi to 0.16.x with yt-dlp 2026.07.04."
+                            if impersonation_missing
+                            else (
                             "The file is missing on disk. Retry (force if the archive is stale), "
                             "open the folder, or skip this job. This is not a cookie/login problem."
                             if output_missing
@@ -372,6 +379,7 @@ class FrameForgeUi:
                                 if disk_space or upscale_limit
                                 else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
                                 "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                            )
                             )
                         ),
                         color=COLORS["text_secondary"],

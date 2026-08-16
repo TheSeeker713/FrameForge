@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from frameforge.errors import human_cause
-from frameforge.errors import AUTH_REQUIRED, BOT_CHECK
+from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING
 from frameforge.gui.actions import can_convert, can_download, can_retry_download, can_upscale
 
 STATUS_PILL = {
@@ -69,7 +69,7 @@ def status_pill(job: Any) -> str:
 
 def fail_action_ids(category: str | None) -> list[str]:
     """Non-auth failures (ffmpeg, aria2_forbidden, js_runtime, network) lead with Retry."""
-    if category in (AUTH_REQUIRED, BOT_CHECK):
+    if category in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING):
         return ["reauth", "retry", "copy"]
     return ["retry", "copy"]
 

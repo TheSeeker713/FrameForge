@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.8
+
+- PornHub / MindGeek: `--impersonate chrome` when curl_cffi targets exist; pin `curl_cffi==0.13.0` (do not upgrade to 0.16.x with yt-dlp 2026.07.04)
+- Job-70-style HTTP 410 / “no impersonate target” classifies as `impersonation_missing`, not `unknown`; 410 after impersonate+cookies is `not_available` (confirm in browser)
+- `--check-env` reports yt-dlp, curl_cffi, Chrome availability, and impersonate clients
+- Docs: [ADULT_SITES.md](docs/ADULT_SITES.md), [COOKIES.md](docs/COOKIES.md), [YTDLP_PARITY.md](docs/YTDLP_PARITY.md)
+
 ## 0.6.7
 
 - Library Move: chunked cancellable cross-drive copy (no `copy2`), progress bytes, path dedupe, heal missing Uncategorized job paths from youtube/…, Reset dialog no longer vanishes under Settings dismiss ([LIBRARY.md](docs/LIBRARY.md), [AUDIT_FULL_v0.6.3_FIELD.md](docs/AUDIT_FULL_v0.6.3_FIELD.md))

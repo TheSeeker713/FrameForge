@@ -38,6 +38,7 @@ Every download job persists `options_json.ytdlp_invocation`:
 | `aria2c` | Whether `--downloader aria2c` was actually added |
 | `aria2_args` | Exact aria2c extra args (`-x 16 -s 16 …`) or `null` |
 | `player_client` | `--extractor-args` value, or `null` |
+| `impersonate` | `--impersonate` client (`chrome` / `edge`), or `null` |
 | `js_runtimes` | `--js-runtimes` value when Deno/Node was found |
 | `format` | `-f` selector |
 | `ffmpeg_location` | Resolved `ffmpeg` path, if on PATH |
@@ -97,9 +98,17 @@ These are still present and logged:
 - `--download-archive` (FrameForge archive file)
 - `--no-playlist`, `--merge-output-format mp4`, `--write-info-json`, `--write-thumbnail`
 - YouTube `--extractor-args youtube:player_client=android_vr,tv_downgraded,web_embedded,web_safari` (Settings can restore yt-dlp defaults)
+- `--impersonate chrome` on PornHub / related MindGeek hosts when curl_cffi targets exist (Settings Auto / Always / Off)
 - `--js-runtimes deno:<path>` or `node:<path>` when a JS runtime is found
 - aria2c **when installed** (`-x 16 -s 16 -k 1M …`) — CLI usually has none
 - `--concurrent-fragments 8`, `--throttled-rate 100K`, `--http-chunk-size 10M`
 
 If a URL still fails only in the app, copy the job’s invocation snapshot and
 run that argv in a terminal from the recorded `cwd`.
+
+## PornHub impersonate (v0.6.8)
+
+Adult hosts need `--impersonate chrome` plus `cookies\pornhub.com.txt`. Job-70-style
+HTTP 410 without impersonate is `impersonation_missing`, not `unknown`. Pin
+`curl_cffi==0.13.0` with yt-dlp 2026.07.04; do not jump curl_cffi to 0.16.x alone.
+See [ADULT_SITES.md](ADULT_SITES.md).

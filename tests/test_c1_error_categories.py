@@ -11,6 +11,7 @@ from frameforge.errors import (
     BOT_CHECK,
     CANCELLED,
     FFMPEG,
+    IMPERSONATION_MISSING,
     NETWORK,
     NOT_AVAILABLE,
     RATE_LIMITED,
@@ -50,6 +51,7 @@ def test_classify_error_known_messages():
     assert should_fail_pause(BOT_CHECK) is True
     assert should_fail_pause(AUTH_REQUIRED) is True
     assert should_fail_pause(UNKNOWN) is True
+    assert should_fail_pause(IMPERSONATION_MISSING) is True
     assert should_fail_pause(NETWORK) is False
     assert should_fail_pause("aria2_forbidden") is False
     assert "cookies" in human_cause(AUTH_REQUIRED).lower() or "signed in" in human_cause(AUTH_REQUIRED).lower()

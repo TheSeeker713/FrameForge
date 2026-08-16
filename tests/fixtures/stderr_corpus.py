@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, NETWORK, NOT_AVAILABLE, RATE_LIMITED, UNKNOWN
+from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, NETWORK, NOT_AVAILABLE, RATE_LIMITED, UNKNOWN
 
 # (category, blob) — blobs mimic yt-dlp stdout+stderr tails.
 CORPUS: list[tuple[str, str]] = [
@@ -45,6 +45,15 @@ CORPUS: list[tuple[str, str]] = [
     (
         NOT_AVAILABLE,
         "ERROR: [youtube] abc: This live event was Cancelled by the uploader",
+    ),
+    (
+        IMPERSONATION_MISSING,
+        "WARNING: [PornHub] impersonated requests, but no impersonate target is available\n"
+        "ERROR: [PornHub] 6a5f2e146fdb9: Unable to download webpage: HTTP Error 410: Gone",
+    ),
+    (
+        IMPERSONATION_MISSING,
+        'ERROR: Impersonate target "chrome" is not available. See --list-impersonate-targets',
     ),
     (
         NETWORK,

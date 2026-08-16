@@ -16,6 +16,7 @@ cd D:\_Dev\Projects\FrameForge
 .\.venv\Scripts\Activate.ps1
 .\scripts\download_models.ps1
 python -m frameforge --check-env
+# JSON impersonation.ok / chrome_available must be true for PornHub (curl_cffi 0.13.0)
 pytest -q
 ```
 

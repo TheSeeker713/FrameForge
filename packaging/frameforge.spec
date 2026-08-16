@@ -24,6 +24,7 @@ hiddenimports = [
     "frameforge.db.repository",
     "frameforge.queue.worker",
     "frameforge.download.ytdlp",
+    "frameforge.download.impersonate",
     "frameforge.download.bulk_import",
     "frameforge.download.handler",
     "frameforge.download.cookie_validate",
@@ -35,9 +36,11 @@ hiddenimports = [
     "customtkinter",
     "onnxruntime",
     "rich",
+    "curl_cffi",
+    "curl_cffi.requests",
 ]
 
-for pkg in ("flet", "flet_desktop", "customtkinter"):
+for pkg in ("flet", "flet_desktop", "customtkinter", "curl_cffi"):
     tmp_ret = collect_all(pkg)
     datas += tmp_ret[0]
     binaries += tmp_ret[1]

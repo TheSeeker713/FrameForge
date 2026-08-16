@@ -18,6 +18,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `blocked_4k` | 4K / ≥2160 blocked for upscale | Pick a lower source resolution. |
 | `cancelled` | user cancel (`DownloadCancelled` or status `cancelled`) | Job was cancelled. |
 | `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
+| `impersonation_missing` | no impersonate target, unsupported curl_cffi, PH HTTP 410 without `--impersonate` | Install/pin curl_cffi 0.13.0 and `--check-env`; then cookies. |
 | `output_missing` | exit 0 but no file / archive orphan | File missing on disk after a “successful” download. |
 | `unknown` | anything else | Unclassified failure. |
 
@@ -27,7 +28,7 @@ Suggested next steps are listed on the error panel (cookies / retry / wait / ski
 
 Setting **Pause queue on bot-check / login failures** (`fail_pause_on_auth`, default **ON**).
 
-When a job fails with `auth_required`, `bot_check`, `js_runtime`, `output_missing`, or hard `unknown`:
+When a job fails with `auth_required`, `bot_check`, `js_runtime`, `impersonation_missing`, `output_missing`, or hard `unknown`:
 
 1. The worker **halts** (`halt_after_fail`): disarms **and** latches so a stale
    `_armed` flag cannot claim the next pending.
@@ -61,6 +62,8 @@ Turn the default policy off in Settings if you want the bulk run to keep going a
 | **Stop queue** | Keeps the worker disarmed. |
 
 `js_runtime` pauses omit cookie import and tell you to install Deno + yt-dlp-ejs instead.
+
+`impersonation_missing` pauses **and** still offers cookie import: pin `curl_cffi==0.13.0`, run `--check-env`, accept the age gate, import `pornhub.com.txt`, retry with `--impersonate`. HTTP 410 **after** impersonate + cookies is `not_available` (confirm in a browser; truly deleted videos stay 410). See [ADULT_SITES.md](ADULT_SITES.md).
 
 You must choose an action. The worker does not silently continue failing the rest of the list.
 

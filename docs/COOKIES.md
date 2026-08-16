@@ -53,3 +53,13 @@ Both are user-triggered.
 
 - Cookie files are never committed to git.
 - Downloads still run sequentially and only after **Download selected** / **Download all pending**.
+
+## PornHub / age gate
+
+Site file: `cookies\pornhub.com.txt` (from `https://www.pornhub.com/…`).
+
+1. Open the URL in a browser, **accept the age gate**, sign in if needed.
+2. Import from Firefox or re-export Netscape cookies into `pornhub.com.txt`.
+3. Retry. FrameForge must also pass `--impersonate chrome` (see [ADULT_SITES.md](ADULT_SITES.md)). Cookies alone do not fix job-70-style HTTP 410.
+
+Chrome App-Bound Encryption still applies: prefer Firefox or a cookies.txt export.

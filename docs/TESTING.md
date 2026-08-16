@@ -63,6 +63,14 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.8 (PornHub impersonate)
+
+- See [ADULT_SITES.md](ADULT_SITES.md), [COOKIES.md](COOKIES.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).
+- Tests: `tests/test_impersonate.py` (argv `--impersonate` when targets mocked; job-70 / target-unavailable classification; no live PH).
+- **CI:** no mandatory live PornHub download.
+- **Manual:** `--check-env` shows Chrome available; a URL that plays in a browser must download in-app after `cookies\pornhub.com.txt`. Truly deleted videos still 410 in a browser.
+- Suite: `python -m pytest -q` → **509 passed / 0 skipped / 0 failed** (2026-08-16).
+
 ## v0.6.7 (Library Move chunked copy)
 
 - See [LIBRARY.md](LIBRARY.md), [AUDIT_FULL_v0.6.3_FIELD.md](AUDIT_FULL_v0.6.3_FIELD.md).

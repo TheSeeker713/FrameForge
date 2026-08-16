@@ -442,6 +442,12 @@ class YtDlpDownloader:
             parsed = extractor_args_opts(url or "https://www.youtube.com/", clients=args.split("=", 1)[-1])
             if parsed:
                 opts["extractor_args"] = parsed
+        if url:
+            from frameforge.download.impersonate import impersonate_ydl_option
+
+            impersonate = impersonate_ydl_option(url, repo=self._settings_repo)
+            if impersonate is not None:
+                opts["impersonate"] = impersonate
         return opts
 
     def _apply_rate_opts(self, opts: dict[str, Any]) -> None:
@@ -633,6 +639,9 @@ class YtDlpDownloader:
         from frameforge.download.js_runtime import js_runtime_cli_args
 
         cmd.extend(js_runtime_cli_args())
+        from frameforge.download.impersonate import impersonate_cli_args
+
+        cmd.extend(impersonate_cli_args(url, repo=self._settings_repo))
         extractor = self._extractor_args_cli(url)
         if extractor:
             cmd.extend(["--extractor-args", extractor])
@@ -676,6 +685,12 @@ class YtDlpDownloader:
         snap["player_client"] = extractor
         js_args = [a for i, a in enumerate(cmd) if a == "--js-runtimes" or (i and cmd[i - 1] == "--js-runtimes")]
         snap["js_runtimes"] = js_args[1] if len(js_args) > 1 else (overrides.get("js_runtime") if overrides else None)
+        impersonate_val = None
+        if "--impersonate" in cmd:
+            idx = cmd.index("--impersonate")
+            if idx + 1 < len(cmd):
+                impersonate_val = cmd[idx + 1]
+        snap["impersonate"] = impersonate_val
         if cookie is not None:
             log.info("ytdlp_invocation cookiefile attached: %s", cookie)
         else:

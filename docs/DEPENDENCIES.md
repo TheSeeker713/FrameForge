@@ -19,6 +19,8 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
+# curl_cffi==0.13.0 is required for yt-dlp --impersonate (PornHub). Do not
+# upgrade curl_cffi alone to 0.16.x while yt-dlp is 2026.07.04.
 # GUI (v0.5): flet==0.86.5 is a project dependency
 pip install onnx   # used to generate local smoke ONNX if Real-ESRGAN download unavailable
 python .\scripts\create_smoke_onnx.py
@@ -31,6 +33,7 @@ python .\scripts\create_smoke_onnx.py
 | Package | Version |
 |---------|---------|
 | yt-dlp | 2026.7.4 |
+| curl_cffi | 0.13.0 | Required for `--impersonate chrome`. 0.16.x is unsupported with this yt-dlp |
 | onnxruntime-directml | 1.24.4 |
 | customtkinter | 6.0.0 |
 | flet | 0.86.5 | Primary GUI (v0.5); pin used in tests |
@@ -47,6 +50,10 @@ python .\scripts\create_smoke_onnx.py
 ## ONNX providers detected
 
 `DmlExecutionProvider`, `CPUExecutionProvider`
+
+## Impersonate (`python -m frameforge --check-env`)
+
+JSON key `impersonation`: `yt_dlp_version`, `curl_cffi_version`, `curl_cffi_supported`, `chrome_available`, `clients`, `selected`. Overall `ok` is false if Chrome is unavailable. See [ADULT_SITES.md](ADULT_SITES.md).
 
 ## Models
 

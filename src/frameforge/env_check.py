@@ -87,6 +87,7 @@ def check_environment() -> dict[str, Any]:
     }
     packages = {
         "yt_dlp": _try_import("yt_dlp"),
+        "curl_cffi": _try_import("curl_cffi"),
         "onnxruntime": _try_import("onnxruntime"),
         "customtkinter": _try_import("customtkinter"),
         "cv2": _try_import("cv2"),
@@ -95,6 +96,7 @@ def check_environment() -> dict[str, Any]:
         "psutil": _try_import("psutil"),
         "sqlite3": _try_import("sqlite3"),
     }
+    from frameforge.download.impersonate import impersonation_status
     from frameforge.download.js_runtime import js_runtime_status
 
     tools = {
@@ -106,6 +108,7 @@ def check_environment() -> dict[str, Any]:
     }
     js = js_runtime_status()
     ejs = _try_import("yt_dlp_ejs")
+    impersonation = impersonation_status()
     onnx = check_onnx_providers()
     ok = (
         python["ok"]
@@ -114,6 +117,12 @@ def check_environment() -> dict[str, Any]:
         and tools["aria2c"]["ok"]
         and (tools["yt-dlp"]["ok"] or packages["yt_dlp"]["ok"])
         and onnx["ok"]
+        and impersonation["ok"]
+    )
+    impersonate_note = (
+        f"Impersonate: Chrome available (curl_cffi {impersonation.get('curl_cffi_version')})"
+        if impersonation.get("ok")
+        else f"FAIL: Chrome impersonate unavailable — {impersonation.get('error')}"
     )
     return {
         "ok": ok,
@@ -123,11 +132,13 @@ def check_environment() -> dict[str, Any]:
         "onnx": onnx,
         "js_runtime": js,
         "yt_dlp_ejs": ejs,
+        "impersonation": impersonation,
         "notes": [
             "Sequential downloads only",
             "SQLite WAL queue",
             "Bulk TXT/MD import",
             "DirectML preferred",
             js.get("tip") or f"JS runtime: {js.get('runtime')} ({js.get('path')})",
+            impersonate_note,
         ],
     }

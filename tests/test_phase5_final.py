@@ -24,6 +24,8 @@ def test_env_ok():
     report = check_environment()
     assert report["ok"] is True
     assert report["onnx"]["has_dml"] or report["onnx"]["has_cpu"]
+    assert report["impersonation"]["ok"] is True
+    assert report["impersonation"]["chrome_available"] is True
 
 
 def test_sequential_invariant_sqlite(tmp_path: Path):

@@ -21,6 +21,7 @@ ARIA2_FORBIDDEN = "aria2_forbidden"
 BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
 JS_RUNTIME = "js_runtime"
+IMPERSONATION_MISSING = "impersonation_missing"
 OUTPUT_MISSING = "output_missing"
 DISK_SPACE = "disk_space"
 UPSCALE_LIMIT = "upscale_limit"
@@ -38,6 +39,7 @@ CATEGORIES = (
     BLOCKED_4K,
     CANCELLED,
     JS_RUNTIME,
+    IMPERSONATION_MISSING,
     OUTPUT_MISSING,
     DISK_SPACE,
     UPSCALE_LIMIT,
@@ -47,7 +49,16 @@ CATEGORIES = (
 
 # Failures that should pause a bulk run (bot/auth, missing EJS, missing output, disk, hard unknown).
 FAIL_PAUSE_CATEGORIES = frozenset(
-    {AUTH_REQUIRED, BOT_CHECK, JS_RUNTIME, OUTPUT_MISSING, DISK_SPACE, UPSCALE_LIMIT, UNKNOWN}
+    {
+        AUTH_REQUIRED,
+        BOT_CHECK,
+        JS_RUNTIME,
+        IMPERSONATION_MISSING,
+        OUTPUT_MISSING,
+        DISK_SPACE,
+        UPSCALE_LIMIT,
+        UNKNOWN,
+    }
 )
 STDERR_TAIL_LINES = 12
 STDERR_TAIL_CHARS = 2000
@@ -133,6 +144,25 @@ _JS_RUNTIME_RE = re.compile(
     r"|js runtime",
     re.IGNORECASE,
 )
+_IMPERSONATE_MISSING_RE = re.compile(
+    r"impersonate target.{0,80}not available"
+    r"|no impersonate target"
+    r"|unsupported impersonate"
+    r"|unsupported curl_cffi"
+    r"|curl_cffi is not available"
+    r"|curl_cffi.*(unsupported|not installed)"
+    r"|install curl_cffi"
+    r"|without curl_cffi"
+    r"|impersonated requests, but no impersonate",
+    re.IGNORECASE,
+)
+_HTTP_410_RE = re.compile(
+    r"http error 410"
+    r"|status code 410"
+    r"|\b410 gone\b"
+    r"|410: gone",
+    re.IGNORECASE,
+)
 
 
 def is_aria2_forbidden(message: str | None) -> bool:
@@ -148,7 +178,11 @@ def is_aria2_forbidden(message: str | None) -> bool:
     return False
 
 
-def classify_error(message: str | None, *, status: str | None = None) -> str:
+def _argv_has_flag(text: str, flag: str) -> bool:
+    return bool(re.search(rf"(?:^|[\s\"']){re.escape(flag)}(?:[\s\"'=]|$)", text, re.IGNORECASE))
+
+
+def classify_error(message: str | None, *, status: str | None = None, url: str | None = None) -> str:
     """Map a human error string (and optional status) to a stable category."""
     if status == "cancelled":
         return CANCELLED
@@ -158,6 +192,19 @@ def classify_error(message: str | None, *, status: str | None = None) -> str:
         "requested format" in lower and "not available" in lower and "image" in lower
     ):
         return JS_RUNTIME
+    if _IMPERSONATE_MISSING_RE.search(text):
+        return IMPERSONATION_MISSING
+    if _HTTP_410_RE.search(text):
+        from frameforge.download.impersonate import adult_site_in_text, url_needs_impersonate
+
+        adult = adult_site_in_text(text) or bool(url and url_needs_impersonate(url))
+        used_impersonate = _argv_has_flag(text, "--impersonate")
+        used_cookies = _argv_has_flag(text, "--cookies")
+        if adult and not used_impersonate:
+            return IMPERSONATION_MISSING
+        if adult and used_impersonate and not used_cookies:
+            return AUTH_REQUIRED
+        return NOT_AVAILABLE
     if is_aria2_forbidden(text):
         return ARIA2_FORBIDDEN
     if (
@@ -235,7 +282,10 @@ def human_cause(category: str) -> str:
         AUTH_REQUIRED: "This site wants you signed in (cookies or login).",
         BOT_CHECK: "The site thinks this is automated traffic (bot check).",
         RATE_LIMITED: "The site is rate-limiting requests (HTTP 429 / slow down).",
-        NOT_AVAILABLE: "The video is private, removed, or otherwise unavailable.",
+        NOT_AVAILABLE: (
+            "The video is private, removed, or otherwise unavailable. "
+            "If a browser also shows HTTP 410 / gone, it is truly deleted."
+        ),
         NETWORK: "A network error interrupted the download.",
         FFMPEG: "FFmpeg/ffprobe failed while processing the file.",
         ARIA2_FORBIDDEN: "Fast downloader (aria2) was blocked by the CDN (HTTP 403).",
@@ -243,6 +293,10 @@ def human_cause(category: str) -> str:
         CANCELLED: "The job was cancelled.",
         JS_RUNTIME: (
             "YouTube needs Deno (or Node) plus yt-dlp-ejs to solve n/signature challenges."
+        ),
+        IMPERSONATION_MISSING: (
+            "This site needs browser impersonation (curl_cffi + --impersonate chrome). "
+            "Run python -m frameforge --check-env."
         ),
         OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
         DISK_SPACE: "This upscale needs more free disk space for temporary PNG frames.",
@@ -265,8 +319,6 @@ def suggested_actions(category: str) -> list[str]:
             "Import cookies if the site is logged-in only",
             "Enable gentle rate mode in Settings after resume",
         ]
-    if category == NOT_AVAILABLE:
-        return ["Skip this job — it cannot be downloaded"]
     if category == NETWORK:
         return ["Check the network connection", "Retry this job"]
     if category == FFMPEG:
@@ -282,6 +334,17 @@ def suggested_actions(category: str) -> list[str]:
             "Install Deno and restart FrameForge",
             'pip install -U "yt-dlp[default]" yt-dlp-ejs',
             "Retry this job",
+        ]
+    if category == IMPERSONATION_MISSING:
+        return [
+            "Run python -m frameforge --check-env (Chrome impersonate must be available)",
+            "pip install curl_cffi==0.13.0 (do not upgrade to 0.16 with yt-dlp 2026.07.04)",
+            "Accept the age gate in a browser, import cookies, then retry with impersonate",
+        ]
+    if category == NOT_AVAILABLE:
+        return [
+            "Confirm the URL in a browser — truly deleted videos still return HTTP 410",
+            "Skip this job — it cannot be downloaded",
         ]
     if category == OUTPUT_MISSING:
         return [
@@ -306,7 +369,7 @@ def suggested_actions(category: str) -> list[str]:
 
 
 def suggested_action(category: str, *, auth_hint: str | None = None) -> str | None:
-    if category in (AUTH_REQUIRED, BOT_CHECK) and auth_hint:
+    if category in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING) and auth_hint:
         return auth_hint
     actions = suggested_actions(category)
     if not actions:
@@ -329,7 +392,7 @@ def format_error_panel(job: Any | None) -> str:
     if status == "paused":
         return "Paused. Resume when you want this download to continue."
     if not cat:
-        cat = classify_error(err, status=status) if (err or status == "cancelled") else None
+        cat = classify_error(err, status=status, url=getattr(job, "url", None)) if (err or status == "cancelled") else None
     if not err and status != "cancelled":
         return ""
     lines: list[str] = []
@@ -340,7 +403,7 @@ def format_error_panel(job: Any | None) -> str:
         lines.append(str(err))
     elif status == "cancelled":
         lines.append("Cancelled by user.")
-    hint = opts.get("auth_hint") if cat in (AUTH_REQUIRED, BOT_CHECK) else None
+    hint = opts.get("auth_hint") if cat in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING) else None
     action = suggested_action(cat or UNKNOWN, auth_hint=hint)
     if action and action not in "\n".join(lines):
         lines.append("")
@@ -365,7 +428,7 @@ def annotate_job_error(
     """Persist human error + error_category (and auth hint when applicable)."""
     job = repo.get(job_id)
     url = url or job.url
-    cat = classify_error(message, status=status)
+    cat = classify_error(message, status=status, url=url)
     patch: dict[str, Any] = {
         "error_category": cat,
         "error_cause": human_cause(cat) or "The download failed.",
@@ -374,7 +437,7 @@ def annotate_job_error(
     }
     if extra:
         patch.update(extra)
-    if cat in (AUTH_REQUIRED, BOT_CHECK):
+    if cat in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING):
         patch["auth_required"] = True
         patch["auth_hint"] = auth_action_hint(url)
         patch["auth_domain"] = normalize_domain_safe(url)
