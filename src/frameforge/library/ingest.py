@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from frameforge.library.models import LibraryItem
 from frameforge.library.paths import paths_equal, unique_dest
 from frameforge.library.store import LibraryStore
 from frameforge.library.taxonomy import KIND_TYPE, source_label_from_job
+from frameforge.library.transfer import transfer_file
 
 
 @dataclass
@@ -75,10 +75,7 @@ def move_into_library(
         moved = False
     else:
         dest = unique_dest(folder, src.name)
-        shutil.move(str(src), str(dest))
-        if not dest.is_file():
-            raise OSError(f"Move did not produce a file at {dest}")
-        dest = dest.resolve()
+        dest = transfer_file(src, dest)
         moved = True
         _update_job_paths(repo, job, src, dest)
     uncat = store.uncategorized()
@@ -121,10 +118,7 @@ def move_path_into_library(store: LibraryStore, src: Path, *, dest_dir: Path | N
         moved = False
     else:
         dest = unique_dest(folder, src.name)
-        shutil.move(str(src), str(dest))
-        if not dest.is_file():
-            raise OSError(f"Move did not produce a file at {dest}")
-        dest = dest.resolve()
+        dest = transfer_file(src, dest)
         moved = True
     uncat = store.uncategorized()
     item = store.add_item(
@@ -177,10 +171,7 @@ def assign_to_collection(
             src = Path(item.path)
             if src.is_file() and src.parent.resolve() != dest_dir.resolve():
                 dest = unique_dest(dest_dir, src.name)
-                shutil.move(str(src), str(dest))
-                if not dest.is_file():
-                    raise OSError(f"Move did not produce a file at {dest}")
-                dest = dest.resolve()
+                dest = transfer_file(src, dest)
                 store.update_item_path(item_id, dest)
                 if item.job_id:
                     job = repo.get(item.job_id)
@@ -228,7 +219,7 @@ def index_folder(store: LibraryStore, folder: Path) -> list[LibraryItem]:
 
 def import_folder(store: LibraryStore, folder: Path) -> list[LibraryItem]:
     """Move video files into Uncategorized and index them."""
-    from frameforge.library.paths import is_video_file, unique_dest
+    from frameforge.library.paths import is_video_file
     from frameforge.library.taxonomy import PRIVATE_FOLDER
 
     folder = Path(folder)
@@ -244,6 +235,6 @@ def import_folder(store: LibraryStore, folder: Path) -> list[LibraryItem]:
         if store.get_by_path(path):
             continue
         dest = unique_dest(dest_dir, path.name)
-        shutil.move(str(path), str(dest))
+        dest = transfer_file(path, dest)
         added.append(store.add_item(path=dest, title=path.stem, source="Other"))
     return added

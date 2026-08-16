@@ -115,46 +115,80 @@ def run_library_move(
     work: list[tuple[Job | None, Path | None]] = [(j, None) for j in batch_jobs]
     work.extend((None, p) for p in disk)
     total = len(work)
-    for i, (job, path) in enumerate(work, 1):
-        if cancel is not None and cancel.is_set():
-            report.cancelled = True
-            report.skipped += total - i + 1
-            break
-        progress = MoveProgress(
-            index=i,
-            total=total,
-            current_name=_label_for(job, path),
-            moved=report.moved,
-            failed=report.failed,
-            skipped=report.skipped,
-        )
-        if on_progress:
-            on_progress(progress)
-        if between_files is not None:
-            between_files(job if job is not None else path)
-        if cancel is not None and cancel.is_set():
-            report.cancelled = True
-            report.skipped += total - i + 1
-            break
+
+    def _emit(progress: MoveProgress) -> None:
+        if not on_progress:
+            return
         try:
-            if job is not None:
-                result = move_into_library(repo, store, job)
-            else:
-                assert path is not None
-                result = move_path_into_library(store, path)
-            report.results.append(result)
-            report.moved += 1
-        except Exception as exc:  # noqa: BLE001 — one bad file must not abort the batch
-            report.failed += 1
+            on_progress(progress)
+        except Exception:  # noqa: BLE001 — UI ticks must not abort the batch
+            log.exception("Library move progress callback failed at %s/%s", progress.index, progress.total)
+
+    try:
+        for i, (job, path) in enumerate(work, 1):
+            if cancel is not None and cancel.is_set():
+                report.cancelled = True
+                report.skipped += total - i + 1
+                break
             label = _label_for(job, path)
             ident = f"#{job.id}" if job is not None else "disk"
-            report.errors.append(f"{ident} {label}: {exc}")
-            log.warning("Library move failed for %s (%s): %s", ident, label, exc)
-    if on_progress:
-        done = report.moved + report.failed
-        on_progress(
+            _emit(
+                MoveProgress(
+                    index=i,
+                    total=total,
+                    current_name=label,
+                    moved=report.moved,
+                    failed=report.failed,
+                    skipped=report.skipped,
+                )
+            )
+            if between_files is not None:
+                try:
+                    between_files(job if job is not None else path)
+                except Exception:  # noqa: BLE001
+                    log.exception("Library move between_files hook failed for %s", ident)
+            if cancel is not None and cancel.is_set():
+                report.cancelled = True
+                report.skipped += total - i + 1
+                break
+            src: Path | None = path if job is None else job_media_file(job)
+            try:
+                if job is not None:
+                    result = move_into_library(repo, store, job)
+                else:
+                    assert path is not None
+                    result = move_path_into_library(store, path)
+                report.results.append(result)
+                report.moved += 1
+                log.info(
+                    "Library move ok %s src=%s dst=%s",
+                    ident,
+                    result.source_path,
+                    result.dest_path,
+                )
+            except Exception as exc:  # noqa: BLE001 — one bad file must not abort the batch
+                report.failed += 1
+                report.errors.append(f"{ident} {label}: {exc}")
+                log.exception("Library move failed for %s src=%s", ident, src)
+        _emit(
             MoveProgress(
-                index=done if done else total,
+                index=report.moved + report.failed if (report.moved + report.failed) else total,
+                total=total,
+                current_name="",
+                moved=report.moved,
+                failed=report.failed,
+                skipped=report.skipped,
+                cancelled=report.cancelled,
+                finished=True,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 — return partial report instead of raising
+        log.exception("Library move batch aborted after moved=%s failed=%s", report.moved, report.failed)
+        report.failed += 1
+        report.errors.append(str(exc))
+        _emit(
+            MoveProgress(
+                index=report.moved + report.failed,
                 total=total,
                 current_name="",
                 moved=report.moved,
@@ -211,6 +245,7 @@ class LibraryMoveRunner:
         def _run() -> None:
             repo = JobRepository(self.db_path)
             store = LibraryStore(repo)
+            report = MoveReport()
             try:
                 jobs: list[Job] = []
                 if self.job_ids:
@@ -231,7 +266,9 @@ class LibraryMoveRunner:
                     between_files=self.between_files,
                 )
             except Exception as exc:  # noqa: BLE001
-                report = MoveReport(failed=1, errors=[str(exc)])
+                log.exception("LibraryMoveRunner crashed; preserving partial report moved=%s", report.moved)
+                report.failed += 1
+                report.errors.append(str(exc))
             finally:
                 try:
                     repo.close()
@@ -239,7 +276,10 @@ class LibraryMoveRunner:
                     pass
             self.report = report
             if on_done:
-                on_done(report)
+                try:
+                    on_done(report)
+                except Exception:  # noqa: BLE001
+                    log.exception("Library move on_done callback failed")
 
         self._thread = threading.Thread(target=_run, name="frameforge-library-move", daemon=True)
         self._thread.start()

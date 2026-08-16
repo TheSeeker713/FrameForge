@@ -75,6 +75,88 @@ def test_run_library_move_cancel_stops_before_next_file(tmp_path: Path):
     repo.close()
 
 
+def test_run_library_move_progress_callback_error_does_not_abort(tmp_path: Path):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    _completed_job(repo, _clip(tmp_path / "dl" / "a.mp4"), title="a")
+    _completed_job(repo, _clip(tmp_path / "dl" / "b.mp4"), title="b", url="https://www.youtube.com/watch?v=bbbb")
+    _completed_job(repo, _clip(tmp_path / "dl" / "c.mp4"), title="c", url="https://www.youtube.com/watch?v=cccc")
+
+    def boom(progress) -> None:
+        if progress.index == 2 and not progress.finished:
+            raise RuntimeError("simulated UI/progress failure on file 2")
+
+    report = run_library_move(repo, store, on_progress=boom)
+    assert report.moved == 3
+    assert report.failed == 0
+    assert not (tmp_path / "dl" / "a.mp4").exists()
+    assert not (tmp_path / "dl" / "b.mp4").exists()
+    assert not (tmp_path / "dl" / "c.mp4").exists()
+    assert len(store.list_items()) == 3
+    repo.close()
+
+
+def test_library_move_runner_keeps_partial_report_when_callback_raises(tmp_path: Path):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    ids = []
+    for i, name in enumerate("abc"):
+        job = _completed_job(
+            repo,
+            _clip(tmp_path / "dl" / f"{name}.mp4"),
+            title=name,
+            url=f"https://www.youtube.com/watch?v={name}{i}",
+        )
+        ids.append(job.id)
+
+    def boom(progress) -> None:
+        if progress.index == 2 and not progress.finished:
+            raise RuntimeError("simulated UI/progress failure on file 2")
+
+    mover = LibraryMoveRunner(repo.db_path)
+    mover.start(ids, on_progress=boom)
+    assert mover.join(5.0)
+    assert mover.report is not None
+    assert mover.report.moved == 3
+    assert mover.report.failed == 0
+    repo.close()
+
+
+def test_run_library_move_file2_error_still_moves_file3(tmp_path: Path, monkeypatch):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    _completed_job(repo, _clip(tmp_path / "dl" / "ok1.mp4"), title="ok1")
+    _completed_job(
+        repo, _clip(tmp_path / "dl" / "bad.mp4"), title="bad", url="https://www.youtube.com/watch?v=bbbb"
+    )
+    _completed_job(repo, _clip(tmp_path / "dl" / "ok2.mp4"), title="ok2", url="https://www.youtube.com/watch?v=cccc")
+    from frameforge.library import ingest as ingest_mod
+
+    real = ingest_mod.move_into_library
+    seen = {"n": 0}
+
+    def wrap(repo, store, job, **kwargs):
+        seen["n"] += 1
+        if seen["n"] == 2:
+            raise OSError("forced error on file 2")
+        return real(repo, store, job, **kwargs)
+
+    monkeypatch.setattr(ingest_mod, "move_into_library", wrap)
+    from frameforge.library import mover as mover_mod
+
+    monkeypatch.setattr(mover_mod, "move_into_library", wrap)
+    report = run_library_move(repo, store)
+    assert report.failed == 1
+    assert report.moved == 2
+    assert (tmp_path / "dl" / "bad.mp4").is_file()
+    assert not (tmp_path / "dl" / "ok1.mp4").exists()
+    assert not (tmp_path / "dl" / "ok2.mp4").exists()
+    repo.close()
+
+
 def test_run_library_move_continues_after_one_failure(tmp_path: Path):
     repo = _repo(tmp_path)
     store = LibraryStore(repo)

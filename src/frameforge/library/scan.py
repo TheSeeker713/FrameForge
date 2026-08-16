@@ -102,7 +102,17 @@ def scan_library_folder(store: LibraryStore) -> list[LibraryItem]:
 
 
 DOWNLOAD_SCAN_SKIP = frozenset(
-    {"models", "temp", "cookies", "archive", "thumbnails", "database", PRIVATE_FOLDER.lower()}
+    {
+        "models",
+        "temp",
+        "cookies",
+        "archive",
+        "thumbnails",
+        "database",
+        "upscaled",
+        "converted",
+        PRIVATE_FOLDER.lower(),
+    }
 )
 
 

@@ -1247,24 +1247,31 @@ class FrameForgeUi:
     def _marshal_ui(self, fn: Any) -> None:
         if self._exiting or self._shutdown_complete:
             return
+
+        def _safe() -> None:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 — never kill the library-move worker
+                log.exception("UI marshal callback failed")
+
         page = self.page
         if page is None:
-            fn()
+            _safe()
             return
         if page.__class__.__name__ == "FakePage":
-            fn()
+            _safe()
             return
         runner = getattr(page, "run_task", None)
         if callable(runner):
             async def _on_loop() -> None:
-                fn()
+                _safe()
 
             try:
                 runner(_on_loop)
                 return
             except Exception:  # noqa: BLE001
                 pass
-        fn()
+        _safe()
 
     @property
     def library_move_running(self) -> bool:
@@ -1284,16 +1291,19 @@ class FrameForgeUi:
 
     def _apply_move_progress(self, progress: Any) -> None:
         self._library_move_progress = (int(progress.index), int(progress.total))
-        if self._move_status is not None:
-            self._move_status.value = f"Moving {progress.index} of {progress.total}…"
-        if self._move_file is not None:
-            name = str(progress.current_name or "")
-            self._move_file.value = name if len(name) <= 80 else name[:77] + "…"
-        if self._move_bar is not None:
-            total = int(progress.total) or 1
-            self._move_bar.value = min(1.0, max(0.0, int(progress.index) / total))
-        if self._move_progress_column is not None:
-            self._move_progress_column.visible = True
+        try:
+            if self._move_status is not None:
+                self._move_status.value = f"Moving {progress.index} of {progress.total}…"
+            if self._move_file is not None:
+                name = str(progress.current_name or "")
+                self._move_file.value = name if len(name) <= 80 else name[:77] + "…"
+            if self._move_bar is not None:
+                total = int(progress.total) or 1
+                self._move_bar.value = min(1.0, max(0.0, int(progress.index) / total))
+            if self._move_progress_column is not None:
+                self._move_progress_column.visible = True
+        except Exception:  # noqa: BLE001 — disposed Flet controls must not abort the batch
+            log.exception("Library move progress widgets failed")
         page = self.page
         if page is not None:
             try:
@@ -1328,6 +1338,13 @@ class FrameForgeUi:
         elif finishing and remaining and not cancelled:
             self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
         self._library_prompt_deferred = False
+        try:
+            from frameforge.library.scan import scan_library_folder
+
+            if self.library.root():
+                scan_library_folder(self.library)
+        except Exception:
+            log.exception("Post-migrate library folder scan failed")
         self.refresh_library()
         self.refresh_queue(force=True)
         self.open_library_onboarding()
