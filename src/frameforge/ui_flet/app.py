@@ -227,6 +227,7 @@ class FrameForgeUi:
         self._library_moving = False
         self._library_move_summary: str | None = None
         self._library_move_hook: Any | None = None
+        self._library_scan_roots: list[Path] | None = None
         self._move_status: ft.Text | None = None
         self._move_file: ft.Text | None = None
         self._move_bar: ft.ProgressBar | None = None
@@ -1073,6 +1074,23 @@ class FrameForgeUi:
             return []
         return completed_jobs_not_in_library(self.repo, self.library)
 
+    def _migrate_disk_roots(self) -> list[Path]:
+        if self._library_scan_roots is not None:
+            return list(self._library_scan_roots)
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return []
+        from frameforge.paths import frameforge_root
+
+        return [frameforge_root()]
+
+    def _pending_disk_videos(self):
+        from frameforge.library.scan import download_videos_not_in_library
+
+        if self.library.root() is None:
+            return []
+        return download_videos_not_in_library(self.library, roots=self._migrate_disk_roots())
+
     def refresh_library(self) -> None:
         if self.library_grid is None:
             return
@@ -1095,7 +1113,7 @@ class FrameForgeUi:
         except Exception:
             log.exception("Failed to scan library folder for orphans")
             orphans = []
-        pending = len(self._pending_library_jobs()) if self.library.is_onboarded() else 0
+        pending = len(self._pending_library_jobs()) + len(self._pending_disk_videos()) if self.library.is_onboarded() else 0
         if self.library_toolbar is not None:
             toolbar = build_library_toolbar(
                 count=len(items),
@@ -1176,17 +1194,20 @@ class FrameForgeUi:
         self.refresh_library()
         if not self.library.is_onboarded():
             return self.open_library_onboarding()
-        pending = self._pending_library_jobs()
-        if pending and not self._library_prompt_deferred:
+        pending_jobs = self._pending_library_jobs()
+        pending_disk = self._pending_disk_videos()
+        if (pending_jobs or pending_disk) and not self._library_prompt_deferred:
             return self.open_library_new_files()
         return None
 
     def open_library_onboarding(self) -> ft.AlertDialog:
-        from frameforge.library.ingest import completed_jobs_not_in_library
-
         root = self.library.root()
-        pending = completed_jobs_not_in_library(self.repo, self.library) if root else []
-        sample = [str(j.title or j.url or f"#{j.id}") for j in pending[:8]]
+        pending_jobs = self._pending_library_jobs() if root else []
+        pending_disk = self._pending_disk_videos() if root else []
+        pending = [*pending_jobs, *pending_disk]
+        sample = [str(j.title or j.url or f"#{j.id}") for j in pending_jobs[:8]]
+        if len(sample) < 8:
+            sample.extend(p.name for p in pending_disk[: 8 - len(sample)])
         dlg = onboarding_dialog(
             step="move" if root else "pick",
             root_label=str(root) if root else None,
@@ -1195,7 +1216,7 @@ class FrameForgeUi:
             on_choose=self.pick_library_root,
             on_move=self.confirm_library_move,
             on_skip=self.skip_library_onboarding,
-            on_close=self.close_dialog,
+            on_close=self.dismiss_library_move_summary,
             progress=self._library_move_progress if isinstance(self._library_move_progress, tuple) else None,
             error=self._library_onboard_error,
             moving=self._library_moving,
@@ -1276,50 +1297,55 @@ class FrameForgeUi:
                 pass
 
     def _on_library_move_done(self, report: Any) -> None:
-        from frameforge.library.ingest import completed_jobs_not_in_library
-
         self._library_moving = False
-        if self._move_progress_column is not None:
-            self._move_progress_column.visible = False
         if self._exiting or self._shutdown_complete:
             return
+        if self._move_status is not None:
+            total = int(report.moved) + int(report.failed) + int(report.skipped)
+            self._move_status.value = f"Moved {report.moved} of {total or report.moved}…"
+        if self._move_bar is not None:
+            self._move_bar.value = 1.0
+        if self._move_progress_column is not None:
+            self._move_progress_column.visible = True
         self._library_move_summary = getattr(report, "summary", None)
         finishing = not self.library.is_onboarded()
-        remaining = completed_jobs_not_in_library(self.repo, self.library) if self.library.root() else []
+        remaining_jobs = self._pending_library_jobs() if self.library.root() else []
+        remaining_disk = self._pending_disk_videos() if self.library.root() else []
+        remaining = [*remaining_jobs, *remaining_disk]
         cancelled = bool(getattr(report, "cancelled", False))
         if finishing and remaining and (cancelled or report.failed):
             self._library_onboard_error = (
                 None if cancelled else ("; ".join(report.errors[:3]) or f"{len(remaining)} file(s) still to move")
             )
-            self.open_library_onboarding()
-            self._show_toast(report.summary)
-            return
-        if finishing and not remaining:
+        elif finishing and not remaining:
             self.library.mark_onboarded()
+            self._library_onboard_error = None
         elif finishing and remaining and not cancelled:
             self._library_onboard_error = f"{len(remaining)} file(s) could not be moved. Retry or skip."
-            self.open_library_onboarding()
-            self._show_toast(report.summary)
-            return
         self._library_prompt_deferred = False
-        self._library_move_progress = None
-        self.close_dialog()
         self.refresh_library()
         self.refresh_queue(force=True)
-        if report.moved:
-            self._show_toast(report.summary)
+        self.open_library_onboarding()
+
+    def dismiss_library_move_summary(self, _e: Any = None) -> None:
         self._library_move_summary = None
+        self._library_move_progress = None
+        self._library_onboard_error = None
+        if self._move_progress_column is not None:
+            self._move_progress_column.visible = False
+        self.close_dialog()
+        self.refresh_library()
 
     def confirm_library_move(self, _e: Any = None) -> list[Any]:
-        from frameforge.library.ingest import completed_jobs_not_in_library
         from frameforge.library.mover import LibraryMoveRunner, MoveProgress, MoveReport
 
         if self.library.root() is None:
             return []
         if self.library_move_running:
             return []
-        pending = completed_jobs_not_in_library(self.repo, self.library)
-        if not pending:
+        pending_jobs = self._pending_library_jobs()
+        pending_disk = self._pending_disk_videos()
+        if not pending_jobs and not pending_disk:
             if not self.library.is_onboarded():
                 self.library.mark_onboarded()
             self.close_dialog()
@@ -1328,8 +1354,9 @@ class FrameForgeUi:
         self._library_onboard_error = None
         self._library_move_summary = None
         self._library_moving = True
+        total = len(pending_jobs) + len(pending_disk)
         self._ensure_move_progress_column()
-        self._apply_move_progress(MoveProgress(index=0, total=len(pending), current_name="Starting…"))
+        self._apply_move_progress(MoveProgress(index=0, total=total, current_name="Starting…"))
         self.open_library_onboarding()
 
         mover = LibraryMoveRunner(self.repo.db_path)
@@ -1343,7 +1370,8 @@ class FrameForgeUi:
             self._marshal_ui(lambda: self._on_library_move_done(report))
 
         mover.start(
-            [j.id for j in pending],
+            [j.id for j in pending_jobs],
+            extra_paths=pending_disk,
             on_progress=on_progress,
             on_done=None if self.page is None else on_done,
         )
@@ -1359,17 +1387,20 @@ class FrameForgeUi:
         if not self.library.is_onboarded():
             return self.on_library_opened()
         pending = self._pending_library_jobs()
-        if pending:
+        disk = self._pending_disk_videos()
+        if pending or disk:
             return self.open_library_new_files()
         self._show_toast("No completed downloads left to import")
         return None
 
     def open_library_new_files(self, _e: Any = None) -> ft.AlertDialog | None:
         pending = self._pending_library_jobs()
-        if not pending:
+        disk = self._pending_disk_videos()
+        n = len(pending) + len(disk)
+        if not n:
             return None
         dlg = new_downloads_dialog(
-            len(pending),
+            n,
             on_yes=self.confirm_library_move,
             on_not_now=self.defer_library_new_files,
         )

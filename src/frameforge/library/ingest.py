@@ -97,6 +97,47 @@ def move_into_library(
     return IngestResult(item=item, moved=moved, source_path=src, dest_path=dest)
 
 
+def move_path_into_library(store: LibraryStore, src: Path, *, dest_dir: Path | None = None) -> IngestResult:
+    """Move or index a loose video file (no queue job) into Uncategorized."""
+    src = Path(src)
+    if not src.is_file():
+        raise FileNotFoundError(src)
+    if store.get_by_path(src) is not None:
+        item = store.get_by_path(src)
+        assert item is not None
+        return IngestResult(item=item, moved=False, source_path=src, dest_path=Path(item.path))
+    folder = dest_dir or store.ingest_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    root = store.root()
+    under_library = False
+    if root is not None:
+        try:
+            src.resolve().relative_to(root.resolve())
+            under_library = True
+        except ValueError:
+            under_library = False
+    if under_library or src.parent.resolve() == folder.resolve():
+        dest = src.resolve()
+        moved = False
+    else:
+        dest = unique_dest(folder, src.name)
+        shutil.move(str(src), str(dest))
+        if not dest.is_file():
+            raise OSError(f"Move did not produce a file at {dest}")
+        dest = dest.resolve()
+        moved = True
+    uncat = store.uncategorized()
+    item = store.add_item(
+        path=dest,
+        title=src.stem,
+        source="Other",
+        primary_collection_id=uncat.id,
+    )
+    if item.path != str(dest):
+        item = store.update_item_path(item.id, dest)
+    return IngestResult(item=item, moved=moved, source_path=src, dest_path=dest)
+
+
 def ingest_completed_jobs(
     repo: JobRepository,
     store: LibraryStore,

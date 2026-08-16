@@ -214,3 +214,52 @@ def test_library_move_runner_cancel_mid_batch(tmp_path: Path):
     assert runner.report.cancelled is True
     assert runner.report.moved == 1
     repo.close()
+
+
+def test_migrate_includes_disk_files_without_jobs(tmp_path: Path):
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    store.set_root(tmp_path / "Lib")
+    job = _completed_job(repo, _clip(tmp_path / "dl" / "job.mp4"), title="job")
+    loose = _clip(tmp_path / "dl" / "loose-orphan.mp4")
+    ticks: list[tuple[int, int]] = []
+
+    def on_progress(p) -> None:
+        if not p.finished:
+            ticks.append((p.index, p.total))
+
+    report = run_library_move(repo, store, [job], extra_paths=[loose], on_progress=on_progress)
+    assert ticks[0][1] == 2
+    assert ticks[-1] == (2, 2)
+    assert report.moved == 2
+    assert report.disk_found == 1
+    assert "disk files 1" in report.summary
+    assert not loose.exists()
+    assert len(store.list_items()) == 2
+    repo.close()
+
+
+def test_ui_move_keeps_summary_not_toast_only(tmp_path: Path):
+    ui = _ui(tmp_path)
+    ui.page = FakePage()
+    ui._library_scan_roots = [tmp_path / "dl"]
+    _completed_job(ui.repo, _clip(tmp_path / "dl" / "job.mp4"), title="job")
+    _clip(tmp_path / "dl" / "disk-only.mp4")
+    ui.apply_library_root(tmp_path / "Lib")
+    ui.confirm_library_move()
+    assert ui.wait_library_move(5.0)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not ui._library_move_summary:
+        time.sleep(0.02)
+    assert ui._library_move_summary
+    assert "Moved" in ui._library_move_summary
+    assert "disk files" in ui._library_move_summary
+    assert ui.dialogs.kind == "library_onboard"
+    dlg = ui.dialogs.current
+    assert dlg is not None
+    assert dlg.data.get("summary")
+    labels = " ".join(str(getattr(a, "content", a)) for a in dlg.actions)
+    assert "Done" in labels
+    assert ui.library_visible_count == 2
+    ui.dismiss_library_move_summary()
+    ui.shutdown()

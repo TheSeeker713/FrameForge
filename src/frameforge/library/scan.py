@@ -99,3 +99,49 @@ def scan_library_folder(store: LibraryStore) -> list[LibraryItem]:
     if root is None:
         return []
     return index_folder(store, root)
+
+
+DOWNLOAD_SCAN_SKIP = frozenset(
+    {"models", "temp", "cookies", "archive", "thumbnails", "database", PRIVATE_FOLDER.lower()}
+)
+
+
+def download_videos_not_in_library(
+    store: LibraryStore,
+    *,
+    roots: list[Path] | None = None,
+) -> list[Path]:
+    """Videos under the download tree that are not indexed and not already in library_root."""
+    lib = store.root()
+    lib_res = lib.resolve() if lib is not None and lib.exists() else None
+    found: list[Path] = []
+    seen: set[str] = set()
+    for root in roots or []:
+        root = Path(root)
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not is_video_file(path):
+                continue
+            try:
+                rel = path.resolve().relative_to(root.resolve())
+            except ValueError:
+                continue
+            parts = {part.lower() for part in rel.parts[:-1]}
+            if parts & DOWNLOAD_SCAN_SKIP:
+                continue
+            resolved = path.resolve()
+            if lib_res is not None:
+                try:
+                    resolved.relative_to(lib_res)
+                    continue
+                except ValueError:
+                    pass
+            if store.get_by_path(path) is not None or store.get_by_path(resolved) is not None:
+                continue
+            key = str(resolved).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(path)
+    return found

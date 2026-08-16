@@ -205,11 +205,11 @@ def onboarding_dialog(
     """Two-step wizard: pick folder, then Move / Skip. Does not mark onboarded by itself."""
     sample_titles = sample_titles or []
     if step == "move" and root_label:
-        title = "Moving files" if moving else "Move completed downloads"
+        title = "Moving files" if moving else ("Library move finished" if summary else "Move completed downloads")
         intro = (
             f"Library folder: {root_label}\n\n"
-            f"{pending_count} completed download(s) can be moved into "
-            "Uncategorized (filenames kept). Queue items stay playable."
+            f"{pending_count} file(s) from completed jobs and the download folder "
+            "can be moved into Uncategorized (filenames kept). Queue items stay playable."
         )
         sample_lines = sample_titles[:8]
         if pending_count > len(sample_lines):
@@ -219,7 +219,7 @@ def onboarding_dialog(
             spacing=2,
             width=460,
         )
-        sample.visible = not moving
+        sample.visible = not moving and not summary
         if progress_column is not None:
             prog_ctrl: ft.Control = progress_column
             prog_ctrl.visible = bool(moving) or bool(summary)
@@ -240,6 +240,16 @@ def onboarding_dialog(
             actions = [
                 elevated_outlined_button("Cancel", on_click=lambda _e: on_cancel and on_cancel()),
             ]
+        elif summary:
+            if pending_count:
+                actions = [
+                    elevated_outlined_button("Skip for now", on_click=lambda _e: on_skip()),
+                    elevated_filled_button("Retry", on_click=lambda _e: on_move()),
+                ]
+            else:
+                actions = [
+                    elevated_filled_button("Done", on_click=lambda _e: on_close()),
+                ]
         else:
             move_label = "Move to Library" if pending_count else "Finish"
             actions = [
