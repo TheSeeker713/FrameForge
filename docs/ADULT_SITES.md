@@ -49,6 +49,13 @@ Job-70-style stderr is **not** `unknown`.
 
 A video that is **truly deleted** still returns **HTTP 410 in a browser**. FrameForge then reports `not_available` and tells you to confirm in a browser — it cannot download a gone page.
 
+## Impersonate Auto list (v0.6.9)
+
+Beyond the PornHub / MindGeek family, Settings **Auto** also covers common
+fingerprint-sensitive hosts (`xvideos.com`, `xnxx.com`, `xhamster.com`,
+`spankbang.com`, editable via `impersonate_auto_hosts`). Full multi-site recovery
+ladder: [MULTI_SITE.md](MULTI_SITE.md).
+
 ## Manual checklist (not CI)
 
 CI must **not** download live PornHub. After cookies + impersonate on this machine:

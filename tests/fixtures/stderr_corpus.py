@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, NETWORK, NOT_AVAILABLE, RATE_LIMITED, UNKNOWN
+from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, DRM_BLOCKED, IMPERSONATION_MISSING, NETWORK, NOT_AVAILABLE, RATE_LIMITED, UNKNOWN
 
 # (category, blob) — blobs mimic yt-dlp stdout+stderr tails.
 CORPUS: list[tuple[str, str]] = [
@@ -54,6 +54,10 @@ CORPUS: list[tuple[str, str]] = [
     (
         IMPERSONATION_MISSING,
         'ERROR: Impersonate target "chrome" is not available. See --list-impersonate-targets',
+    ),
+    (
+        DRM_BLOCKED,
+        "ERROR: This video is DRM protected and will NOT be supported",
     ),
     (
         NETWORK,

@@ -113,7 +113,9 @@ def build_settings_dialog(
         value=str(repo.get_setting("youtube_use_ytdlp_clients", "0") or "0") == "1",
     )
     from frameforge.download.impersonate import (
+        DEFAULT_AUTO_HOSTS,
         DEFAULT_MODE as IMPERSONATE_DEFAULT,
+        HOSTS_SETTING,
         MODE_ALWAYS,
         MODE_AUTO,
         MODE_OFF,
@@ -122,7 +124,7 @@ def build_settings_dialog(
     )
 
     _imp_labels = {
-        MODE_AUTO: "Auto (PornHub / MindGeek)",
+        MODE_AUTO: "Auto (listed hosts)",
         MODE_ALWAYS: "Always",
         MODE_OFF: "Off",
     }
@@ -143,6 +145,15 @@ def build_settings_dialog(
         ),
         color=COLORS["text_secondary"] if imp_st.get("ok") else COLORS["warn"],
         size=12,
+    )
+    impersonate_hosts = ft.TextField(
+        label="Auto impersonate hosts (comma-separated)",
+        value=str(repo.get_setting(HOSTS_SETTING, "") or "") or ",".join(DEFAULT_AUTO_HOSTS),
+        width=420,
+    )
+    silent_cookies = ft.Switch(
+        label="Silent Firefox/Edge cookie import on auth/bot (one retry, never Chrome)",
+        value=str(repo.get_setting("silent_browser_cookies", "1") or "1") != "0",
     )
 
     js = js_runtime_status()
@@ -207,6 +218,9 @@ def build_settings_dialog(
             "impersonate_mode",
             _imp_from_label.get(str(impersonate_dd.value or ""), IMPERSONATE_DEFAULT),
         )
+        raw_hosts = str(impersonate_hosts.value or "").strip()
+        repo.set_setting(HOSTS_SETTING, raw_hosts)
+        repo.set_setting("silent_browser_cookies", "1" if silent_cookies.value else "0")
         if ram.value:
             repo.set_setting("ram_warning_pct", str(ram.value).strip())
         raw_upscale_min = str(upscale_max_min.value or "15").strip() or "15"
@@ -245,6 +259,8 @@ def build_settings_dialog(
                 ytdlp_defaults,
                 clients,
                 impersonate_dd,
+                impersonate_hosts,
+                silent_cookies,
                 impersonate_tip,
             ),
             _card(

@@ -86,8 +86,10 @@ def test_add_url_enqueues_without_arming(tmp_path: Path):
     ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
     ui.build()
     ui.hero.data["url"].value = "https://example.com/video"
+    ui.listing_probe = lambda _url: (None, "example.com", None)
     job = ui.add_url()
     assert job is not None
     assert job.status == "pending"
+    assert job.extractor == "example.com"
     assert worker.is_armed is False
     ui.shutdown()

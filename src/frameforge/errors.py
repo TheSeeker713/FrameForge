@@ -22,6 +22,7 @@ BLOCKED_4K = "blocked_4k"
 CANCELLED = "cancelled"
 JS_RUNTIME = "js_runtime"
 IMPERSONATION_MISSING = "impersonation_missing"
+DRM_BLOCKED = "drm_blocked"
 OUTPUT_MISSING = "output_missing"
 DISK_SPACE = "disk_space"
 UPSCALE_LIMIT = "upscale_limit"
@@ -40,6 +41,7 @@ CATEGORIES = (
     CANCELLED,
     JS_RUNTIME,
     IMPERSONATION_MISSING,
+    DRM_BLOCKED,
     OUTPUT_MISSING,
     DISK_SPACE,
     UPSCALE_LIMIT,
@@ -163,6 +165,34 @@ _HTTP_410_RE = re.compile(
     r"|410: gone",
     re.IGNORECASE,
 )
+_HTTP_403_RE = re.compile(
+    r"http error 403"
+    r"|status code 403"
+    r"|\b403 forbidden\b",
+    re.IGNORECASE,
+)
+_DRM_RE = re.compile(
+    r"\bdrm\b"
+    r"|widevine"
+    r"|playready"
+    r"|fairplay"
+    r"|will not be supported"
+    r"|will NOT be supported"
+    r"|this (video|site) is drm"
+    r"|drm[- ]protected"
+    r"|encrypted stream that yt-dlp cannot"
+    r"|only drm",
+    re.IGNORECASE,
+)
+_FINGERPRINT_RE = re.compile(
+    r"tls.?fingerprint"
+    r"|ja3"
+    r"|browser impersonat"
+    r"|impersonated requests"
+    r"|curl_cffi"
+    r"|cloudflare.*(103|challenge|blocked the request)",
+    re.IGNORECASE,
+)
 
 
 def is_aria2_forbidden(message: str | None) -> bool:
@@ -192,21 +222,30 @@ def classify_error(message: str | None, *, status: str | None = None, url: str |
         "requested format" in lower and "not available" in lower and "image" in lower
     ):
         return JS_RUNTIME
+    if _DRM_RE.search(text):
+        return DRM_BLOCKED
     if _IMPERSONATE_MISSING_RE.search(text):
         return IMPERSONATION_MISSING
     if _HTTP_410_RE.search(text):
         from frameforge.download.impersonate import adult_site_in_text, url_needs_impersonate
 
-        adult = adult_site_in_text(text) or bool(url and url_needs_impersonate(url))
+        listed = adult_site_in_text(text) or bool(url and url_needs_impersonate(url))
         used_impersonate = _argv_has_flag(text, "--impersonate")
         used_cookies = _argv_has_flag(text, "--cookies")
-        if adult and not used_impersonate:
+        fingerprint = bool(_FINGERPRINT_RE.search(text))
+        if (listed or fingerprint) and not used_impersonate:
             return IMPERSONATION_MISSING
-        if adult and used_impersonate and not used_cookies:
+        if listed and used_impersonate and not used_cookies:
             return AUTH_REQUIRED
         return NOT_AVAILABLE
     if is_aria2_forbidden(text):
         return ARIA2_FORBIDDEN
+    if _HTTP_403_RE.search(text) and not _argv_has_flag(text, "--impersonate"):
+        from frameforge.download.impersonate import adult_site_in_text, url_needs_impersonate
+
+        listed = adult_site_in_text(text) or bool(url and url_needs_impersonate(url))
+        if listed or _FINGERPRINT_RE.search(text):
+            return IMPERSONATION_MISSING
     if (
         "downloaded file not found" in lower
         or "archive lists this video" in lower
@@ -298,6 +337,7 @@ def human_cause(category: str) -> str:
             "This site needs browser impersonation (curl_cffi + --impersonate chrome). "
             "Run python -m frameforge --check-env."
         ),
+        DRM_BLOCKED: "This stream is DRM-protected and is not supported by yt-dlp. FrameForge will not bypass DRM.",
         OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
         DISK_SPACE: "This upscale needs more free disk space for temporary PNG frames.",
         UPSCALE_LIMIT: "This clip is longer than the PNG-pipeline duration cap (streaming is not shipped yet).",
@@ -340,6 +380,10 @@ def suggested_actions(category: str) -> list[str]:
             "Run python -m frameforge --check-env (Chrome impersonate must be available)",
             "pip install curl_cffi==0.13.0 (do not upgrade to 0.16 with yt-dlp 2026.07.04)",
             "Accept the age gate in a browser, import cookies, then retry with impersonate",
+        ]
+    if category == DRM_BLOCKED:
+        return [
+            "Skip this job — DRM / not supported by yt-dlp (no bypass)",
         ]
     if category == NOT_AVAILABLE:
         return [

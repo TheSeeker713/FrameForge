@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.9
+
+- Multi-site hardening: automatic recovery ladder (impersonate → silent Firefox/Edge cookies → generic extractors once), `drm_blocked` category, expanded Auto impersonate host list, fail-pause / error report show `tried: …` ([MULTI_SITE.md](docs/MULTI_SITE.md))
+- `--check-env` reports `extractor_count`; Add URL probe badges `[generic]` when applicable
+- Honest limit: thousands of sites via yt-dlp extractors + generic — not a guarantee against upstream breakage or DRM
+
 ## 0.6.8
 
 - PornHub / MindGeek: `--impersonate chrome` when curl_cffi targets exist; pin `curl_cffi==0.13.0` (do not upgrade to 0.16.x with yt-dlp 2026.07.04)

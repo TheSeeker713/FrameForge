@@ -109,6 +109,13 @@ def check_environment() -> dict[str, Any]:
     js = js_runtime_status()
     ejs = _try_import("yt_dlp_ejs")
     impersonation = impersonation_status()
+    extractor_count = 0
+    try:
+        from yt_dlp.extractor import gen_extractor_classes
+
+        extractor_count = len(gen_extractor_classes())
+    except Exception:  # noqa: BLE001
+        extractor_count = 0
     onnx = check_onnx_providers()
     ok = (
         python["ok"]
@@ -133,6 +140,7 @@ def check_environment() -> dict[str, Any]:
         "js_runtime": js,
         "yt_dlp_ejs": ejs,
         "impersonation": impersonation,
+        "extractor_count": extractor_count,
         "notes": [
             "Sequential downloads only",
             "SQLite WAL queue",
@@ -140,5 +148,6 @@ def check_environment() -> dict[str, Any]:
             "DirectML preferred",
             js.get("tip") or f"JS runtime: {js.get('runtime')} ({js.get('path')})",
             impersonate_note,
+            f"yt-dlp extractors: {extractor_count}",
         ],
     }

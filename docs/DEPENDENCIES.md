@@ -55,6 +55,8 @@ python .\scripts\create_smoke_onnx.py
 
 JSON key `impersonation`: `yt_dlp_version`, `curl_cffi_version`, `curl_cffi_supported`, `chrome_available`, `clients`, `selected`. Overall `ok` is false if Chrome is unavailable. See [ADULT_SITES.md](ADULT_SITES.md).
 
+Also: `extractor_count` from yt-dlp’s extractor registry (multi-site surface). See [MULTI_SITE.md](MULTI_SITE.md).
+
 ## Models
 
 Phase 0 session smoke model (local Identity ONNX):

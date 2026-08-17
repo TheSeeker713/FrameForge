@@ -17,15 +17,21 @@ MODE_OFF = "off"
 MODES = (MODE_AUTO, MODE_ALWAYS, MODE_OFF)
 DEFAULT_MODE = MODE_AUTO
 
-# PornHub + related Aylo/MindGeek extractors that 410 without --impersonate.
-_IMPERSONATE_HOSTS = (
+# PornHub + related Aylo/MindGeek extractors, plus fingerprint-sensitive hosts
+# that benefit from --impersonate. Not applied to every URL (Auto, not Always).
+DEFAULT_AUTO_HOSTS = (
     "pornhub.com",
     "pornhubpremium.com",
     "pornhub.org",
     "youporn.com",
     "redtube.com",
     "tube8.com",
+    "xvideos.com",
+    "xnxx.com",
+    "xhamster.com",
+    "spankbang.com",
 )
+HOSTS_SETTING = "impersonate_auto_hosts"
 
 _IMPERSONATE_EXTRACTOR_MARKERS = (
     "pornhub",
@@ -34,6 +40,10 @@ _IMPERSONATE_EXTRACTOR_MARKERS = (
     "redtube",
     "tube8",
     "mindgeek",
+    "xvideos",
+    "xnxx",
+    "xhamster",
+    "spankbang",
 )
 
 IMPERSONATION_FIX = (
@@ -62,11 +72,23 @@ def _host(url: str) -> str:
     return host
 
 
-def url_needs_impersonate(url: str) -> bool:
-    """True for PornHub / related MindGeek hosts (Settings Auto)."""
+def auto_impersonate_hosts(repo: Any | None = None) -> tuple[str, ...]:
+    """Comma-separated Settings override, else the shipped Auto list."""
+    if repo is not None and hasattr(repo, "get_setting"):
+        raw = str(repo.get_setting(HOSTS_SETTING, "") or "").strip()
+        if raw:
+            parts = tuple(p.strip().lower().lstrip(".") for p in raw.split(",") if p.strip())
+            if parts:
+                return parts
+    return DEFAULT_AUTO_HOSTS
+
+
+def url_needs_impersonate(url: str, *, repo: Any | None = None) -> bool:
+    """True for Auto-list hosts (PornHub family + fingerprint-sensitive sites)."""
     host = _host(url)
+    hosts = auto_impersonate_hosts(repo)
     if host:
-        for suffix in _IMPERSONATE_HOSTS:
+        for suffix in hosts:
             if host == suffix or host.endswith("." + suffix):
                 return True
     lower = (url or "").lower()
@@ -137,6 +159,7 @@ def should_impersonate(
     mode: str | None = None,
     repo: Any | None = None,
     targets: list[str] | None = None,
+    force: bool = False,
 ) -> bool:
     resolved = impersonate_mode(repo, mode)
     if resolved == MODE_OFF:
@@ -144,9 +167,9 @@ def should_impersonate(
     items = targets if targets is not None else list_impersonate_targets()
     if not items:
         return False
-    if resolved == MODE_ALWAYS:
+    if force or resolved == MODE_ALWAYS:
         return True
-    return url_needs_impersonate(url)
+    return url_needs_impersonate(url, repo=repo)
 
 
 def impersonate_cli_args(
@@ -155,8 +178,9 @@ def impersonate_cli_args(
     mode: str | None = None,
     repo: Any | None = None,
     targets: list[str] | None = None,
+    force: bool = False,
 ) -> list[str]:
-    if not should_impersonate(url, mode=mode, repo=repo, targets=targets):
+    if not should_impersonate(url, mode=mode, repo=repo, targets=targets, force=force):
         return []
     client = select_impersonate_client(targets if targets is not None else list_impersonate_targets())
     if not client:
@@ -170,8 +194,9 @@ def impersonate_ydl_option(
     mode: str | None = None,
     repo: Any | None = None,
     targets: list[str] | None = None,
+    force: bool = False,
 ) -> Any | None:
-    args = impersonate_cli_args(url, mode=mode, repo=repo, targets=targets)
+    args = impersonate_cli_args(url, mode=mode, repo=repo, targets=targets, force=force)
     if len(args) < 2:
         return None
     try:
@@ -193,7 +218,7 @@ def missing_impersonation_error() -> str:
 
 
 def require_impersonate_for_url(url: str, *, repo: Any | None = None) -> str | None:
-    """Return selected client, or raise when a PH-family URL cannot impersonate."""
+    """Return selected client, or raise when an Auto-list URL cannot impersonate."""
     mode = impersonate_mode(repo)
     targets = list_impersonate_targets()
     client = select_impersonate_client(targets)
@@ -201,9 +226,9 @@ def require_impersonate_for_url(url: str, *, repo: Any | None = None) -> str | N
         return client
     if mode == MODE_OFF:
         return None
-    if url_needs_impersonate(url) and not targets:
+    if url_needs_impersonate(url, repo=repo) and not targets:
         raise RuntimeError(missing_impersonation_error())
-    return client if url_needs_impersonate(url) else None
+    return client if url_needs_impersonate(url, repo=repo) else None
 
 
 def impersonation_status() -> dict[str, Any]:

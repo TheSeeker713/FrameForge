@@ -16,6 +16,20 @@ def site_label_from_url(url: str) -> str:
     return host or "unknown"
 
 
+_GENERIC_LABELS = frozenset({"generic", "genericweb", "html5", "http", "unknown"})
+
+
+def display_extractor(extractor: str | None, url: str | None = None) -> str:
+    """Badge label: `generic` when yt-dlp fell back, else extractor or host."""
+    raw = str(extractor or "").strip()
+    if raw.lower() in _GENERIC_LABELS or not raw:
+        host = site_label_from_url(url or "") if url else ""
+        if raw.lower() in {"generic", "genericweb", "html5", "http"}:
+            return "generic"
+        return host or "generic"
+    return raw
+
+
 def probe_listing_metadata(
     url: str,
     *,
@@ -46,7 +60,8 @@ def probe_listing_bundle(
             or info.get("ie_key")
             or fallback
         )
+        extractor = display_extractor(str(extractor), url)
         thumb = thumbnail_url_from_info(info)
-        return (str(title) if title else None, str(extractor), thumb)
+        return (str(title) if title else None, extractor, thumb)
     except Exception:  # noqa: BLE001
         return (None, fallback, None)

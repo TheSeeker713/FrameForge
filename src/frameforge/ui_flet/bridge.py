@@ -40,6 +40,10 @@ class UiBridge:
 
     def enqueue_url(self, url: str, **kwargs: Any) -> Any:
         """Add a pending job. Does not start the worker."""
+        if not kwargs.get("extractor"):
+            from frameforge.download.metadata import site_label_from_url
+
+            kwargs["extractor"] = site_label_from_url(url)
         return self.repo.enqueue(url, **kwargs)
 
     def retry_job(self, job_id: int) -> None:

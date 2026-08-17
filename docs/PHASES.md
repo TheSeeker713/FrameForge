@@ -2,11 +2,11 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.8 (PornHub impersonate + curl_cffi 0.13.0)
+## Status: v0.6.9 (universal multi-site recovery)
 
-Package version is **0.6.8**. Adult hosts pass `--impersonate chrome` when targets exist. Job-70-style errors are `impersonation_missing`, not `unknown`. **Manual:** a browser-viewable PornHub URL must succeed in-app after cookies; pytest does not download live PH. See [ADULT_SITES.md](ADULT_SITES.md).
+Package version is **0.6.9**. Same worker path for all yt-dlp hosts: recovery ladder (native / impersonate / silent cookies / generic once), expanded Auto impersonate list, `drm_blocked`, fail-pause shows `tried: …`. See [MULTI_SITE.md](MULTI_SITE.md).
 
-Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
+PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 
 ## Phase 0 – Foundation
 

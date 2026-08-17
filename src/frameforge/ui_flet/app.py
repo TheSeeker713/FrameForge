@@ -307,7 +307,8 @@ class FrameForgeUi:
         output_missing = cat == "output_missing"
         disk_space = cat == "disk_space"
         upscale_limit = cat == "upscale_limit"
-        hide_auth = js_runtime or output_missing or disk_space or upscale_limit
+        drm_blocked = cat == "drm_blocked"
+        hide_auth = js_runtime or output_missing or disk_space or upscale_limit or drm_blocked
         browser_pick = ft.Dropdown(
             label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
             value="firefox",
@@ -361,6 +362,11 @@ class FrameForgeUi:
                     ft.Text(str(payload.get("url") or ""), color=COLORS["text_secondary"]),
                     ft.Text(f"Cause: {payload.get('cause') or ''}", color=COLORS["warn"]),
                     ft.Text(
+                        str(payload.get("tried") or ""),
+                        color=COLORS["text_secondary"],
+                        visible=bool(payload.get("tried")),
+                    ),
+                    ft.Text(
                         "YouTube n-challenge failed: install Deno + yt-dlp-ejs and restart FrameForge. "
                         "This is not a cookie/login problem."
                         if js_runtime
@@ -377,8 +383,12 @@ class FrameForgeUi:
                             else (
                                 str(payload.get("error") or payload.get("cause") or "")
                                 if disk_space or upscale_limit
-                                else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
-                                "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                                else (
+                                    "DRM / not supported by yt-dlp. FrameForge will not bypass DRM."
+                                    if drm_blocked
+                                    else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
+                                    "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                                )
                             )
                             )
                         ),
@@ -2029,7 +2039,17 @@ class FrameForgeUi:
         url = (getattr(field, "value", None) or "").strip()
         if not url:
             return None
-        job = self.bridge.enqueue_url(url)
+        from frameforge.download.metadata import probe_listing_bundle
+
+        probe = getattr(self, "listing_probe", None)
+        if callable(probe):
+            title, extractor, _thumb = probe(url)
+        else:
+            title, extractor, _thumb = probe_listing_bundle(url)
+        extra: dict[str, Any] = {"extractor": extractor}
+        if title:
+            extra["title"] = title
+        job = self.bridge.enqueue_url(url, **extra)
         if field is not None:
             field.value = ""
         self.refresh_queue(force=True)

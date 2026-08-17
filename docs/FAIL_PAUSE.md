@@ -19,6 +19,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `cancelled` | user cancel (`DownloadCancelled` or status `cancelled`) | Job was cancelled. |
 | `js_runtime` | n-challenge / EJS / only images | Deno + yt-dlp-ejs missing or failed. |
 | `impersonation_missing` | no impersonate target, unsupported curl_cffi, PH HTTP 410 without `--impersonate` | Install/pin curl_cffi 0.13.0 and `--check-env`; then cookies. |
+| `drm_blocked` | DRM / “will NOT be supported” | Skip — no bypass. |
 | `output_missing` | exit 0 but no file / archive orphan | File missing on disk after a “successful” download. |
 | `unknown` | anything else | Unclassified failure. |
 
@@ -64,6 +65,10 @@ Turn the default policy off in Settings if you want the bulk run to keep going a
 `js_runtime` pauses omit cookie import and tell you to install Deno + yt-dlp-ejs instead.
 
 `impersonation_missing` pauses **and** still offers cookie import: pin `curl_cffi==0.13.0`, run `--check-env`, accept the age gate, import `pornhub.com.txt`, retry with `--impersonate`. HTTP 410 **after** impersonate + cookies is `not_available` (confirm in a browser; truly deleted videos stay 410). See [ADULT_SITES.md](ADULT_SITES.md).
+
+Before fail-pause, the download handler may already have recorded automatic **recovery attempts** (`recovery_attempts` / `tried: native, impersonate, cookies, generic`). The modal and error report show that line. Silent Firefox/Edge cookie import (default on) is one automatic step — not an in-app browser download. See [MULTI_SITE.md](MULTI_SITE.md).
+
+`drm_blocked` does **not** fail-pause with cookie import; skip the job.
 
 You must choose an action. The worker does not silently continue failing the rest of the list.
 

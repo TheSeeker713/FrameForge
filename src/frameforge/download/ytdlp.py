@@ -245,6 +245,9 @@ class YtDlpDownloader:
         self.download_method: str = "aria2c" if use_aria2c else "native"
         self.ignore_download_archive: bool = False
         self._settings_repo: Any | None = None
+        self.force_impersonate: bool = False
+        self.use_generic_extractors: bool = False
+        self.recovery_steps: list[str] = []
 
     def _staging_dir(self) -> Path:
         from frameforge.paths import frameforge_root, temp_dir
@@ -345,6 +348,7 @@ class YtDlpDownloader:
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "socket_timeout": 12,
         }
         if self._valid_cookiefile() is not None:
             opts["cookiefile"] = str(self._valid_cookiefile())
@@ -445,9 +449,13 @@ class YtDlpDownloader:
         if url:
             from frameforge.download.impersonate import impersonate_ydl_option
 
-            impersonate = impersonate_ydl_option(url, repo=self._settings_repo)
+            impersonate = impersonate_ydl_option(
+                url, repo=self._settings_repo, force=bool(self.force_impersonate)
+            )
             if impersonate is not None:
                 opts["impersonate"] = impersonate
+        if self.use_generic_extractors:
+            opts["allowed_extractors"] = ["generic", "default"]
         return opts
 
     def _apply_rate_opts(self, opts: dict[str, Any]) -> None:
@@ -641,10 +649,20 @@ class YtDlpDownloader:
         cmd.extend(js_runtime_cli_args())
         from frameforge.download.impersonate import impersonate_cli_args
 
-        cmd.extend(impersonate_cli_args(url, repo=self._settings_repo))
+        cmd.extend(
+            impersonate_cli_args(
+                url,
+                repo=self._settings_repo,
+                force=bool(self.force_impersonate),
+            )
+        )
         extractor = self._extractor_args_cli(url)
         if extractor:
             cmd.extend(["--extractor-args", extractor])
+        if self.use_generic_extractors:
+            from frameforge.download.recovery import GENERIC_EXTRACTORS_CLI
+
+            cmd.extend(["--use-extractors", GENERIC_EXTRACTORS_CLI])
         cmd.append(url)
         return cmd
 
@@ -691,6 +709,9 @@ class YtDlpDownloader:
             if idx + 1 < len(cmd):
                 impersonate_val = cmd[idx + 1]
         snap["impersonate"] = impersonate_val
+        snap["use_extractors"] = (
+            cmd[cmd.index("--use-extractors") + 1] if "--use-extractors" in cmd else None
+        )
         if cookie is not None:
             log.info("ytdlp_invocation cookiefile attached: %s", cookie)
         else:

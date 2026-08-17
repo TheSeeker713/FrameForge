@@ -7,6 +7,7 @@ from typing import Any
 
 from frameforge import __version__
 from frameforge.download.invocation import argv_summary
+from frameforge.download.recovery import format_tried
 from frameforge.errors import classify_error, format_error_panel, human_cause
 
 
@@ -46,6 +47,7 @@ def format_full_error_report(
         f"url: {url}",
         f"category: {cat or ''}",
         f"cause: {cause}",
+        f"tried: {payload.get('tried') or opts.get('recovery_tried') or format_tried(opts.get('recovery_attempts')) or '(none)'}",
         "error:",
         str(err).strip() or "(empty)",
         "stderr_tail:",
@@ -64,6 +66,7 @@ def format_full_error_report(
             lines.append(f"aria2_args: {inv.get('aria2_args')}")
         lines.append(f"player_client: {inv.get('player_client') or '(none)'}")
         lines.append(f"impersonate: {inv.get('impersonate') or '(none)'}")
+        lines.append(f"use_extractors: {inv.get('use_extractors') or '(default)'}")
         lines.append(f"format: {inv.get('format') or ''}")
         lines.append(f"ffmpeg_location: {inv.get('ffmpeg_location') or '(not found)'}")
         if inv.get("ffprobe_location"):

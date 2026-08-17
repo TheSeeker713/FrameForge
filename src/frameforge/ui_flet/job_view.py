@@ -67,6 +67,16 @@ def status_pill(job: Any) -> str:
     return STATUS_PILL.get(getattr(job, "status", ""), str(getattr(job, "status", "")).title())
 
 
+def extractor_badge(job: Any) -> str:
+    """Site folder or `[generic]` when yt-dlp used the generic extractor."""
+    from frameforge.download.metadata import display_extractor
+
+    ext = display_extractor(getattr(job, "extractor", None), getattr(job, "url", None))
+    if ext == "generic":
+        return "[generic]"
+    return getattr(job, "site_key", None) or ext or ""
+
+
 def fail_action_ids(category: str | None) -> list[str]:
     """Non-auth failures (ffmpeg, aria2_forbidden, js_runtime, network) lead with Retry."""
     if category in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING):
@@ -101,7 +111,7 @@ def card_view(
         "id": job.id,
         "title": job.title or job.url,
         "url": job.url,
-        "domain": getattr(job, "site_key", None) or "",
+        "domain": extractor_badge(job),
         "status": status_pill(job),
         "raw_status": job.status,
         "selected": selected,

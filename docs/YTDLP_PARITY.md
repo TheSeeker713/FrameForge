@@ -112,3 +112,10 @@ Adult hosts need `--impersonate chrome` plus `cookies\pornhub.com.txt`. Job-70-s
 HTTP 410 without impersonate is `impersonation_missing`, not `unknown`. Pin
 `curl_cffi==0.13.0` with yt-dlp 2026.07.04; do not jump curl_cffi to 0.16.x alone.
 See [ADULT_SITES.md](ADULT_SITES.md).
+
+## Multi-site recovery (v0.6.9)
+
+The same argv baseline applies to every host. After aria2→native, FrameForge may
+retry once with forced impersonate, silent Firefox/Edge cookies, or
+`--use-extractors generic,default`. Job options store `recovery_attempts` /
+`recovery_tried`. DRM-style stderr is `drm_blocked`. See [MULTI_SITE.md](MULTI_SITE.md).

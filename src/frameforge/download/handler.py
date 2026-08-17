@@ -133,22 +133,121 @@ def make_download_handler(
 
         dl._settings_repo = repo
         dl.youtube_innertube = innertube_enabled(repo)
-        try:
-            result = dl.download(
-                job.url,
-                progress_cb=progress_cb,
-                job_id=job.id,
-                process_registry=process_registry,
-            )
-        finally:
-            inv = getattr(dl, "last_invocation", None)
-            if not inv and hasattr(dl, "describe_cli_invocation"):
-                try:
-                    inv = dl.describe_cli_invocation(job.url)
-                except Exception:  # noqa: BLE001
-                    inv = None
-            if inv:
-                extra: dict[str, Any] = {
+        dl.force_impersonate = bool(job.options().get("force_impersonate"))
+        dl.use_generic_extractors = bool(job.options().get("use_generic_extractors"))
+        from frameforge.download.impersonate import list_impersonate_targets
+        from frameforge.download.recovery import (
+            format_tried,
+            next_recovery_step,
+            silent_cookie_import,
+            silent_cookies_enabled,
+        )
+        from frameforge.errors import classify_error
+
+        attempts: list[str] = list(job.options().get("recovery_attempts") or [])
+        last_exc: BaseException | None = None
+        result = None
+        while True:
+            try:
+                result = dl.download(
+                    job.url,
+                    progress_cb=progress_cb,
+                    job_id=job.id,
+                    process_registry=process_registry,
+                )
+                last_exc = None
+                break
+            except (DownloadCancelled, DownloadPaused):
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if bool(getattr(dl, "aria2_fallback_native", False)) and "native" not in attempts:
+                    attempts.append("native")
+                inv = getattr(dl, "last_invocation", None) or {}
+                if inv.get("impersonate") and "impersonate" not in attempts:
+                    attempts.append("impersonate")
+                cat = classify_error(str(exc), url=job.url)
+                impersonated = bool(inv.get("impersonate")) or bool(dl.force_impersonate)
+                step = next_recovery_step(
+                    attempts,
+                    category=cat,
+                    message=str(exc),
+                    url=job.url,
+                    impersonated=impersonated,
+                    has_impersonate_targets=bool(list_impersonate_targets()),
+                    silent_cookies=silent_cookies_enabled(repo),
+                )
+                if step is None:
+                    break
+                if step == "impersonate":
+                    dl.force_impersonate = True
+                    attempts.append("impersonate")
+                    if progress_cb:
+                        progress_cb(
+                            0.0,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "Retrying with browser impersonate…",
+                                "eta_str": None,
+                            },
+                        )
+                    continue
+                if step == "cookies":
+                    imported = silent_cookie_import(job.url)
+                    attempts.append("cookies")
+                    if imported.get("ok"):
+                        dl.cookiefile = _cookiefile_for_url(job.url)
+                        if progress_cb:
+                            progress_cb(
+                                0.0,
+                                {
+                                    "speed_bps": None,
+                                    "eta_seconds": None,
+                                    "speed_str": "Retrying with imported cookies…",
+                                    "eta_str": None,
+                                },
+                            )
+                        continue
+                    step = next_recovery_step(
+                        attempts,
+                        category=cat,
+                        message=str(exc),
+                        url=job.url,
+                        impersonated=bool(dl.force_impersonate) or impersonated,
+                        has_impersonate_targets=bool(list_impersonate_targets()),
+                        silent_cookies=False,
+                    )
+                if step == "generic":
+                    dl.use_generic_extractors = True
+                    attempts.append("generic")
+                    if progress_cb:
+                        progress_cb(
+                            0.0,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "Retrying with generic extractor…",
+                                "eta_str": None,
+                            },
+                        )
+                    continue
+                break
+        inv = getattr(dl, "last_invocation", None)
+        if not inv and hasattr(dl, "describe_cli_invocation"):
+            try:
+                inv = dl.describe_cli_invocation(job.url)
+            except Exception:  # noqa: BLE001
+                inv = None
+        extra: dict[str, Any] = {
+            "recovery_attempts": attempts,
+            "recovery_tried": format_tried(attempts),
+            "force_impersonate": bool(dl.force_impersonate),
+            "use_generic_extractors": bool(dl.use_generic_extractors),
+        }
+        if inv:
+            extra.update(
+                {
                     "ytdlp_invocation": inv,
                     "download_method": getattr(dl, "download_method", None)
                     or ("native" if not dl._aria2c_enabled() else "aria2c"),
@@ -158,13 +257,23 @@ def make_download_handler(
                     "recovery_method": inv.get("recovery_method"),
                     "archive_hit": bool(inv.get("archive_hit")),
                 }
-                repo.merge_options(job.id, extra)
+            )
+        repo.merge_options(job.id, extra)
+        if last_exc is not None:
+            raise last_exc
+        if result is None:
+            raise RuntimeError("Download failed with no result")
         # If cancelled mid-flight after process death, do not mark success
         if repo.get(job.id).status == "cancelled":
             raise DownloadCancelled("cancelled")
         if repo.get(job.id).status == "paused":
             raise DownloadPaused("paused")
         repo.set_title(job.id, result.title)
+        from frameforge.download.metadata import display_extractor
+
+        ext_key = result.info.get("extractor_key") or result.info.get("extractor")
+        if ext_key:
+            repo.set_extractor(job.id, display_extractor(str(ext_key), job.url))
         repo.set_paths(job.id, download_path=str(result.path), output_path=str(result.path))
         repo.add_archive(
             job.url,
