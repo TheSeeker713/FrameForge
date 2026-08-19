@@ -8,6 +8,7 @@ from pathlib import Path
 from frameforge.db.repository import JobRepository
 from frameforge.download.handler import make_download_handler
 from frameforge.download.recovery import (
+    RETRY,
     SILENT_FIREFOX_COOKIES,
     next_recovery_step,
     should_try_silent_cookies,
@@ -55,8 +56,32 @@ def test_ph_age_and_unknown_classify():
     assert should_try_silent_cookies(AUTH_REQUIRED, AUTH_MSG, PH_URL) is True
     assert should_try_silent_cookies(RATE_LIMITED, "HTTP Error 429: Too Many Requests", YT_URL) is True
     assert should_try_silent_cookies(UNKNOWN, "please sign in to continue", YT_URL) is True
-    assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, PH_URL) is False
-    assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, YT_URL) is False
+    assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, PH_URL) is True
+    assert should_try_silent_cookies(
+        UNKNOWN, BARE_UNKNOWN, "https://ff-no-cookies-test.invalid/watch"
+    ) is False
+    assert (
+        next_recovery_step(
+            ["impersonate"],
+            category=UNKNOWN,
+            message=BARE_UNKNOWN,
+            url=PH_URL,
+            impersonated=True,
+            silent_cookies=True,
+        )
+        == SILENT_FIREFOX_COOKIES
+    )
+    assert (
+        next_recovery_step(
+            ["impersonate"],
+            category=UNKNOWN,
+            message=BARE_UNKNOWN,
+            url=YT_URL,
+            impersonated=True,
+            silent_cookies=True,
+        )
+        == SILENT_FIREFOX_COOKIES
+    )
 
 
 def test_do_not_auto_recover_skip_categories():
@@ -130,6 +155,7 @@ def test_silent_firefox_success_retries_once_no_fail_pause(tmp_path: Path, monke
     attempts = loaded.options().get("recovery_attempts") or []
     assert SILENT_FIREFOX_COOKIES in attempts
     assert attempts.count(SILENT_FIREFOX_COOKIES) == 1
+    assert RETRY in attempts
     assert "Cookies refreshed" in (loaded.options().get("recovery_toast") or "")
     worker.stop(timeout=2)
     repo.close()
@@ -174,6 +200,62 @@ def test_ph_auth_enters_silent_cookie_path(tmp_path: Path, monkeypatch):
     attempts = loaded.options().get("recovery_attempts") or []
     assert SILENT_FIREFOX_COOKIES in attempts
     assert "backoff:2.0" in attempts
+    assert RETRY in attempts
+    repo.close()
+
+
+def test_unknown_after_impersonate_runs_firefox_then_retry_no_fail_pause(tmp_path: Path, monkeypatch):
+    """Field regression: category unknown + tried impersonate must not open the modal."""
+    monkeypatch.setattr("frameforge.download.impersonate.list_impersonate_targets", lambda: ["chrome"])
+    monkeypatch.setattr(
+        "frameforge.download.impersonate.require_impersonate_for_url",
+        lambda url, repo=None: "chrome",
+    )
+
+    def slow_import(url: str, importer=None):
+        time.sleep(0.1)
+        return {"ok": True, "browser": "firefox"}
+
+    monkeypatch.setattr("frameforge.download.recovery.silent_cookie_import", slow_import)
+    repo = JobRepository(tmp_path / "field.db")
+    repo.set_setting("auto_retry_backoff_sec", "0")
+    repo.set_setting("auto_retry_backoff_jitter_sec", "0")
+    out = tmp_path / "dl"
+    out.mkdir()
+    dl = YtDlpDownloader(output_dir=out, archive_file=tmp_path / "a.txt", use_aria2c=False)
+    n = {"i": 0}
+
+    def fake_download(url: str, **kwargs: object):
+        n["i"] += 1
+        dl.last_invocation = {"impersonate": "chrome"}
+        if n["i"] == 1:
+            raise RuntimeError(BARE_UNKNOWN)
+        return _clip_result(out)
+
+    dl.download = fake_download  # type: ignore[method-assign]
+    paused: list[int] = []
+    worker = SequentialWorker(
+        repo,
+        download_handler=make_download_handler(dl),
+        poll_interval=0.02,
+    )
+    worker.on_fail_pause = lambda job: paused.append(job.id)
+    job = repo.enqueue(PH_URL)
+    worker.request_download_ids([job.id])
+    deadline = time.time() + 8
+    while time.time() < deadline and repo.get(job.id).status in ("pending", "downloading"):
+        time.sleep(0.03)
+    loaded = repo.get(job.id)
+    assert loaded.status == "completed"
+    assert n["i"] == 2
+    assert paused == []
+    attempts = loaded.options().get("recovery_attempts") or []
+    assert "impersonate" in attempts
+    assert SILENT_FIREFOX_COOKIES in attempts
+    assert RETRY in attempts
+    assert attempts.index("impersonate") < attempts.index(SILENT_FIREFOX_COOKIES)
+    assert attempts.index(SILENT_FIREFOX_COOKIES) < attempts.index(RETRY)
+    worker.stop(timeout=2)
     repo.close()
 
 
@@ -227,6 +309,7 @@ def test_youtube_auth_silent_cookies_backoff_no_fail_pause(tmp_path: Path, monke
     attempts = loaded.options().get("recovery_attempts") or []
     assert SILENT_FIREFOX_COOKIES in attempts
     assert "backoff:2.0" in attempts
+    assert RETRY in attempts
     worker.stop(timeout=2)
     repo.close()
 
@@ -266,6 +349,7 @@ def test_example_video_host_same_cookie_path(tmp_path: Path, monkeypatch):
     attempts = loaded.options().get("recovery_attempts") or []
     assert SILENT_FIREFOX_COOKIES in attempts
     assert "backoff:2.0" in attempts
+    assert RETRY in attempts
     repo.close()
 
 

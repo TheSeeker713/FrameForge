@@ -23,6 +23,7 @@ from frameforge.errors import (
     NOT_AVAILABLE,
     OUTPUT_MISSING,
     RATE_LIMITED,
+    UNKNOWN,
     UPSCALE_CONFIG,
     UPSCALE_LIMIT,
     classify_error,
@@ -37,7 +38,10 @@ DEFAULT_JITTER_SEC = 2.0
 GENERIC_EXTRACTORS_CLI = "generic,default"
 SILENT_FIREFOX_COOKIES = "silent_firefox_cookies"
 BOT_RETRY = "bot_retry"
+RETRY = "retry"
 COOKIE_ATTEMPT_NAMES = frozenset({"cookies", SILENT_FIREFOX_COOKIES})
+IMPORT_TIMEOUT_SEC = 120
+AUTO_COOKIE_BROWSERS = ("firefox", "edge")
 
 # Do not auto-generic-retry these.
 SKIP_GENERIC_CATEGORIES = frozenset(
@@ -133,10 +137,46 @@ COOKIE_ELIGIBLE_CATEGORIES = frozenset(
 )
 
 
+def cookie_domain_eligible(
+    url: str | None,
+    message: str | None = None,
+    attempts: list[str] | tuple[str, ...] | None = None,
+) -> bool:
+    """True when this URL/job should try domain cookies (any host, not PH-only).
+
+    Signals: auth-like stderr, an existing Netscape file for the domain,
+    Auto-impersonate host (cookies usually required after TLS impersonate),
+    or this failure chain already used impersonate.
+    """
+    if looks_like_auth_wall(message, url=url):
+        return True
+    if not is_http_url(url):
+        return False
+    try:
+        from frameforge.download.cookies import has_cookies
+
+        if has_cookies(url):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from frameforge.download.impersonate import url_needs_impersonate
+
+        if url_needs_impersonate(url):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    done = {str(a).strip().lower() for a in (attempts or []) if str(a).strip()}
+    if "impersonate" in done:
+        return True
+    return False
+
+
 def should_try_silent_cookies(
     category: str | None,
     message: str | None = None,
     url: str | None = None,
+    attempts: list[str] | tuple[str, ...] | None = None,
 ) -> bool:
     """Whether this failure may take one silent Firefox (then Edge) cookie import.
 
@@ -152,6 +192,8 @@ def should_try_silent_cookies(
     if cat in COOKIE_ELIGIBLE_CATEGORIES:
         return True
     if looks_like_auth_wall(message, url=url):
+        return True
+    if cat == UNKNOWN and cookie_domain_eligible(url, message, attempts):
         return True
     return False
 
@@ -353,7 +395,7 @@ def next_recovery_step(
     if (
         not (done & COOKIE_ATTEMPT_NAMES)
         and silent_cookies
-        and should_try_silent_cookies(cat, text, url)
+        and should_try_silent_cookies(cat, text, url, attempts=attempts)
     ):
         return SILENT_FIREFOX_COOKIES
 
@@ -375,8 +417,107 @@ def next_recovery_step(
     return None
 
 
+def recover_browser_cookies(
+    url: str,
+    *,
+    importer: Any | None = None,
+    browsers: tuple[str, ...] = AUTO_COOKIE_BROWSERS,
+    probe: Any | None = None,
+    repo: Any | None = None,
+) -> dict[str, Any]:
+    """Same core as fail-pause “Import from Firefox / browser”: import then validate.
+
+    Worker-safe, blocking until yt-dlp --cookies-from-browser finishes (or times out).
+    Firefox first, then Edge. Never loops on Chrome ABE. Never arms the worker.
+    """
+    from frameforge.download.cookie_validate import (
+        UNLOCK_FAIL,
+        enable_gentle_after_bot,
+        mark_cookies_validated,
+        validate_cookies_for_url,
+    )
+
+    def _finish_ok(browser: str, result: Any, validation: Any) -> dict[str, Any]:
+        mark_cookies_validated(url)
+        if repo is not None:
+            try:
+                enable_gentle_after_bot(repo)
+            except Exception:  # noqa: BLE001
+                pass
+        return {
+            "ok": True,
+            "stage": "ready",
+            "browser": browser,
+            "result": result,
+            "validation": validation,
+            "message": (getattr(validation, "message", None) or "Cookies validated for this domain.")
+            + " Retry this job and resume the queue.",
+            "retried": False,
+            "browsers": list(browsers),
+        }
+
+    if importer is not None:
+        result = importer(url)
+        ok = bool(result.get("ok") if isinstance(result, dict) else getattr(result, "ok", False))
+        if not ok:
+            msg = (
+                result.get("message")
+                if isinstance(result, dict)
+                else getattr(result, "message", None)
+            )
+            return {
+                "ok": False,
+                "stage": "import",
+                "message": msg or "Cookie import failed.",
+                "result": result,
+                "retried": False,
+                "browser": "firefox",
+                "browsers": ["injected"],
+            }
+        browser = "firefox"
+        if isinstance(result, dict):
+            browser = str(result.get("browser") or "firefox")
+        else:
+            browser = str(getattr(result, "browser", None) or "firefox")
+        validation = validate_cookies_for_url(url, probe=probe, skip_probe_if_session=False)
+        if not validation.ok:
+            return {
+                "ok": False,
+                "stage": "validate",
+                "message": validation.message or UNLOCK_FAIL,
+                "result": result,
+                "validation": validation,
+                "retried": False,
+                "browser": browser,
+            }
+        return _finish_ok(browser, result, validation)
+
+    from frameforge.download.browser_import import import_cookies_from_browser
+
+    errors: list[str] = []
+    last_result: Any = None
+    for browser in browsers:
+        imported = import_cookies_from_browser(url, browser=browser)
+        last_result = imported
+        if imported.ok:
+            validation = validate_cookies_for_url(url, probe=probe, skip_probe_if_session=False)
+            if validation.ok:
+                return _finish_ok(browser, imported, validation)
+            errors.append(f"{browser}: imported but validate failed ({validation.message})")
+        else:
+            errors.append(f"{browser}: {imported.message}")
+    return {
+        "ok": False,
+        "stage": "import",
+        "message": " | ".join(errors) or "Cookie import failed.",
+        "result": last_result,
+        "retried": False,
+        "browsers": list(browsers),
+    }
+
+
 def silent_cookie_import(url: str, *, importer: Any | None = None) -> dict[str, Any]:
-    """Firefox then Edge, once each. Never Chrome. Never loops. No GUI."""
+    """Firefox then Edge, once each. Same import_cookies_from_browser as the fail-pause button."""
     if importer is not None:
         result = importer(url)
         ok = bool(result.get("ok") if isinstance(result, dict) else getattr(result, "ok", False))
@@ -386,19 +527,4 @@ def silent_cookie_import(url: str, *, importer: Any | None = None) -> dict[str, 
         else:
             browser = getattr(result, "browser", None)
         return {"ok": ok, "result": result, "browser": browser or "firefox", "browsers": ["injected"]}
-    from frameforge.download.browser_import import import_cookies_from_browser
-
-    errors: list[str] = []
-    for browser in ("firefox", "edge"):
-        imported = import_cookies_from_browser(url, browser=browser)
-        if imported.ok:
-            from frameforge.download.cookie_validate import mark_cookies_validated, validate_cookies_for_url
-
-            validation = validate_cookies_for_url(url, skip_probe_if_session=False)
-            if validation.ok:
-                mark_cookies_validated(url)
-                return {"ok": True, "browser": browser, "validation": validation}
-            errors.append(f"{browser}: imported but validate failed ({validation.message})")
-        else:
-            errors.append(f"{browser}: {imported.message}")
-    return {"ok": False, "message": " | ".join(errors), "browsers": ["firefox", "edge"]}
+    return recover_browser_cookies(url, browsers=AUTO_COOKIE_BROWSERS)

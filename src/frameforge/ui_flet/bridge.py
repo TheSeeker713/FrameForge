@@ -100,40 +100,17 @@ class UiBridge:
         import_browser: ImportBrowserFn | None = None,
         probe: Any | None = None,
     ) -> dict[str, Any]:
-        """Import cookies then validate. Never arms the worker."""
-        from frameforge.download.cookie_validate import UNLOCK_FAIL
+        """Import cookies then validate. Never arms the worker. Same core as silent auto recovery."""
+        from frameforge.download.recovery import recover_browser_cookies
 
         if import_browser is None:
-            return {"ok": False, "stage": "import", "message": "No import handler", "retried": False}
-        result = import_browser(url)
-        ok = bool(getattr(result, "ok", False)) if result is not None else False
-        if not ok:
-            return {
-                "ok": False,
-                "stage": "import",
-                "message": getattr(result, "message", None) or "Cookie import failed.",
-                "result": result,
-                "retried": False,
-            }
-        validation = self.validate_site_cookies(url, probe=probe)
-        if not validation.ok:
-            return {
-                "ok": False,
-                "stage": "validate",
-                "message": validation.message or UNLOCK_FAIL,
-                "result": result,
-                "validation": validation,
-                "retried": False,
-            }
-        self.enable_gentle_after_bot()
-        return {
-            "ok": True,
-            "stage": "ready",
-            "message": validation.message + " Retry this job and resume the queue.",
-            "result": result,
-            "validation": validation,
-            "retried": False,
-        }
+            return recover_browser_cookies(url, probe=probe, repo=self.repo)
+        return recover_browser_cookies(
+            url,
+            importer=import_browser,
+            probe=probe if probe is not None else getattr(self, "cookie_probe", None),
+            repo=self.repo,
+        )
 
     def download_selected(self, job_ids: list[int]) -> None:
         pending = [i for i in job_ids if self.repo.get(i).status == "pending"]

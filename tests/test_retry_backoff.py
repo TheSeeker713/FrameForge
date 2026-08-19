@@ -9,6 +9,7 @@ from frameforge.db.repository import JobRepository
 from frameforge.download.handler import make_download_handler
 from frameforge.download.recovery import (
     BOT_RETRY,
+    RETRY,
     SILENT_FIREFOX_COOKIES,
     apply_auto_retry_backoff,
     auto_retry_backoff_jitter_sec,
@@ -170,6 +171,7 @@ def test_backoff_sec_zero_no_sleep_retry_once(tmp_path: Path, monkeypatch):
     attempts = loaded.options().get("recovery_attempts") or []
     assert SILENT_FIREFOX_COOKIES in attempts
     assert not any(str(a).startswith("backoff:") for a in attempts)
+    assert RETRY in attempts
     repo.close()
 
 
@@ -210,6 +212,7 @@ def test_backoff_invoked_records_attempt(tmp_path: Path, monkeypatch):
     assert SILENT_FIREFOX_COOKIES in attempts
     assert "backoff:2.0" in attempts
     assert attempts.count("backoff:2.0") == 1
+    assert RETRY in attempts
     repo.close()
 
 
@@ -358,4 +361,5 @@ def test_rate_limited_auto_retry_uses_cookies_then_backoff(tmp_path: Path, monke
     assert SILENT_FIREFOX_COOKIES in attempts
     assert BOT_RETRY not in attempts
     assert "backoff:2.0" in attempts
+    assert RETRY in attempts
     repo.close()

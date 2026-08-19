@@ -138,6 +138,7 @@ def make_download_handler(
         from frameforge.download.impersonate import list_impersonate_targets
         from frameforge.download.recovery import (
             BOT_RETRY,
+            RETRY,
             SILENT_FIREFOX_COOKIES,
             apply_auto_retry_backoff,
             format_tried,
@@ -212,6 +213,16 @@ def make_download_handler(
                             "recovery_tried": format_tried(attempts),
                         },
                     )
+                    if progress_cb:
+                        progress_cb(
+                            0.0,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "Importing cookies from Firefox…",
+                                "eta_str": None,
+                            },
+                        )
                     imported = silent_cookie_import(job.url)
                     if imported.get("ok"):
                         from frameforge.download.cookie_validate import mark_cookies_validated
@@ -221,6 +232,16 @@ def make_download_handler(
                         browser = str(imported.get("browser") or "firefox").strip() or "firefox"
                         toast = f"Cookies refreshed ({browser.capitalize()}) — retrying…"
                         repo.merge_options(job.id, {"recovery_toast": toast})
+                        if progress_cb:
+                            progress_cb(
+                                0.0,
+                                {
+                                    "speed_bps": None,
+                                    "eta_seconds": None,
+                                    "speed_str": "Cookies validated — waiting before retry…",
+                                    "eta_str": None,
+                                },
+                            )
                         if not apply_auto_retry_backoff(
                             repo=repo,
                             attempts=attempts,
@@ -229,13 +250,22 @@ def make_download_handler(
                             process_registry=process_registry,
                         ):
                             _raise_if_backoff_aborted()
+                        if RETRY not in attempts:
+                            attempts.append(RETRY)
+                        repo.merge_options(
+                            job.id,
+                            {
+                                "recovery_attempts": attempts,
+                                "recovery_tried": format_tried(attempts),
+                            },
+                        )
                         if progress_cb:
                             progress_cb(
                                 0.0,
                                 {
                                     "speed_bps": None,
                                     "eta_seconds": None,
-                                    "speed_str": toast,
+                                    "speed_str": "Retrying download…",
                                     "eta_str": None,
                                 },
                             )

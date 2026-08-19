@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.12
+
+- Auto recovery now runs the **same two fail-pause buttons** before any modal: Import from Firefox (await 10–15s+, timeout 120s) → interruptible backoff → Retry this job. Stops after impersonate was a field regression (`unknown` + `tried: impersonate`). Unknown failures enter this path when stderr is auth-like, the domain already has cookies, the host is on Auto impersonate, or impersonate was already tried. All sites. See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md).
+
 ## 0.6.11
 
 - Auto Firefox cookie recovery before fail-pause for **every domain** (not PornHub-only): on auth/bot/rate/impersonation_missing and stderr-matched soft-unknown walls, import Firefox (Edge fallback, never Chrome ABE) once, then **interruptible worker-thread backoff** (`auto_retry_backoff_sec` default 5 + optional jitter default 2) and one retry. Status shows `Waiting Ns before retry…`. Human modal only if that path fails. Cancel/pause aborts the wait (no retry). See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md), [MULTI_SITE.md](docs/MULTI_SITE.md).

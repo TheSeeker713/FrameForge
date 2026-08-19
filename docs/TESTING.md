@@ -63,6 +63,13 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.12 (auto fail-pause button sequence)
+
+- After impersonate, unknown/cookie-eligible failures continue to silent Firefox (same `import_cookies_from_browser` as the modal) → backoff → `retry`. Status: Importing cookies / waiting / Retrying.
+- Tests: `tests/test_auto_cookie_recovery.py` (unknown+impersonate field regression, YouTube, `example.video`, PornHub). No live PH/YT in CI.
+- Suite: `python -m pytest -q` → **549 passed / 0 skipped / 0 failed**.
+- See [FAIL_PAUSE.md](FAIL_PAUSE.md), [COOKIES.md](COOKIES.md), [MULTI_SITE.md](MULTI_SITE.md).
+
 ## v0.6.11 (auto Firefox cookie recovery)
 
 - Site-agnostic silent Firefox (then Edge) cookie import + interruptible worker backoff + one retry before fail-pause for every domain; `recovery_attempts` includes `silent_firefox_cookies` and `backoff:N` when a wait ran.

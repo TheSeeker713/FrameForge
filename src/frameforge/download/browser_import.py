@@ -45,6 +45,9 @@ class BrowserImportResult:
     browser: str | None = None
 
 
+IMPORT_TIMEOUT_SEC = 120
+
+
 def _default_runner(cmd: list[str]) -> tuple[int, str, str]:
     import subprocess
 
@@ -52,7 +55,7 @@ def _default_runner(cmd: list[str]) -> tuple[int, str, str]:
         cmd,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=IMPORT_TIMEOUT_SEC,
         check=False,
     )
     return int(proc.returncode), proc.stdout or "", proc.stderr or ""

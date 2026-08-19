@@ -8,7 +8,9 @@ Authenticate and Settings show that resolved folder and list domain `*.txt` file
 
 ## Import from browser (v0.5.6+)
 
-**Auto path (v0.6.11):** Auto recovery runs for **every domain** (YouTube, social, news, generic extractor URLs, adult hosts, and anything else yt-dlp can cookie). On `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or a soft-unknown whose stderr looks like login/bot/age/cookies, FrameForge imports Firefox cookies for that URL’s domain — **without a modal** — waits retry backoff on the **worker thread**, then retries the job once. Edge is the Firefox fallback. **Chrome App-Bound Encryption is not auto-fixed.** Human fail-pause (Import / Retry / Skip / Stop) only if that path fails.
+**Auto path (v0.6.12):** Auto recovery runs for **every domain**. It is the same two clicks as the fail-pause modal, without the modal: **Import from Firefox / browser** (blocking, often 10–15s, timeout 120s) → **Retry this job and resume queue**. Status lines: `Importing cookies from Firefox…`, `Cookies validated — waiting before retry…`, `Retrying download…`. Human fail-pause only if Firefox/Edge import fails or the retry still fails.
+
+On `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or `unknown` with auth-like stderr, an existing domain cookie file, an Auto-impersonate host, or impersonate already in `tried`. Edge is the Firefox fallback. **Chrome App-Bound Encryption is not auto-fixed.**
 
 Settings: **Auto cookie recovery (all sites)** (default ON), **Retry backoff (seconds)** (default 5, 0–60), and jitter (default 2, 0–15). Backoff is not applied to the first attempt, user Retry, or Skip.
 
