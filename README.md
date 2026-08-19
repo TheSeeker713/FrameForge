@@ -4,7 +4,7 @@ Fully local Windows video downloader + AI video upscaler.
 
 **Stack:** Pure Python · Flet · yt-dlp · FFmpeg · aria2c · ONNX (DirectML preferred)
 
-**Hardware target:** Windows 11 Pro, AMD Ryzen 7 6800H + Radeon 680M, 32 GB RAM
+**Hardware target:** Windows 11 Pro
 
 ## Why FrameForge
 
