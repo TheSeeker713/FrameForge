@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.10
+
+- GUI/worker start without ONNX: missing models dir is no longer a `FileNotFoundError` on `python -m frameforge --gui`. Category `upscale_config` if upscale is forced anyway.
+- Chunked upscale (default 128-frame PNG chunks, then encode and delete) so long clips are not a full-film PNG dump; duration is a soft warning, not a 15-minute hard fail. Original audio still muxed. ≥2160p still blocked.
+- Models dir is created on startup; empty dir logs once and may write smoke Identity ONNX (not Real-ESRGAN). See [UPSCALE_DISK.md](docs/UPSCALE_DISK.md).
+
 ## 0.6.9
 
 - Multi-site hardening: automatic recovery ladder (impersonate → silent Firefox/Edge cookies → generic extractors once), `drm_blocked` category, expanded Auto impersonate host list, fail-pause / error report show `tried: …` ([MULTI_SITE.md](docs/MULTI_SITE.md))

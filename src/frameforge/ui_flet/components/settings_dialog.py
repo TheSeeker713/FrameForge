@@ -36,6 +36,7 @@ def build_settings_dialog(
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
     on_repair_folders: Any | None = None,
+    on_install_models: Any | None = None,
     repair_status: Any | None = None,
     repair_button: Any | None = None,
 ) -> ft.AlertDialog:
@@ -69,9 +70,48 @@ def build_settings_dialog(
         value=str(repo.get_setting("aria2_connections", "16")),
         width=280,
     )
+    from frameforge.upscale.onnx_upscaler import model_status
+
+    st = model_status()
+    upscale_ok = bool(st.get("available"))
+    kind = str(st.get("kind") or "none")
+    model_path_txt = str(st.get("path") or st.get("reason") or "")
+    if kind == "smoke":
+        model_note = (
+            "Installed model is smoke Identity ONNX — 2× uses interpolation, not Real-ESRGAN. "
+            "Download Real-ESRGAN weights: python .\\scripts\\download_models.py"
+        )
+    elif kind == "realesrgan":
+        model_note = "Real-ESRGAN ONNX is installed."
+    elif kind == "resize":
+        model_note = "Local 2× resize ONNX is installed (test/dev weights, not Real-ESRGAN)."
+    elif upscale_ok:
+        model_note = "ONNX model found."
+    else:
+        model_note = (
+            "No ONNX model — upscale is disabled. Create a smoke Identity model for GUI tests "
+            "(not Real-ESRGAN) or run python .\\scripts\\download_models.py"
+        )
+    model_path_ctrl = ft.Text(
+        f"Models folder file: {model_path_txt}",
+        color=COLORS["text_secondary"] if upscale_ok else COLORS["warn"],
+        size=12,
+        selectable=True,
+    )
+    model_note_ctrl = ft.Text(
+        model_note,
+        color=COLORS["text_secondary"] if upscale_ok and kind != "smoke" else COLORS["warn"],
+        size=12,
+    )
+
+    def _install_models(_e=None) -> None:
+        if on_install_models:
+            on_install_models()
+
     upscale = ft.Checkbox(
         label="Enable AI upscaling after download (still sequential)",
-        value=repo.get_setting("upscale_after_download", "0") == "1",
+        value=upscale_ok and repo.get_setting("upscale_after_download", "0") == "1",
+        disabled=not upscale_ok,
     )
     ram = ft.TextField(
         label="RAM warning %",
@@ -79,12 +119,17 @@ def build_settings_dialog(
         width=160,
     )
     upscale_max_min = ft.TextField(
-        label="Max upscale duration (minutes)",
+        label="Warn if clip longer than (minutes, 0 = off)",
         value=str(repo.get_setting("upscale_max_duration_min", "15") or "15"),
+        width=280,
+    )
+    chunk_frames = ft.TextField(
+        label="Upscale chunk frames (64–256)",
+        value=str(repo.get_setting("upscale_chunk_frames", "128") or "128"),
         width=220,
     )
     keep_frames = ft.Switch(
-        label="Keep upscale PNG frames (debug)",
+        label="Keep last upscale PNG chunk (debug)",
         value=str(repo.get_setting("upscale_keep_frames", "0") or "0") == "1",
     )
     tray = ft.Switch(
@@ -205,7 +250,7 @@ def build_settings_dialog(
         repo.set_setting("aria2_connections", str(aria2_n.value or DEFAULT_ARIA2_CONNECTIONS).strip())
         repo.set_setting("concurrent_fragments", str(concurrent_fragments(repo)))
         repo.set_setting("aria2_connections", str(aria2_connections(repo)))
-        repo.set_setting("upscale_after_download", "1" if upscale.value else "0")
+        repo.set_setting("upscale_after_download", "1" if upscale.value and not upscale.disabled else "0")
         repo.set_setting("close_to_tray", "1" if tray.value else "0")
         repo.set_setting("fail_pause_on_auth", "1" if fail_pause.value else "0")
         repo.set_setting("youtube_innertube", "1" if innertube.value else "0")
@@ -229,6 +274,13 @@ def build_settings_dialog(
         except ValueError:
             upscale_min = 15.0
         repo.set_setting("upscale_max_duration_min", str(upscale_min))
+        raw_chunk = str(chunk_frames.value or "128").strip() or "128"
+        try:
+            chunk_n = int(float(raw_chunk))
+        except ValueError:
+            chunk_n = 128
+        chunk_n = max(64, min(256, chunk_n))
+        repo.set_setting("upscale_chunk_frames", str(chunk_n))
         repo.set_setting("upscale_keep_frames", "1" if keep_frames.value else "0")
         if on_save:
             on_save()
@@ -272,12 +324,20 @@ def build_settings_dialog(
             _card(
                 "AI and Upscaling",
                 upscale,
+                model_path_ctrl,
+                model_note_ctrl,
+                ft.OutlinedButton(
+                    content="Create smoke ONNX (not Real-ESRGAN)",
+                    on_click=_install_models,
+                ),
                 ft.Text(
-                    "PNG-pipeline disk guard: refuse if temp frames would fill the drive. "
-                    "Duration cap (default 15 min) until streaming upscale ships. See docs/UPSCALE_DISK.md.",
+                    "Chunked upscale: one PNG chunk at a time (default 128 frames), then encode "
+                    "and delete the chunk. Disk check is one chunk, not the full film. "
+                    "≥2160p is still blocked. See docs/UPSCALE_DISK.md.",
                     color=COLORS["text_secondary"],
                     size=12,
                 ),
+                chunk_frames,
                 upscale_max_min,
                 keep_frames,
                 ft.Text("Pause AI tasks under RAM pressure.", color=COLORS["text_secondary"], size=12),
@@ -389,5 +449,9 @@ def build_settings_dialog(
         "cookies_dir": store["directory"],
         "cookie_files": store["label"],
         "on_open_cookies": on_open_cookies,
+        "model_path": model_path_ctrl,
+        "model_note": model_note_ctrl,
+        "upscale_available": upscale_ok,
+        "on_install_models": on_install_models,
     }
     return dlg

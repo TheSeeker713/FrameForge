@@ -179,16 +179,29 @@ def more_menu_items(jobs: list[Any], selected_ids: set[int]) -> list[str]:
     return items
 
 
-def floating_bar_view(jobs: list[Any], selected_ids: set[int]) -> dict[str, Any] | None:
+def floating_bar_view(
+    jobs: list[Any],
+    selected_ids: set[int],
+    *,
+    upscale_engine_available: bool = True,
+    upscale_unavailable_reason: str | None = None,
+) -> dict[str, Any] | None:
     if not selected_ids:
         return None
     selected = [j for j in jobs if j.id in selected_ids]
     if not selected:
         return None
+    show_upscale = any(can_upscale(j) and not getattr(j, "upscale_blocked", False) for j in selected)
     return {
         "count": len(selected),
         "show_download": any(can_download(j) for j in selected),
-        "show_upscale": any(can_upscale(j) and not getattr(j, "upscale_blocked", False) for j in selected),
+        "show_upscale": show_upscale,
+        "upscale_disabled": bool(show_upscale and not upscale_engine_available),
+        "upscale_tooltip": (
+            upscale_unavailable_reason or "Install an ONNX model in Settings"
+            if show_upscale and not upscale_engine_available
+            else None
+        ),
         "show_convert": any(can_convert(j) for j in selected),
         "show_clear": True,
         "show_retry": any(can_retry_download(j) for j in selected),

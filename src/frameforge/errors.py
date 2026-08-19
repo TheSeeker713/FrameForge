@@ -26,6 +26,7 @@ DRM_BLOCKED = "drm_blocked"
 OUTPUT_MISSING = "output_missing"
 DISK_SPACE = "disk_space"
 UPSCALE_LIMIT = "upscale_limit"
+UPSCALE_CONFIG = "upscale_config"
 DB_ERROR = "db_error"
 UNKNOWN = "unknown"
 
@@ -45,6 +46,7 @@ CATEGORIES = (
     OUTPUT_MISSING,
     DISK_SPACE,
     UPSCALE_LIMIT,
+    UPSCALE_CONFIG,
     DB_ERROR,
     UNKNOWN,
 )
@@ -59,6 +61,7 @@ FAIL_PAUSE_CATEGORIES = frozenset(
         OUTPUT_MISSING,
         DISK_SPACE,
         UPSCALE_LIMIT,
+        UPSCALE_CONFIG,
         UNKNOWN,
     }
 )
@@ -254,6 +257,8 @@ def classify_error(message: str | None, *, status: str | None = None, url: str |
         return OUTPUT_MISSING
     if "not enough disk space" in lower or "disk space for upscale" in lower:
         return DISK_SPACE
+    if "upscale unavailable" in lower or "no onnx model" in lower:
+        return UPSCALE_CONFIG
     if "upscale refused" in lower and "max allowed" in lower:
         return UPSCALE_LIMIT
     if (
@@ -339,8 +344,9 @@ def human_cause(category: str) -> str:
         ),
         DRM_BLOCKED: "This stream is DRM-protected and is not supported by yt-dlp. FrameForge will not bypass DRM.",
         OUTPUT_MISSING: "The download finished but the video file is missing on disk.",
-        DISK_SPACE: "This upscale needs more free disk space for temporary PNG frames.",
-        UPSCALE_LIMIT: "This clip is longer than the PNG-pipeline duration cap (streaming is not shipped yet).",
+        DISK_SPACE: "This upscale needs more free disk space for one chunk of temporary PNG frames.",
+        UPSCALE_LIMIT: "This clip is longer than the optional duration warning (chunked upscale is the default).",
+        UPSCALE_CONFIG: "No ONNX upscale model is installed (smoke Identity is not Real-ESRGAN).",
         DB_ERROR: "The local queue database hit a lock or transaction error (not a yt-dlp failure).",
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
@@ -404,8 +410,14 @@ def suggested_actions(category: str) -> list[str]:
         ]
     if category == UPSCALE_LIMIT:
         return [
-            "Raise max upscale duration in Settings (PNG pipeline still uses huge temp)",
-            "Skip this clip until streaming upscale ships",
+            "Chunked upscale has no hard duration cap — retry if this is a stale error",
+            "Skip & resume queue",
+        ]
+    if category == UPSCALE_CONFIG:
+        return [
+            "Install an ONNX model (Settings → Create smoke ONNX, or python .\\scripts\\download_models.py)",
+            "Smoke Identity is not Real-ESRGAN — download Real-ESRGAN weights for AI quality",
+            "Retry this job",
         ]
     if category == DB_ERROR:
         return ["Retry this job", "Restart FrameForge if the queue stays stuck"]

@@ -1,7 +1,7 @@
-"""Disk and duration guards for the current on-disk PNG upscale pipeline.
+"""Disk guards for the chunked PNG upscale pipeline.
 
-This is not a streaming upscaler. ffmpeg still dumps every source frame as PNG,
-ONNX writes 2× PNGs, then ffmpeg assembles. Peak temp is both trees at once.
+Peak temp is **one chunk** of source PNGs plus 2× PNGs (then the chunk is encoded
+and those trees are deleted). It is not a full-film PNG dump.
 """
 
 from __future__ import annotations
@@ -19,10 +19,16 @@ PNG_BYTES_PER_PIXEL = 4.0
 UPSCALE_SCALE = 2
 # Headroom for audio sidecar, checkpoint, filesystem slack.
 SAFETY_MARGIN = 1.3
-DEFAULT_MAX_DURATION_MINUTES = 15.0
+# Soft UI/log warning only — not a hard refuse (chunked path is the default).
+DEFAULT_WARN_DURATION_MINUTES = 15.0
+DEFAULT_MAX_DURATION_MINUTES = 0.0
 DEFAULT_ORPHAN_HOURS = 24.0
+DEFAULT_CHUNK_FRAMES = 128
+MIN_CHUNK_FRAMES = 64
+MAX_CHUNK_FRAMES = 256
 TEMP_SKIP_DIRS = frozenset({"dl", "junk"})
 FRAME_DIR_NAMES = ("frames", "upscaled_frames")
+SEGMENT_DIR_NAME = "segments"
 
 
 @dataclass(frozen=True)
@@ -34,7 +40,7 @@ class VideoMetrics:
 
 
 class DiskSpaceError(RuntimeError):
-    """Refused before extract: estimated PNG temp would exceed free space."""
+    """Refused before extract: estimated one-chunk PNG temp would exceed free space."""
 
     category = "disk_space"
 
@@ -61,7 +67,7 @@ class DiskSpaceError(RuntimeError):
         super().__init__(
             "Not enough disk space for upscale PNG frames: "
             f"need {format_bytes(self.required_bytes)} "
-            f"(estimate {format_bytes(self.estimated_bytes)} × {self.margin:g}), "
+            f"(one chunk, estimate {format_bytes(self.estimated_bytes)} × {self.margin:g}), "
             f"{format_bytes(self.free_bytes)} free on {self.volume}."
         )
 
@@ -78,7 +84,7 @@ class DiskSpaceError(RuntimeError):
 
 
 class UpscaleDurationError(RuntimeError):
-    """Refused before extract: clip longer than the PNG-pipeline duration cap."""
+    """Legacy hard-cap error. Chunked upscale no longer raises this by default."""
 
     category = "upscale_limit"
 
@@ -106,6 +112,17 @@ def format_bytes(n: int | float) -> str:
     return f"{int(value)} B"
 
 
+def clamp_chunk_frames(value: int | float | None, *, allow_below_min: bool = False) -> int:
+    try:
+        n = int(value) if value is not None else DEFAULT_CHUNK_FRAMES
+    except (TypeError, ValueError):
+        n = DEFAULT_CHUNK_FRAMES
+    n = max(1, n)
+    if allow_below_min:
+        return min(MAX_CHUNK_FRAMES, n)
+    return max(MIN_CHUNK_FRAMES, min(MAX_CHUNK_FRAMES, n))
+
+
 def frame_count(duration_sec: float, fps: float, max_frames: int | None = None) -> int:
     n = max(1, int(math.ceil(max(0.0, duration_sec) * max(1.0, fps))))
     if max_frames is not None:
@@ -121,7 +138,7 @@ def estimate_png_pipeline_bytes(
     scale: int = UPSCALE_SCALE,
     bytes_per_pixel: float = PNG_BYTES_PER_PIXEL,
 ) -> int:
-    """Peak bytes: source PNGs + 2× upscaled PNGs (both live until mux)."""
+    """Peak bytes for N frames: source PNGs + 2× upscaled PNGs (both live until mux of that chunk)."""
     w = max(1, int(width))
     h = max(1, int(height))
     n = max(1, int(frames))
@@ -129,6 +146,41 @@ def estimate_png_pipeline_bytes(
     src = n * w * h * bytes_per_pixel
     dst = n * (w * s) * (h * s) * bytes_per_pixel
     return int(src + dst)
+
+
+def estimate_chunk_pipeline_bytes(
+    *,
+    width: int,
+    height: int,
+    chunk_frames: int,
+    scale: int = UPSCALE_SCALE,
+    bytes_per_pixel: float = PNG_BYTES_PER_PIXEL,
+) -> int:
+    return estimate_png_pipeline_bytes(
+        width=width,
+        height=height,
+        frames=chunk_frames,
+        scale=scale,
+        bytes_per_pixel=bytes_per_pixel,
+    )
+
+
+def duration_warning_message(
+    metrics: VideoMetrics,
+    *,
+    warn_minutes: float | None,
+) -> str | None:
+    if warn_minutes is None or float(warn_minutes) <= 0:
+        return None
+    cap_sec = float(warn_minutes) * 60.0
+    if metrics.duration_sec <= cap_sec + 0.5:
+        return None
+    minutes = metrics.duration_sec / 60.0
+    return (
+        f"Long upscale: clip is {minutes:.1f} min (warning threshold {float(warn_minutes):g} min). "
+        "Chunked processing will not dump a full-length PNG tree, but GPU/CPU time on iGPU "
+        "for 40+ min can be many hours. Smoke Identity is not Real-ESRGAN."
+    )
 
 
 def video_metrics(path: Path, *, probe_data: dict | None = None) -> VideoMetrics:
@@ -187,24 +239,25 @@ def assert_upscale_guards(
     *,
     max_frames: int | None = None,
     max_duration_minutes: float | None = DEFAULT_MAX_DURATION_MINUTES,
+    chunk_frames: int = DEFAULT_CHUNK_FRAMES,
     free_bytes: int,
     volume: str,
     safety_margin: float = SAFETY_MARGIN,
     scale: int = UPSCALE_SCALE,
 ) -> dict[str, int | float | str]:
-    """Refuse duration-over-cap or insufficient free space. Does not extract frames."""
-    if max_duration_minutes is not None and float(max_duration_minutes) > 0:
-        cap_sec = float(max_duration_minutes) * 60.0
-        if metrics.duration_sec > cap_sec + 0.5:
-            raise UpscaleDurationError(
-                duration_sec=metrics.duration_sec,
-                max_minutes=float(max_duration_minutes),
-            )
-    frames = frame_count(metrics.duration_sec, metrics.fps, max_frames=max_frames)
-    estimated = estimate_png_pipeline_bytes(
+    """Refuse only if **one chunk** cannot fit. Duration is not a hard block.
+
+    ``max_duration_minutes`` is kept for call-site compatibility and is ignored
+    as a refuse (chunked path is the default). Use ``duration_warning_message``.
+    """
+    del max_duration_minutes  # no longer a hard fail
+    total = frame_count(metrics.duration_sec, metrics.fps, max_frames=max_frames)
+    chunk_n = max(1, int(chunk_frames))
+    n = min(total, chunk_n)
+    estimated = estimate_chunk_pipeline_bytes(
         width=metrics.width,
         height=metrics.height,
-        frames=frames,
+        chunk_frames=n,
         scale=scale,
     )
     required = int(math.ceil(estimated * float(safety_margin)))
@@ -215,12 +268,13 @@ def assert_upscale_guards(
             free_bytes=int(free_bytes),
             volume=volume,
             margin=float(safety_margin),
-            frames=frames,
+            frames=n,
             width=metrics.width,
             height=metrics.height,
         )
     return {
-        "frames": frames,
+        "frames": total,
+        "chunk_frames": n,
         "estimated_bytes": estimated,
         "required_bytes": required,
         "free_bytes": int(free_bytes),

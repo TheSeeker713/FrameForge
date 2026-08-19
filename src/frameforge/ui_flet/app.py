@@ -307,8 +307,16 @@ class FrameForgeUi:
         output_missing = cat == "output_missing"
         disk_space = cat == "disk_space"
         upscale_limit = cat == "upscale_limit"
+        upscale_config = cat == "upscale_config"
         drm_blocked = cat == "drm_blocked"
-        hide_auth = js_runtime or output_missing or disk_space or upscale_limit or drm_blocked
+        hide_auth = (
+            js_runtime
+            or output_missing
+            or disk_space
+            or upscale_limit
+            or upscale_config
+            or drm_blocked
+        )
         browser_pick = ft.Dropdown(
             label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
             value="firefox",
@@ -382,7 +390,7 @@ class FrameForgeUi:
                             if output_missing
                             else (
                                 str(payload.get("error") or payload.get("cause") or "")
-                                if disk_space or upscale_limit
+                                if disk_space or upscale_limit or upscale_config
                                 else (
                                     "DRM / not supported by yt-dlp. FrameForge will not bypass DRM."
                                     if drm_blocked
@@ -592,7 +600,12 @@ class FrameForgeUi:
         self.queue_chrome.data = spec
 
     def _sync_floating(self) -> None:
-        spec = floating_bar_view(self.queue_jobs(), self.selected_ids)
+        spec = floating_bar_view(
+            self.queue_jobs(),
+            self.selected_ids,
+            upscale_engine_available=self._upscale_engine_available(),
+            upscale_unavailable_reason=self._upscale_unavailable_reason(),
+        )
         if self.floating is None:
             return
         if spec is None:
@@ -932,9 +945,49 @@ class FrameForgeUi:
         self.bridge.download_selected(sorted(self.selected_ids))
         self.refresh_queue(force=True)
 
+    def _upscale_engine_available(self) -> bool:
+        pipe = getattr(self.worker, "upscale_pipeline", None)
+        if pipe is not None:
+            return bool(getattr(pipe, "upscale_available", False))
+        from frameforge.upscale.onnx_upscaler import find_model
+
+        return find_model() is not None
+
+    def _upscale_unavailable_reason(self) -> str:
+        pipe = getattr(self.worker, "upscale_pipeline", None)
+        reason = getattr(pipe, "upscale_unavailable_reason", None) if pipe is not None else None
+        if reason:
+            return str(reason)
+        from frameforge.upscale.onnx_upscaler import missing_model_reason
+
+        return missing_model_reason()
+
+    def install_upscale_models(self, _e: Any = None) -> None:
+        from frameforge.upscale.bootstrap import bootstrap_models, maybe_create_smoke_onnx
+        from frameforge.upscale.onnx_upscaler import model_kind, model_status
+
+        bootstrap_models()
+        maybe_create_smoke_onnx()
+        pipe = getattr(self.worker, "upscale_pipeline", None)
+        if pipe is not None and hasattr(pipe, "reload_model"):
+            pipe.reload_model()
+        st = model_status()
+        if st.get("available"):
+            kind = model_kind(Path(str(st["path"]))) if st.get("path") else "onnx"
+            extra = " Smoke Identity is not Real-ESRGAN." if kind == "smoke" else ""
+            self._show_toast(f"ONNX model ready: {st.get('path')}{extra}")
+        else:
+            self._show_toast(
+                "No ONNX model. Run python .\\scripts\\download_models.py or "
+                "python .\\scripts\\create_smoke_onnx.py"
+            )
+
     def upscale_selected(self) -> None:
         from frameforge.gui.actions import can_upscale
 
+        if not self._upscale_engine_available():
+            self._show_toast(self._upscale_unavailable_reason())
+            return
         ids = [
             i
             for i in self.selected_ids
@@ -1678,6 +1731,9 @@ class FrameForgeUi:
         if getattr(job, "upscale_blocked", False):
             self._show_toast("Upscale blocked: 4K / ≥2160p")
             return
+        if not self._upscale_engine_available():
+            self._show_toast(self._upscale_unavailable_reason())
+            return
         if hasattr(self.worker, "request_upscale_ids"):
             self.worker.request_upscale_ids([item.job_id])
         self._show_toast("Queued for upscale")
@@ -1760,6 +1816,9 @@ class FrameForgeUi:
             item = self.library.get(item_id)
             if can_upscale_library_item(item) and item.job_id:
                 job_ids.append(item.job_id)
+        if job_ids and not self._upscale_engine_available():
+            self._show_toast(self._upscale_unavailable_reason())
+            return
         if job_ids and hasattr(self.worker, "request_upscale_ids"):
             self.worker.request_upscale_ids(job_ids)
             self._show_toast(f"Queued {len(job_ids)} for upscale")
@@ -1940,6 +1999,8 @@ class FrameForgeUi:
         return self.repo.get_setting("format_preference", "best") or "best"
 
     def _default_upscale(self) -> bool:
+        if not self._upscale_engine_available():
+            return False
         return self.repo.get_setting("upscale_after_download", "0") == "1"
 
     def open_format_modal(self, job_ids: list[int] | None = None) -> ft.AlertDialog:
@@ -2267,6 +2328,7 @@ class FrameForgeUi:
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
             on_repair_folders=self.repair_folders,
+            on_install_models=self.install_upscale_models,
             repair_status=self._repair_status,
             repair_button=self._repair_button,
         )

@@ -1,4 +1,4 @@
-"""Upscale PNG-pipeline disk/duration guards. Does not claim streaming is fixed."""
+"""Upscale chunked PNG disk/duration guards."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from frameforge.upscale.disk import (
     VideoMetrics,
     assert_upscale_guards,
     cleanup_job_frames,
+    duration_warning_message,
     estimate_png_pipeline_bytes,
     frame_count,
     sweep_orphan_frame_dirs,
@@ -70,18 +71,22 @@ def test_refuse_when_free_less_than_estimate():
     assert patch["disk_estimated_bytes"] > 0
 
 
-def test_duration_cap_refuses_long_clip():
+def test_duration_is_warning_not_hard_block():
     metrics = VideoMetrics(width=64, height=48, fps=10.0, duration_sec=3600.0)
-    with pytest.raises(UpscaleDurationError) as caught:
-        assert_upscale_guards(
-            metrics,
-            max_duration_minutes=15,
-            free_bytes=10**18,
-            volume="C:\\",
-        )
-    assert caught.value.category == UPSCALE_LIMIT
-    assert classify_error(str(caught.value)) == UPSCALE_LIMIT
-    assert classify_error(str(caught.value)) != UNKNOWN
+    info = assert_upscale_guards(
+        metrics,
+        max_duration_minutes=15,
+        free_bytes=10**18,
+        volume="C:\\",
+    )
+    assert info["frames"] >= 1
+    warn = duration_warning_message(metrics, warn_minutes=15)
+    assert warn is not None
+    assert "Long upscale" in warn
+    legacy = UpscaleDurationError(duration_sec=3600.0, max_minutes=15)
+    assert legacy.category == UPSCALE_LIMIT
+    assert classify_error(str(legacy)) == UPSCALE_LIMIT
+    assert classify_error(str(legacy)) != UNKNOWN
 
 
 def test_cleanup_job_frames_tmpdir(tmp_path: Path):
@@ -128,7 +133,7 @@ def test_precheck_runs_when_max_frames_high(tmp_path: Path, monkeypatch: pytest.
     def _extract_must_not_run(*_a, **_k):
         raise AssertionError("extract_frames must not run after disk refuse")
 
-    monkeypatch.setattr("frameforge.upscale.pipeline.extract_frames", _extract_must_not_run)
+    monkeypatch.setattr("frameforge.upscale.pipeline.extract_frame_range", _extract_must_not_run)
     pipe = UpscalePipeline(work_root=tmp_path / "work", max_frames=50_000, tile=64)
     with pytest.raises(DiskSpaceError):
         pipe.run(clip, job_key="huge")

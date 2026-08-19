@@ -24,6 +24,7 @@ pip install -e ".[dev]"
 # GUI (v0.5): flet==0.86.5 is a project dependency
 pip install onnx   # used to generate local smoke ONNX if Real-ESRGAN download unavailable
 python .\scripts\create_smoke_onnx.py
+# GUI also auto-creates smoke Identity if models\ is empty (not Real-ESRGAN).
 # Optional when network policy allows Real-ESRGAN weights:
 # python .\scripts\download_models.py
 ```

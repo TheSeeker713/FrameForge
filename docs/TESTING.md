@@ -63,6 +63,13 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.10 (GUI without ONNX + chunked upscale)
+
+- Empty models dir: GUI/worker construct without raising; upscale jobs use `upscale_config`.
+- Chunked PNG path (`upscale_chunk_frames`, default 128); disk precheck is one chunk; duration warning is not a hard fail.
+- Tests: `tests/test_upscale_missing_model.py`, `tests/test_upscale_chunked.py`, `tests/test_upscale_disk.py`.
+- See [UPSCALE_DISK.md](UPSCALE_DISK.md). Smoke Identity is not Real-ESRGAN.
+
 ## v0.6.9 (multi-site recovery)
 
 - See [MULTI_SITE.md](MULTI_SITE.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [YTDLP_PARITY.md](YTDLP_PARITY.md).

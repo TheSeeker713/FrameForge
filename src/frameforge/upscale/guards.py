@@ -31,7 +31,7 @@ def assert_upscale_allowed(source: Path) -> tuple[int, int]:
 
     Returns (width, height) when allowed. Duration and free-disk limits are
     enforced separately (see ``frameforge.upscale.disk`` / docs/UPSCALE_DISK.md).
-    ≥2160p remains blocked; for 1080p the real risk is PNG temp size, not height.
+    ≥2160p remains blocked; for 1080p the real risk is one-chunk PNG temp size, not height.
     """
     source = Path(source)
     width, height = video_size(source)

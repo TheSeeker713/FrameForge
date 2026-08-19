@@ -9,7 +9,13 @@ from frameforge.db.repository import Job, JobRepository
 from frameforge.paths import upscaled_dir_for_site
 from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
+from frameforge.upscale.disk import (
+    DEFAULT_CHUNK_FRAMES,
+    DEFAULT_WARN_DURATION_MINUTES,
+    clamp_chunk_frames,
+)
 from frameforge.upscale.guards import assert_upscale_allowed
+from frameforge.upscale.onnx_upscaler import UpscaleConfigError
 from frameforge.upscale.pipeline import UpscalePipeline
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
@@ -33,14 +39,35 @@ def make_upscale_handler(
         if not src or not Path(src).exists():
             raise FileNotFoundError(f"No download artifact for job {job.id}")
         src_path = Path(src)
+        if not pipe.upscale_available:
+            from frameforge.upscale.bootstrap import maybe_create_smoke_onnx
+
+            maybe_create_smoke_onnx()
+            pipe.reload_model()
+        if not pipe.upscale_available:
+            raise UpscaleConfigError(pipe.upscale_unavailable_reason)
         # Tier 2.2: refuse 4K / ≥2160p with a clear reason (propagates to failed status)
         assert_upscale_allowed(src_path)
-        raw_cap = repo.get_setting("upscale_max_duration_min", "15") if hasattr(repo, "get_setting") else "15"
+        raw_warn = (
+            repo.get_setting("upscale_max_duration_min", str(int(DEFAULT_WARN_DURATION_MINUTES)))
+            if hasattr(repo, "get_setting")
+            else str(int(DEFAULT_WARN_DURATION_MINUTES))
+        )
         try:
-            cap = float(raw_cap)
+            warn_min = float(raw_warn)
         except (TypeError, ValueError):
-            cap = 15.0
-        pipe.max_duration_minutes = cap
+            warn_min = DEFAULT_WARN_DURATION_MINUTES
+        pipe.max_duration_minutes = warn_min
+        raw_chunk = (
+            repo.get_setting("upscale_chunk_frames", str(DEFAULT_CHUNK_FRAMES))
+            if hasattr(repo, "get_setting")
+            else str(DEFAULT_CHUNK_FRAMES)
+        )
+        try:
+            chunk = int(float(raw_chunk))
+        except (TypeError, ValueError):
+            chunk = DEFAULT_CHUNK_FRAMES
+        pipe.chunk_frames = clamp_chunk_frames(chunk)
         keep = "0"
         if hasattr(repo, "get_setting"):
             keep = str(repo.get_setting("upscale_keep_frames", "0") or "0")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -112,6 +113,117 @@ def extract_frames(
     if not frames:
         raise RuntimeError(f"No frames extracted from {video}")
     return frames
+
+
+def extract_frame_range(
+    video: Path,
+    frames_dir: Path,
+    *,
+    start_frame: int,
+    count: int,
+    fps: float,
+    job_id: int | None = None,
+    process_registry: ProcessRegistry | None = None,
+) -> list[Path]:
+    """Extract ``count`` frames starting at ``start_frame`` (0-based)."""
+    if count <= 0:
+        raise RuntimeError("extract_frame_range requires count >= 1")
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for old in frames_dir.glob("frame_*.png"):
+        old.unlink(missing_ok=True)
+    pattern = str(frames_dir / "frame_%06d.png")
+    start_sec = max(0.0, float(start_frame) / max(float(fps), 1.0))
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_sec:.6f}",
+        "-i",
+        str(video),
+        "-frames:v",
+        str(int(count)),
+        "-vsync",
+        "0",
+        pattern,
+    ]
+    run_cmd(cmd, job_id=job_id, process_registry=process_registry)
+    frames = sorted(frames_dir.glob("frame_*.png"))
+    if not frames:
+        raise RuntimeError(f"No frames extracted from {video} at start={start_frame} count={count}")
+    return frames
+
+
+def concat_segments(
+    segments: list[Path],
+    output: Path,
+    *,
+    job_id: int | None = None,
+    process_registry: ProcessRegistry | None = None,
+) -> Path:
+    """Lossless-concat video-only segments into ``output``."""
+    if not segments:
+        raise RuntimeError("No upscale segments to concat")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    resolved = [Path(p) for p in segments if Path(p).is_file()]
+    if not resolved:
+        raise RuntimeError("No upscale segment files on disk")
+    if len(resolved) == 1:
+        if Path(resolved[0]).resolve() != Path(output).resolve():
+            shutil.copy2(resolved[0], output)
+        return output
+    list_path = output.parent / (output.stem + ".concat.txt")
+    lines = []
+    for p in resolved:
+        posix = p.resolve().as_posix().replace("'", r"'\''")
+        lines.append(f"file '{posix}'")
+    list_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    run_cmd(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_path),
+            "-c",
+            "copy",
+            str(output),
+        ],
+        job_id=job_id,
+        process_registry=process_registry,
+    )
+    if not output.exists():
+        raise RuntimeError(f"Failed to concat {output}")
+    return output
+
+
+def mux_video_audio(
+    video: Path,
+    output: Path,
+    *,
+    audio_path: Path | None = None,
+    metadata_source: Path | None = None,
+    job_id: int | None = None,
+    process_registry: ProcessRegistry | None = None,
+) -> Path:
+    """Copy video bitstream and mux original audio + optional metadata."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["ffmpeg", "-y", "-i", str(video)]
+    has_audio = bool(audio_path and Path(audio_path).exists())
+    if has_audio:
+        cmd.extend(["-i", str(audio_path)])
+    if metadata_source and Path(metadata_source).exists():
+        cmd.extend(["-i", str(metadata_source), "-map_metadata", "2" if has_audio else "1"])
+    cmd.extend(["-map", "0:v:0", "-c:v", "copy"])
+    if has_audio:
+        cmd.extend(["-map", "1:a:0", "-c:a", "copy"])
+    cmd.append(str(output))
+    run_cmd(cmd, job_id=job_id, process_registry=process_registry)
+    if not output.exists():
+        raise RuntimeError(f"Failed to mux {output}")
+    return output
 
 
 def extract_audio(

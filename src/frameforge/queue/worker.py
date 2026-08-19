@@ -40,6 +40,7 @@ class SequentialWorker:
     download_handler: JobHandler
     upscale_handler: JobHandler | None = None
     convert_handler: JobHandler | None = None
+    upscale_pipeline: object | None = None
     poll_interval: float = 0.05
     _stop: threading.Event = field(default_factory=threading.Event)
     _armed: threading.Event = field(default_factory=threading.Event)

@@ -1009,6 +1009,14 @@ class FrameForgeApp(ctk.CTk):
                 "Select one or more completed downloads with a local file first",
             )
             return
+        pipe = getattr(self.worker, "upscale_pipeline", None)
+        if pipe is not None and not getattr(pipe, "upscale_available", True):
+            messagebox.showerror(
+                "FrameForge",
+                getattr(pipe, "upscale_unavailable_reason", None)
+                or "No ONNX model — install one in Settings",
+            )
+            return
         try:
             queued = self.worker.request_upscale_ids(eligible)
         except ValueError as exc:

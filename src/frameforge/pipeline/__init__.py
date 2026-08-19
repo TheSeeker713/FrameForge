@@ -11,6 +11,7 @@ from frameforge.download.handler import make_download_handler
 from frameforge.download.ytdlp import YtDlpDownloader
 from frameforge.paths import ensure_output_tree, temp_dir
 from frameforge.queue.worker import SequentialWorker
+from frameforge.upscale.bootstrap import bootstrap_models
 from frameforge.upscale.handler import make_upscale_handler
 from frameforge.upscale.pipeline import UpscalePipeline
 
@@ -22,6 +23,7 @@ def build_worker(
     upscale_pipeline: UpscalePipeline | None = None,
 ) -> SequentialWorker:
     ensure_output_tree()
+    bootstrap_models()
     # Build worker first so handlers share its ProcessRegistry for hard cancel.
     worker = SequentialWorker(
         repo,
@@ -29,11 +31,13 @@ def build_worker(
         upscale_handler=None,
         poll_interval=0.05,
     )
+    pipe = upscale_pipeline or UpscalePipeline()
+    worker.upscale_pipeline = pipe
     worker.download_handler = make_download_handler(
         downloader, process_registry=worker.processes
     )
     worker.upscale_handler = make_upscale_handler(
-        upscale_pipeline, process_registry=worker.processes
+        pipe, process_registry=worker.processes
     )
     worker.convert_handler = make_convert_handler(process_registry=worker.processes)
     return worker

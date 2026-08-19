@@ -288,7 +288,14 @@ def build_floating_bar(
             elevated_filled_button("Download selected", on_click=lambda _e: on_download and on_download())
         )
     if spec.get("show_upscale"):
-        buttons.append(elevated_outlined_button("Upscale 2x", on_click=lambda _e: on_upscale and on_upscale()))
+        buttons.append(
+            elevated_outlined_button(
+                "Upscale 2x",
+                on_click=lambda _e: on_upscale and on_upscale(),
+                disabled=bool(spec.get("upscale_disabled")),
+                tooltip=spec.get("upscale_tooltip"),
+            )
+        )
     if spec.get("show_convert"):
         buttons.append(elevated_outlined_button("Convert to MP3", on_click=lambda _e: on_convert and on_convert()))
     if spec.get("show_retry"):
