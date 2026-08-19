@@ -35,13 +35,16 @@ On download failure the job records `recovery_attempts` / `recovery_tried` (“t
 
 1. **aria2 → native** (existing, inside the downloader)
 2. **impersonate** once if targets exist and the error looks like missing impersonate / fingerprint
-3. **Silent cookies** (optional, default on): Firefox then Edge import + validate → **one** retry (never Chrome ABE loop)
-4. **Generic extractors** once: `--use-extractors generic,default` when the error looks like extractor mismatch / unsupported webpage on an http(s) URL
-5. Then **fail-pause** for auth / bot / impersonation_missing / unknown as today
+3. **Silent Firefox cookies** (Settings **Auto cookie recovery (all sites)**, default on): Firefox then Edge import + validate for **that job’s domain** → **interruptible backoff** on the worker thread → **one** automatic retry (never Chrome ABE). Runs for every http(s) host on `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or a soft-unknown whose stderr looks like login/bot/age/cookies. Attempt names: `silent_firefox_cookies`, then `backoff:N` when a wait ran.
+4. **Bot / rate retry without cookies** once (`bot_retry`) when cookies are not used for that failure (e.g. HTTP 429), after the same backoff.
+5. **Generic extractors** once: `--use-extractors generic,default` when the error looks like extractor mismatch / unsupported webpage on an http(s) URL
+6. Then **fail-pause** for auth / bot / impersonation_missing / unknown — **only if** the silent cookie path was skipped, invalid, or the retry still failed
 
-Never auto-generic-retry for: `not_available`, `drm_blocked`, user cancel, `disk_space`, `db_error`, `js_runtime` (point at Deno).
+Never auto-generic-retry or auto-cookie-retry for: `not_available`, `drm_blocked`, user cancel, `disk_space`, `db_error`, `js_runtime` (point at Deno). `output_missing` skips cookies unless the message also looks like an auth wall.
 
-Fail-pause and the copyable error report list **tried:** attempts. FrameForge does **not** claim an in-app browser download.
+Fail-pause and the copyable error report list **tried:** attempts. FrameForge does **not** claim an in-app browser download or WebView login.
+
+A successful silent recovery may show a brief toast: `Cookies refreshed (Firefox) — retrying…`, then `Waiting Ns before retry…` during backoff. Wait is `auto_retry_backoff_sec` (default 5, 0–60) plus `auto_retry_backoff_jitter_sec` (default 2, 0–15). Cancel/pause during the wait aborts; no retry. Sleep is on the worker thread only. **Auto recovery is not a PornHub-only path** — impersonate Auto hosts remain a separate host policy.
 
 ## DRM
 

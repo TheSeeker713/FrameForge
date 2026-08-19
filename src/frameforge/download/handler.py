@@ -137,8 +137,12 @@ def make_download_handler(
         dl.use_generic_extractors = bool(job.options().get("use_generic_extractors"))
         from frameforge.download.impersonate import list_impersonate_targets
         from frameforge.download.recovery import (
+            BOT_RETRY,
+            SILENT_FIREFOX_COOKIES,
+            apply_auto_retry_backoff,
             format_tried,
             next_recovery_step,
+            recovery_should_abort,
             silent_cookie_import,
             silent_cookies_enabled,
         )
@@ -147,6 +151,12 @@ def make_download_handler(
         attempts: list[str] = list(job.options().get("recovery_attempts") or [])
         last_exc: BaseException | None = None
         result = None
+
+        def _raise_if_backoff_aborted() -> None:
+            reason = recovery_should_abort(job.id, repo, process_registry)
+            if reason == "paused":
+                raise DownloadPaused("paused")
+            raise DownloadCancelled("cancelled")
         while True:
             try:
                 result = dl.download(
@@ -193,18 +203,39 @@ def make_download_handler(
                             },
                         )
                     continue
-                if step == "cookies":
+                if step == SILENT_FIREFOX_COOKIES or step == "cookies":
+                    attempts.append(SILENT_FIREFOX_COOKIES)
+                    repo.merge_options(
+                        job.id,
+                        {
+                            "recovery_attempts": attempts,
+                            "recovery_tried": format_tried(attempts),
+                        },
+                    )
                     imported = silent_cookie_import(job.url)
-                    attempts.append("cookies")
                     if imported.get("ok"):
+                        from frameforge.download.cookie_validate import mark_cookies_validated
+
+                        mark_cookies_validated(job.url)
                         dl.cookiefile = _cookiefile_for_url(job.url)
+                        browser = str(imported.get("browser") or "firefox").strip() or "firefox"
+                        toast = f"Cookies refreshed ({browser.capitalize()}) — retrying…"
+                        repo.merge_options(job.id, {"recovery_toast": toast})
+                        if not apply_auto_retry_backoff(
+                            repo=repo,
+                            attempts=attempts,
+                            job_id=job.id,
+                            progress_cb=progress_cb,
+                            process_registry=process_registry,
+                        ):
+                            _raise_if_backoff_aborted()
                         if progress_cb:
                             progress_cb(
                                 0.0,
                                 {
                                     "speed_bps": None,
                                     "eta_seconds": None,
-                                    "speed_str": "Retrying with imported cookies…",
+                                    "speed_str": toast,
                                     "eta_str": None,
                                 },
                             )
@@ -218,6 +249,34 @@ def make_download_handler(
                         has_impersonate_targets=bool(list_impersonate_targets()),
                         silent_cookies=False,
                     )
+                if step == BOT_RETRY:
+                    attempts.append(BOT_RETRY)
+                    repo.merge_options(
+                        job.id,
+                        {
+                            "recovery_attempts": attempts,
+                            "recovery_tried": format_tried(attempts),
+                        },
+                    )
+                    if not apply_auto_retry_backoff(
+                        repo=repo,
+                        attempts=attempts,
+                        job_id=job.id,
+                        progress_cb=progress_cb,
+                        process_registry=process_registry,
+                    ):
+                        _raise_if_backoff_aborted()
+                    if progress_cb:
+                        progress_cb(
+                            0.0,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "Retrying after backoff…",
+                                "eta_str": None,
+                            },
+                        )
+                    continue
                 if step == "generic":
                     dl.use_generic_extractors = True
                     attempts.append("generic")

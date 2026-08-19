@@ -197,8 +197,21 @@ def build_settings_dialog(
         width=420,
     )
     silent_cookies = ft.Switch(
-        label="Silent Firefox/Edge cookie import on auth/bot (one retry, never Chrome)",
-        value=str(repo.get_setting("silent_browser_cookies", "1") or "1") != "0",
+        label="Auto cookie recovery (all sites)",
+        value=(
+            str(repo.get_setting("auto_cookie_recovery", "1") or "1") != "0"
+            and str(repo.get_setting("silent_browser_cookies", "1") or "1") != "0"
+        ),
+    )
+    backoff = ft.TextField(
+        label="Retry backoff (seconds)",
+        value=str(repo.get_setting("auto_retry_backoff_sec", "5") or "5"),
+        width=280,
+    )
+    jitter = ft.TextField(
+        label="Retry backoff jitter (seconds, 0–15, default 2)",
+        value=str(repo.get_setting("auto_retry_backoff_jitter_sec", "2") or "2"),
+        width=280,
     )
 
     js = js_runtime_status()
@@ -265,7 +278,27 @@ def build_settings_dialog(
         )
         raw_hosts = str(impersonate_hosts.value or "").strip()
         repo.set_setting(HOSTS_SETTING, raw_hosts)
-        repo.set_setting("silent_browser_cookies", "1" if silent_cookies.value else "0")
+        on = "1" if silent_cookies.value else "0"
+        repo.set_setting("silent_browser_cookies", on)
+        repo.set_setting("auto_cookie_recovery", on)
+        raw_backoff = str(backoff.value or "5").strip() or "5"
+        try:
+            delay_sec = max(0.0, min(60.0, float(raw_backoff)))
+        except ValueError:
+            delay_sec = 5.0
+        repo.set_setting(
+            "auto_retry_backoff_sec",
+            str(int(delay_sec) if delay_sec == int(delay_sec) else delay_sec),
+        )
+        raw_jitter = str(jitter.value or "2").strip() or "2"
+        try:
+            jitter_sec = max(0.0, min(15.0, float(raw_jitter)))
+        except ValueError:
+            jitter_sec = 2.0
+        repo.set_setting(
+            "auto_retry_backoff_jitter_sec",
+            str(int(jitter_sec) if jitter_sec == int(jitter_sec) else jitter_sec),
+        )
         if ram.value:
             repo.set_setting("ram_warning_pct", str(ram.value).strip())
         raw_upscale_min = str(upscale_max_min.value or "15").strip() or "15"
@@ -313,6 +346,14 @@ def build_settings_dialog(
                 impersonate_dd,
                 impersonate_hosts,
                 silent_cookies,
+                backoff,
+                jitter,
+                ft.Text(
+                    "Auto recovery runs for every domain: Firefox cookies → backoff → one retry. "
+                    "Human pause only if that fails. Edge is the Firefox fallback; Chrome ABE is not auto-fixed.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
                 impersonate_tip,
             ),
             _card(
@@ -442,6 +483,9 @@ def build_settings_dialog(
         "tray": tray,
         "fail_pause": fail_pause,
         "impersonate": impersonate_dd,
+        "silent_cookies": silent_cookies,
+        "backoff": backoff,
+        "jitter": jitter,
         "save": save,
         "cancel": cancel,
         "cookies_path": cookies_path,

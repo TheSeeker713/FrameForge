@@ -6,21 +6,26 @@ FrameForge stores per-domain Netscape cookie files under:
 
 Authenticate and Settings show that resolved folder and list domain `*.txt` files found. **Open cookies folder** launches Explorer on that directory only (no theme or DWM changes).
 
-## Import from browser (v0.5.6)
+## Import from browser (v0.5.6+)
 
-User-triggered only — FrameForge never auto-opens a browser loop.
+**Auto path (v0.6.11):** Auto recovery runs for **every domain** (YouTube, social, news, generic extractor URLs, adult hosts, and anything else yt-dlp can cookie). On `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or a soft-unknown whose stderr looks like login/bot/age/cookies, FrameForge imports Firefox cookies for that URL’s domain — **without a modal** — waits retry backoff on the **worker thread**, then retries the job once. Edge is the Firefox fallback. **Chrome App-Bound Encryption is not auto-fixed.** Human fail-pause (Import / Retry / Skip / Stop) only if that path fails.
+
+Settings: **Auto cookie recovery (all sites)** (default ON), **Retry backoff (seconds)** (default 5, 0–60), and jitter (default 2, 0–15). Backoff is not applied to the first attempt, user Retry, or Skip.
+
+This still does **not** open a browser window or an in-app WebView. It uses:
+
+`yt-dlp --cookies-from-browser firefox --cookies <FrameForge cookies path> --skip-download <url>`
+
+**Manual path:** Authenticate or the fail-pause **Import from Firefox / browser** button (same importer). Firefox is the default.
 
 1. Click **Authenticate site…** (or **Import from Firefox / browser** on a bot/login pause).
 2. Enter the site URL or domain.
 3. **Firefox is the default.** Click **Import from Firefox**, or **Choose cookies.txt file**.
-4. FrameForge runs:
-
-   `yt-dlp --cookies-from-browser <browser> --cookies <FrameForge cookies path> --skip-download <url>`
-
+4. FrameForge runs the same `--cookies-from-browser` command as the auto path.
 5. The Netscape file is validated (must contain at least one cookie row). Header-only stubs are rejected.
 6. On success, later downloads for that domain use `resolve_cookiefile_for_url` automatically. YouTube then still uses the Innertube client list (`tv_downgraded`, etc.). See [YOUTUBE_CLIENTS.md](YOUTUBE_CLIENTS.md).
 
-**Browser order** when auto-trying: `firefox`, then `edge`, `chrome`, `brave`.
+**Browser order** when auto-trying: `firefox`, then `edge`. Manual Authenticate may also offer Chrome/Brave, but Chrome ABE usually fails.
 
 ### Chrome App-Bound Encryption (honest limit)
 
@@ -42,12 +47,12 @@ Edge/Brave may hit the same Chromium lock. ChromeCookieUnlock-style recovery is 
 
 Header-only stubs created when opening the browser are **not** treated as usable cookies.
 
-If a download fails with a login/bot/age/members wall, the error panel offers:
+If a download fails with a login/bot/age/members wall on **any site**, FrameForge first tries **silent Firefox recovery** for that domain. If that is exhausted, the error panel / fail-pause modal offers:
 
 - **Import from browser…** (prefilled URL)
 - **Authenticate this site…** (manual cookies.txt)
 
-Both are user-triggered.
+Both remain available when auto recovery cannot finish the job.
 
 ## Notes
 
@@ -56,10 +61,10 @@ Both are user-triggered.
 
 ## PornHub / age gate
 
-Site file: `cookies\pornhub.com.txt` (from `https://www.pornhub.com/…`).
+PornHub is one consumer of the same universal cookie path. Site file: `cookies\pornhub.com.txt` (from `https://www.pornhub.com/…`).
 
-1. Open the URL in a browser, **accept the age gate**, sign in if needed.
-2. Import from Firefox or re-export Netscape cookies into `pornhub.com.txt`.
-3. Retry. FrameForge must also pass `--impersonate chrome` (see [ADULT_SITES.md](ADULT_SITES.md)). Cookies alone do not fix job-70-style HTTP 410.
+1. Open the URL in a browser, **accept the age gate**, sign in if needed (Firefox preferred).
+2. FrameForge will try **silent Firefox import + backoff + retry** on the next auth-like failure (zero clicks when cookies are exportable).
+3. If that path cannot finish, import from the fail-pause modal or write `pornhub.com.txt` yourself, then retry. `--impersonate chrome` is still required (see [ADULT_SITES.md](ADULT_SITES.md)). Cookies alone do not fix job-70-style HTTP 410 after impersonate+cookies.
 
 Chrome App-Bound Encryption still applies: prefer Firefox or a cookies.txt export.

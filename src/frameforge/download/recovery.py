@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import random
 import re
+import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
+from frameforge.download.auth_hints import is_auth_failure
 from frameforge.errors import (
     AUTH_REQUIRED,
     BOT_CHECK,
@@ -15,13 +19,25 @@ from frameforge.errors import (
     DRM_BLOCKED,
     IMPERSONATION_MISSING,
     JS_RUNTIME,
+    NETWORK,
     NOT_AVAILABLE,
     OUTPUT_MISSING,
+    RATE_LIMITED,
+    UPSCALE_CONFIG,
+    UPSCALE_LIMIT,
     classify_error,
 )
 
 SILENT_COOKIES_SETTING = "silent_browser_cookies"
+AUTO_COOKIE_SETTING = "auto_cookie_recovery"
+BACKOFF_SETTING = "auto_retry_backoff_sec"
+JITTER_SETTING = "auto_retry_backoff_jitter_sec"
+DEFAULT_BACKOFF_SEC = 5.0
+DEFAULT_JITTER_SEC = 2.0
 GENERIC_EXTRACTORS_CLI = "generic,default"
+SILENT_FIREFOX_COOKIES = "silent_firefox_cookies"
+BOT_RETRY = "bot_retry"
+COOKIE_ATTEMPT_NAMES = frozenset({"cookies", SILENT_FIREFOX_COOKIES})
 
 # Do not auto-generic-retry these.
 SKIP_GENERIC_CATEGORIES = frozenset(
@@ -33,6 +49,20 @@ SKIP_GENERIC_CATEGORIES = frozenset(
         DB_ERROR,
         JS_RUNTIME,
         OUTPUT_MISSING,
+    }
+)
+
+# Silent browser cookies never run for these (even with auth-like wording).
+SKIP_COOKIE_CATEGORIES = frozenset(
+    {
+        NOT_AVAILABLE,
+        DRM_BLOCKED,
+        DISK_SPACE,
+        DB_ERROR,
+        CANCELLED,
+        JS_RUNTIME,
+        UPSCALE_LIMIT,
+        UPSCALE_CONFIG,
     }
 )
 
@@ -60,6 +90,22 @@ _FINGERPRINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SOFT_AUTH_RE = re.compile(
+    r"age[- ]?(gate|verif)"
+    r"|verify your age"
+    r"|you must be 18"
+    r"|registered users"
+    r"|fresh cookies"
+    r"|cookies? (expired|invalid|are needed)"
+    r"|--cookies-from-browser"
+    r"|only available (to|for)"
+    r"|join (pornhub|this (site|channel))"
+    r"|premium (members|only)"
+    r"|login required"
+    r"|please sign in",
+    re.IGNORECASE,
+)
+
 _HTTP_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
@@ -71,6 +117,45 @@ def looks_like_generic_mismatch(message: str | None) -> bool:
     return bool(_GENERIC_MISMATCH_RE.search(str(message or "")))
 
 
+def looks_like_auth_wall(message: str | None, *, url: str | None = None) -> bool:
+    """True for login/age/bot/cookie walls in stderr (any host)."""
+    text = str(message or "")
+    return bool(is_auth_failure(text) or _SOFT_AUTH_RE.search(text))
+
+
+COOKIE_ELIGIBLE_CATEGORIES = frozenset(
+    {
+        AUTH_REQUIRED,
+        BOT_CHECK,
+        RATE_LIMITED,
+        IMPERSONATION_MISSING,
+    }
+)
+
+
+def should_try_silent_cookies(
+    category: str | None,
+    message: str | None = None,
+    url: str | None = None,
+) -> bool:
+    """Whether this failure may take one silent Firefox (then Edge) cookie import.
+
+    Site-agnostic: any http(s) job URL. Host/extractor is not a gate.
+    """
+    cat = category or classify_error(message, url=url)
+    if cat in SKIP_COOKIE_CATEGORIES:
+        return False
+    if not is_http_url(url):
+        return False
+    if cat in {OUTPUT_MISSING, NETWORK} and not looks_like_auth_wall(message, url=url):
+        return False
+    if cat in COOKIE_ELIGIBLE_CATEGORIES:
+        return True
+    if looks_like_auth_wall(message, url=url):
+        return True
+    return False
+
+
 def is_http_url(url: str | None) -> bool:
     text = str(url or "").strip()
     if _HTTP_URL_RE.match(text):
@@ -79,10 +164,10 @@ def is_http_url(url: str | None) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def silent_cookies_enabled(repo: Any | None) -> bool:
+def _setting_on(repo: Any | None, key: str, default: str = "1") -> bool:
     if repo is None or not hasattr(repo, "get_setting"):
         return True
-    return str(repo.get_setting(SILENT_COOKIES_SETTING, "1") or "1").strip().lower() in {
+    return str(repo.get_setting(key, default) or default).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -90,11 +175,145 @@ def silent_cookies_enabled(repo: Any | None) -> bool:
     }
 
 
+def silent_cookies_enabled(repo: Any | None) -> bool:
+    """ON unless auto_cookie_recovery or legacy silent_browser_cookies is off."""
+    return _setting_on(repo, AUTO_COOKIE_SETTING, "1") and _setting_on(
+        repo, SILENT_COOKIES_SETTING, "1"
+    )
+
+
+def auto_retry_backoff_sec(repo: Any | None) -> float:
+    if repo is None or not hasattr(repo, "get_setting"):
+        return DEFAULT_BACKOFF_SEC
+    raw = repo.get_setting(BACKOFF_SETTING, str(int(DEFAULT_BACKOFF_SEC)))
+    try:
+        return max(0.0, min(60.0, float(raw)))
+    except (TypeError, ValueError):
+        return DEFAULT_BACKOFF_SEC
+
+
+def auto_retry_backoff_jitter_sec(repo: Any | None) -> float:
+    if repo is None or not hasattr(repo, "get_setting"):
+        return DEFAULT_JITTER_SEC
+    raw = repo.get_setting(JITTER_SETTING, str(int(DEFAULT_JITTER_SEC)))
+    try:
+        return max(0.0, min(15.0, float(raw)))
+    except (TypeError, ValueError):
+        return DEFAULT_JITTER_SEC
+
+
+def compute_retry_delay(repo: Any | None) -> float:
+    """Base backoff plus optional jitter. Zero base means no wait (jitter ignored)."""
+    base = auto_retry_backoff_sec(repo)
+    if base <= 0:
+        return 0.0
+    jitter = auto_retry_backoff_jitter_sec(repo)
+    extra = random.uniform(0.0, jitter) if jitter > 0 else 0.0
+    return base + extra
+
+
+def waiting_label(seconds: float) -> str:
+    if abs(seconds - round(seconds)) < 0.05:
+        return f"Waiting {int(round(seconds))}s before retry…"
+    return f"Waiting {seconds:.1f}s before retry…"
+
+
+def format_backoff_attempt(seconds: float) -> str:
+    return f"backoff:{seconds:.1f}"
+
+
+def backoff_already_applied(attempts: list[str] | tuple[str, ...] | None) -> bool:
+    return any(str(a).strip().lower().startswith("backoff:") for a in (attempts or []))
+
+
+def interruptible_backoff(seconds: float, should_abort: Callable[[], bool]) -> bool:
+    """Return True if full wait completed, False if aborted. Worker thread only."""
+    end = time.monotonic() + max(0.0, seconds)
+    while True:
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return True
+        if should_abort():
+            return False
+        time.sleep(min(0.5, remaining))
+
+
+def recovery_should_abort(
+    job_id: int,
+    repo: Any,
+    process_registry: Any | None = None,
+) -> str | None:
+    """Return 'cancelled', 'paused', or None. Never touches the UI thread."""
+    try:
+        current = repo.get(job_id)
+    except Exception:  # noqa: BLE001
+        return None
+    status = getattr(current, "status", None)
+    if status == "cancelled":
+        return "cancelled"
+    if status == "paused":
+        return "paused"
+    if process_registry is not None:
+        if process_registry.was_killed(job_id):
+            return "cancelled"
+        if process_registry.was_paused(job_id):
+            return "paused"
+    return None
+
+
+def apply_auto_retry_backoff(
+    *,
+    repo: Any,
+    attempts: list[str],
+    job_id: int,
+    progress_cb: Callable[..., Any] | None = None,
+    process_registry: Any | None = None,
+) -> bool:
+    """Wait once on the worker thread before an automatic retry. False if aborted."""
+    if backoff_already_applied(attempts):
+        return True
+    delay = compute_retry_delay(repo)
+    if delay <= 0:
+        return True
+    label = waiting_label(delay)
+    if progress_cb:
+        progress_cb(
+            0.0,
+            {
+                "speed_bps": None,
+                "eta_seconds": None,
+                "speed_str": label,
+                "eta_str": None,
+            },
+        )
+
+    def should_abort() -> bool:
+        return recovery_should_abort(job_id, repo, process_registry) is not None
+
+    if not interruptible_backoff(delay, should_abort):
+        return False
+    attempts.append(format_backoff_attempt(delay))
+    if hasattr(repo, "merge_options"):
+        repo.merge_options(
+            job_id,
+            {
+                "recovery_attempts": list(attempts),
+                "recovery_tried": format_tried(attempts),
+            },
+        )
+    return True
+
+
 def format_tried(attempts: list[str] | tuple[str, ...] | None) -> str:
     names = [str(a).strip() for a in (attempts or []) if str(a).strip()]
     if not names:
         return ""
     return "tried: " + ", ".join(names)
+
+
+def cookies_attempt_done(attempts: list[str] | tuple[str, ...] | None) -> bool:
+    done = {str(a).strip().lower() for a in (attempts or []) if str(a).strip()}
+    return bool(done & COOKIE_ATTEMPT_NAMES)
 
 
 def next_recovery_step(
@@ -107,10 +326,11 @@ def next_recovery_step(
     has_impersonate_targets: bool = False,
     silent_cookies: bool = True,
 ) -> str | None:
-    """Return the next automatic step: impersonate | cookies | generic, or None.
+    """Return the next automatic step: impersonate | silent_firefox_cookies | bot_retry | generic, or None.
 
     Order after the in-download aria2→native fallback:
-    impersonate (fingerprint / impersonation_missing) → silent cookies → generic once.
+    impersonate → silent Firefox cookies (any http(s) domain) → one bot/rate retry
+    without cookies if cookies were skipped → generic once.
     """
     done = {str(a).strip().lower() for a in (attempts or []) if str(a).strip()}
     cat = category or classify_error(message, url=url)
@@ -131,11 +351,18 @@ def next_recovery_step(
         return "impersonate"
 
     if (
-        "cookies" not in done
+        not (done & COOKIE_ATTEMPT_NAMES)
         and silent_cookies
-        and cat in {AUTH_REQUIRED, BOT_CHECK}
+        and should_try_silent_cookies(cat, text, url)
     ):
-        return "cookies"
+        return SILENT_FIREFOX_COOKIES
+
+    if (
+        cat in {BOT_CHECK, RATE_LIMITED}
+        and BOT_RETRY not in done
+        and not cookies_attempt_done(attempts)
+    ):
+        return BOT_RETRY
 
     if (
         "generic" not in done
@@ -153,17 +380,23 @@ def silent_cookie_import(url: str, *, importer: Any | None = None) -> dict[str, 
     if importer is not None:
         result = importer(url)
         ok = bool(result.get("ok") if isinstance(result, dict) else getattr(result, "ok", False))
-        return {"ok": ok, "result": result, "browsers": ["injected"]}
+        browser = None
+        if isinstance(result, dict):
+            browser = result.get("browser")
+        else:
+            browser = getattr(result, "browser", None)
+        return {"ok": ok, "result": result, "browser": browser or "firefox", "browsers": ["injected"]}
     from frameforge.download.browser_import import import_cookies_from_browser
 
     errors: list[str] = []
     for browser in ("firefox", "edge"):
         imported = import_cookies_from_browser(url, browser=browser)
         if imported.ok:
-            from frameforge.download.cookie_validate import validate_cookies_for_url
+            from frameforge.download.cookie_validate import mark_cookies_validated, validate_cookies_for_url
 
             validation = validate_cookies_for_url(url, skip_probe_if_session=False)
             if validation.ok:
+                mark_cookies_validated(url)
                 return {"ok": True, "browser": browser, "validation": validation}
             errors.append(f"{browser}: imported but validate failed ({validation.message})")
         else:

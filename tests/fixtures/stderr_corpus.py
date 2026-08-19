@@ -28,6 +28,14 @@ CORPUS: list[tuple[str, str]] = [
     ),
     (
         AUTH_REQUIRED,
+        "ERROR: [PornHub] Please verify your age to continue.",
+    ),
+    (
+        AUTH_REQUIRED,
+        "ERROR: This video is only available for registered users. Sign in to watch.",
+    ),
+    (
+        AUTH_REQUIRED,
         "ERROR: Confirm your age to continue. This video is age-restricted.",
     ),
     (

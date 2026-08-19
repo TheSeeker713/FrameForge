@@ -66,11 +66,11 @@ Turn the default policy off in Settings if you want the bulk run to keep going a
 
 `impersonation_missing` pauses **and** still offers cookie import: pin `curl_cffi==0.13.0`, run `--check-env`, accept the age gate, import `pornhub.com.txt`, retry with `--impersonate`. HTTP 410 **after** impersonate + cookies is `not_available` (confirm in a browser; truly deleted videos stay 410). See [ADULT_SITES.md](ADULT_SITES.md).
 
-Before fail-pause, the download handler may already have recorded automatic **recovery attempts** (`recovery_attempts` / `tried: native, impersonate, cookies, generic`). The modal and error report show that line. Silent Firefox/Edge cookie import (default on) is one automatic step — not an in-app browser download. See [MULTI_SITE.md](MULTI_SITE.md).
+Before fail-pause, the download handler runs the automatic **recovery ladder** (`recovery_attempts` / `tried: native, impersonate, silent_firefox_cookies, backoff:N, generic`). **Auto cookie recovery (all sites)** (default ON) imports Firefox cookies for the job URL’s domain (Edge fallback, never Chrome ABE), waits **retry backoff** on the worker thread (`Waiting Ns before retry…`), and retries **this job once** with no modal. Human fail-pause for **any** site appears only after that path is skipped, invalid, aborted, or the retry still fails. See [MULTI_SITE.md](MULTI_SITE.md) and [COOKIES.md](COOKIES.md).
 
 `drm_blocked` does **not** fail-pause with cookie import; skip the job.
 
-You must choose an action. The worker does not silently continue failing the rest of the list.
+If the auto cookie path is exhausted, you must choose a fail-pause action. The worker does not silently continue failing the rest of the list.
 
 The Flet UI calls the same handlers via `UiBridge.retry_job` / `handle_fail_pause_action` (see [UI_BRIDGE.md](UI_BRIDGE.md)). Retry that fails again hits the same disarm + `on_fail_pause` entrypoint.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.11
+
+- Auto Firefox cookie recovery before fail-pause for **every domain** (not PornHub-only): on auth/bot/rate/impersonation_missing and stderr-matched soft-unknown walls, import Firefox (Edge fallback, never Chrome ABE) once, then **interruptible worker-thread backoff** (`auto_retry_backoff_sec` default 5 + optional jitter default 2) and one retry. Status shows `Waiting Ns before retry…`. Human modal only if that path fails. Cancel/pause aborts the wait (no retry). See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md), [MULTI_SITE.md](docs/MULTI_SITE.md).
+
 ## 0.6.10
 
 - GUI/worker start without ONNX: missing models dir is no longer a `FileNotFoundError` on `python -m frameforge --gui`. Category `upscale_config` if upscale is forced anyway.

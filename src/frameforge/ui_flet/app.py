@@ -274,6 +274,7 @@ class FrameForgeUi:
         self.last_clipboard_status: str | None = None
         self.last_destroy_status: str | None = None
         self.last_toast: str | None = None
+        self._recovery_toasts_seen: set[tuple[int, str]] = set()
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -633,6 +634,8 @@ class FrameForgeUi:
         except Exception:  # noqa: BLE001
             pass
         jobs = self.queue_jobs()
+        for job in jobs:
+            self._maybe_recovery_toast(job)
         armed = bool(getattr(self.worker, "is_armed", False))
         sig = (structural_sig(jobs), armed, self._activity_note)
         active = next((j for j in jobs if j.status in {"downloading", "upscaling", "converting"}), None)
@@ -673,11 +676,23 @@ class FrameForgeUi:
         if self.page is not None:
             self.page.update()
 
+    def _maybe_recovery_toast(self, job: Any) -> None:
+        opts = job.options() if hasattr(job, "options") else {}
+        note = opts.get("recovery_toast")
+        if not note:
+            return
+        key = (int(job.id), str(note))
+        if key in self._recovery_toasts_seen:
+            return
+        self._recovery_toasts_seen.add(key)
+        self._show_toast(str(note))
+
     def update_active_progress(self, job: Any) -> None:
         if self.queue_list is None:
             return
         pct = float(getattr(job, "progress", 0) or 0)
         opts = job.options() if hasattr(job, "options") else {}
+        self._maybe_recovery_toast(job)
         speed = opts.get("speed_str") or ""
         eta = opts.get("eta_str") or ""
         for card in self.queue_list.controls:

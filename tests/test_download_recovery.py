@@ -63,9 +63,9 @@ def test_recovery_order_impersonate_then_cookies_then_generic():
         has_impersonate_targets=True,
         silent_cookies=True,
     )
-    assert step2 == "cookies"
+    assert step2 == "silent_firefox_cookies"
     step3 = next_recovery_step(
-        ["impersonate", "cookies"],
+        ["impersonate", "silent_firefox_cookies"],
         category=UNKNOWN,
         message=msg,
         url=url,
@@ -74,7 +74,7 @@ def test_recovery_order_impersonate_then_cookies_then_generic():
     assert step3 == "generic"
     assert (
         next_recovery_step(
-            ["impersonate", "cookies", "generic"],
+            ["impersonate", "silent_firefox_cookies", "generic"],
             category=UNKNOWN,
             message=msg,
             url=url,
@@ -184,7 +184,7 @@ def test_handler_records_tried_on_final_auth_fail(tmp_path: Path, monkeypatch):
     except RuntimeError:
         pass
     loaded = repo.get(job.id)
-    assert "cookies" in (loaded.options().get("recovery_attempts") or [])
+    assert "silent_firefox_cookies" in (loaded.options().get("recovery_attempts") or [])
     assert format_tried(loaded.options().get("recovery_attempts")).startswith("tried:")
     repo.close()
 

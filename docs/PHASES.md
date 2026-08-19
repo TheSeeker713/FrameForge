@@ -2,11 +2,11 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.10 (GUI without ONNX + chunked upscale)
+## Status: v0.6.11 (auto Firefox cookie recovery)
 
-Package version is **0.6.10**. `python -m frameforge --gui` must open with an empty models dir. Upscale is chunked (no full-length PNG tree, no 15-minute hard fail). Smoke Identity ONNX is not Real-ESRGAN. See [UPSCALE_DISK.md](UPSCALE_DISK.md).
+Package version is **0.6.11**. Auto cookie recovery is **site-agnostic**: every domain tries silent Firefox cookies (Edge fallback), interruptible worker backoff, then one retry **before** the fail-pause modal. Chrome ABE is not auto-fixed. See [FAIL_PAUSE.md](FAIL_PAUSE.md) and [COOKIES.md](COOKIES.md).
 
-v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
+v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 
 ## Phase 0 – Foundation
 
