@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
 import time
@@ -12,6 +13,8 @@ from frameforge.db.connection import is_transient_sqlite
 from frameforge.db.repository import Job, JobRepository
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
+
+log = logging.getLogger(__name__)
 
 
 JobHandler = Callable[[Job, JobRepository], None]
@@ -153,6 +156,7 @@ class SequentialWorker:
         """Cancel the in-flight stage, disarm, leave remaining jobs pending."""
         self.clear_wait_to_quit()
         self.disarm()
+        self.clear_fail_pause_halt()
         for status in ("downloading", "upscaling", "converting"):
             for job in list(self.repo.list_jobs(status)):
                 self.cancel_job(job.id)
@@ -163,14 +167,14 @@ class SequentialWorker:
 
     def start(self, *, daemon: bool = True, armed: bool = False) -> None:
         """Start the background loop. Does not claim jobs unless armed=True."""
-        if self._thread and self._thread.is_alive():
-            if armed:
+        if armed:
+            with self._lock:
+                self._fail_pause_halt.clear()
                 self._armed.set()
+        if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        if armed:
-            self._armed.set()
-        else:
+        if not armed:
             self._armed.clear()
         self._thread = threading.Thread(target=self._loop, name="frameforge-worker", daemon=daemon)
         self._thread.start()
@@ -326,6 +330,7 @@ class SequentialWorker:
             except Exception as exc:  # noqa: BLE001
                 # Never kill the background loop. Transient sqlite must not cascade
                 # into failing a recoverable in-flight job.
+                log.exception("worker loop recovered from internal error")
                 if isinstance(exc, sqlite3.OperationalError) or is_transient_sqlite(exc):
                     time.sleep(max(self.poll_interval, 0.05))
                     continue

@@ -63,6 +63,13 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.13 (cookie recovery hang)
+
+- Silent Firefox: 60s hard timeout, file-only validate, no `unknown`+existing-cookies re-import. Timeout → fail-pause; later Download all claims pending. Setting OFF = plain downloads.
+- Tests: `tests/test_auto_cookie_recovery.py` (OFF path, timeout then re-arm, two-job success), `tests/test_browser_cookie_import.py` (runner timeout), `tests/test_cookie_validate.py` (file_only).
+- Suite: `python -m pytest -q` → **556 passed / 0 skipped / 0 failed**.
+- See [FAIL_PAUSE.md](FAIL_PAUSE.md), [COOKIES.md](COOKIES.md), [MULTI_SITE.md](MULTI_SITE.md).
+
 ## v0.6.12 (auto fail-pause button sequence)
 
 - After impersonate, unknown/cookie-eligible failures continue to silent Firefox (same `import_cookies_from_browser` as the modal) → backoff → `retry`. Status: Importing cookies / waiting / Retrying.

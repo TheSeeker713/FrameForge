@@ -94,8 +94,13 @@ def validate_cookies_for_url(
     *,
     probe: Probe | None = None,
     skip_probe_if_session: bool = True,
+    file_only: bool = False,
 ) -> CookieValidationResult:
-    """Check on-disk Netscape cookies, then optionally probe the host (injectable, no GUI)."""
+    """Check on-disk Netscape cookies, then optionally probe the host (injectable, no GUI).
+
+    *file_only* skips live ``extract_info`` — used by silent auto-recovery so a hung
+    probe cannot block the download worker.
+    """
     try:
         domain = normalize_domain(url)
     except ValueError as exc:
@@ -107,6 +112,15 @@ def validate_cookies_for_url(
             "No valid Netscape cookies for this site. Import from Chrome, Edge, Firefox, or cookies.txt first.",
             domain=domain,
             cookiefile=path,
+        )
+    if file_only:
+        mark_cookies_validated(domain)
+        return CookieValidationResult(
+            True,
+            f"Cookies look valid for {domain}.",
+            domain=domain,
+            cookiefile=path,
+            probed=False,
         )
     if skip_probe_if_session and cookies_validated_in_session(domain):
         return CookieValidationResult(

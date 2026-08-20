@@ -179,6 +179,7 @@ class UiBridge:
         """Same functions the fail-pause modal / failed-card Retry buttons call."""
         if action_id == "stop":
             self.worker.disarm()
+            self.worker.clear_fail_pause_halt()
             return {"action": "stop"}
         if action_id == "skip_resume":
             self.worker.request_download_all()

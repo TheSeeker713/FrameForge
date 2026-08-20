@@ -151,3 +151,20 @@ def test_auto_order_falls_through_to_edge(tmp_path: Path, monkeypatch):
     assert result.browser == "edge"
     assert result.path is not None
     assert result.path.parent.name == "cookies"
+
+
+def test_default_runner_timeout_kills_child():
+    import sys
+    import time
+
+    from frameforge.download.browser_import import _default_runner
+
+    started = time.monotonic()
+    rc, _out, err = _default_runner(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        timeout=0.4,
+    )
+    elapsed = time.monotonic() - started
+    assert rc == -1
+    assert "timed out" in err.lower()
+    assert elapsed < 8

@@ -8,9 +8,9 @@ Authenticate and Settings show that resolved folder and list domain `*.txt` file
 
 ## Import from browser (v0.5.6+)
 
-**Auto path (v0.6.12):** Auto recovery runs for **every domain**. It is the same two clicks as the fail-pause modal, without the modal: **Import from Firefox / browser** (blocking, often 10–15s, timeout 120s) → **Retry this job and resume queue**. Status lines: `Importing cookies from Firefox…`, `Cookies validated — waiting before retry…`, `Retrying download…`. Human fail-pause only if Firefox/Edge import fails or the retry still fails.
+**Auto path (v0.6.13):** Auto recovery runs for **every domain**, with a **60s hard timeout** so a locked Firefox profile cannot freeze the queue. Same two clicks as the fail-pause modal, without the modal when it works: **Import from Firefox / browser** (Firefox then Edge, process tree killed on timeout) → file-only Netscape validate (no live `extract_info`) → **Retry this job**. Status lines: `Importing cookies from Firefox…`, `Cookies validated — waiting before retry…`, `Retrying download…`. Human fail-pause if import times out/fails or the retry still fails. An existing `cookies/<domain>.txt` is **not** a reason to re-run Firefox on every `unknown`. `auto_cookie_recovery` OFF skips this path entirely.
 
-On `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or `unknown` with auth-like stderr, an existing domain cookie file, an Auto-impersonate host, or impersonate already in `tried`. Edge is the Firefox fallback. **Chrome App-Bound Encryption is not auto-fixed.**
+On `auth_required` / `bot_check` / `rate_limited` / `impersonation_missing`, or `unknown` with auth-like stderr, an Auto-impersonate host, or impersonate already in `tried`. Edge is the Firefox fallback. **Chrome App-Bound Encryption is not auto-fixed.**
 
 Settings: **Auto cookie recovery (all sites)** (default ON), **Retry backoff (seconds)** (default 5, 0–60), and jitter (default 2, 0–15). Backoff is not applied to the first attempt, user Retry, or Skip.
 

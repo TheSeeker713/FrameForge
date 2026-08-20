@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.13
+
+- P0: silent Firefox cookie recovery no longer hangs the sequential worker. Hard **60s** total timeout (process tree killed), file-only Netscape validate (no live `extract_info` probe), unknown failures no longer re-import just because a cookie file exists. Timeout/import fail → fail-pause once; Download all / Retry / Skip / Stop clear the halt latch. `auto_cookie_recovery` OFF is the pre-recovery download path (no Firefox wait). Recovery exceptions are logged and fail the job — they do not kill the worker thread. See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md).
+
 ## 0.6.12
 
 - Auto recovery now runs the **same two fail-pause buttons** before any modal: Import from Firefox (await 10–15s+, timeout 120s) → interruptible backoff → Retry this job. Stops after impersonate was a field regression (`unknown` + `tried: impersonate`). Unknown failures enter this path when stderr is auth-like, the domain already has cookies, the host is on Auto impersonate, or impersonate was already tried. All sites. See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md).

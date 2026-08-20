@@ -70,6 +70,20 @@ def test_validate_success_session_reuse_skips_second_probe():
     assert probes == [url]
 
 
+def test_file_only_skips_live_probe():
+    clear_session_cookie_validation()
+    url = "https://www.youtube.com/watch?v=fileonly"
+    _write_cookies(url)
+
+    def probe(u, p):
+        raise RuntimeError("live probe must not run on the silent path")
+
+    result = validate_cookies_for_url(url, probe=probe, file_only=True)
+    assert result.ok is True
+    assert result.probed is False
+    assert cookies_validated_in_session(url)
+
+
 def test_recover_then_retry_resume_does_not_arm_on_import(tmp_path: Path):
     clear_session_cookie_validation()
     repo = JobRepository(tmp_path / "r.db")

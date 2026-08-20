@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import re
 import time
@@ -40,8 +41,10 @@ SILENT_FIREFOX_COOKIES = "silent_firefox_cookies"
 BOT_RETRY = "bot_retry"
 RETRY = "retry"
 COOKIE_ATTEMPT_NAMES = frozenset({"cookies", SILENT_FIREFOX_COOKIES})
-IMPORT_TIMEOUT_SEC = 120
+SILENT_IMPORT_TIMEOUT_SEC = 60
 AUTO_COOKIE_BROWSERS = ("firefox", "edge")
+
+log = logging.getLogger(__name__)
 
 # Do not auto-generic-retry these.
 SKIP_GENERIC_CATEGORIES = frozenset(
@@ -144,21 +147,16 @@ def cookie_domain_eligible(
 ) -> bool:
     """True when this URL/job should try domain cookies (any host, not PH-only).
 
-    Signals: auth-like stderr, an existing Netscape file for the domain,
-    Auto-impersonate host (cookies usually required after TLS impersonate),
-    or this failure chain already used impersonate.
+    Signals: auth-like stderr, Auto-impersonate host (cookies usually required
+    after TLS impersonate), or this failure chain already used impersonate.
+
+    An existing Netscape file is **not** a reason to re-import from Firefox.
+    Unknown + cookies-on-disk used to hang the worker on every YouTube fail.
     """
     if looks_like_auth_wall(message, url=url):
         return True
     if not is_http_url(url):
         return False
-    try:
-        from frameforge.download.cookies import has_cookies
-
-        if has_cookies(url):
-            return True
-    except Exception:  # noqa: BLE001
-        pass
     try:
         from frameforge.download.impersonate import url_needs_impersonate
 
@@ -424,17 +422,66 @@ def recover_browser_cookies(
     browsers: tuple[str, ...] = AUTO_COOKIE_BROWSERS,
     probe: Any | None = None,
     repo: Any | None = None,
+    timeout_sec: float | None = None,
+    file_only: bool = False,
 ) -> dict[str, Any]:
     """Same core as fail-pause “Import from Firefox / browser”: import then validate.
 
-    Worker-safe, blocking until yt-dlp --cookies-from-browser finishes (or times out).
-    Firefox first, then Edge. Never loops on Chrome ABE. Never arms the worker.
+    Worker-safe. Silent auto-recovery passes *timeout_sec* (default 60s total) and
+    *file_only* so a hung yt-dlp/Firefox or live extract_info probe cannot block
+    the sequential worker forever. Never arms the worker.
     """
+    try:
+        return _recover_browser_cookies(
+            url,
+            importer=importer,
+            browsers=browsers,
+            probe=probe,
+            repo=repo,
+            timeout_sec=timeout_sec,
+            file_only=file_only,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("cookie recovery failed for %s", url)
+        return {
+            "ok": False,
+            "stage": "error",
+            "message": f"cookie recovery error: {exc}",
+            "retried": False,
+            "browsers": list(browsers),
+        }
+
+
+def _validate_after_import(
+    url: str,
+    *,
+    probe: Any | None,
+    file_only: bool,
+) -> Any:
+    from frameforge.download.cookie_validate import validate_cookies_for_url
+
+    return validate_cookies_for_url(
+        url,
+        probe=None if file_only else probe,
+        skip_probe_if_session=not file_only,
+        file_only=file_only,
+    )
+
+
+def _recover_browser_cookies(
+    url: str,
+    *,
+    importer: Any | None = None,
+    browsers: tuple[str, ...] = AUTO_COOKIE_BROWSERS,
+    probe: Any | None = None,
+    repo: Any | None = None,
+    timeout_sec: float | None = None,
+    file_only: bool = False,
+) -> dict[str, Any]:
     from frameforge.download.cookie_validate import (
         UNLOCK_FAIL,
         enable_gentle_after_bot,
         mark_cookies_validated,
-        validate_cookies_for_url,
     )
 
     def _finish_ok(browser: str, result: Any, validation: Any) -> dict[str, Any]:
@@ -479,7 +526,7 @@ def recover_browser_cookies(
             browser = str(result.get("browser") or "firefox")
         else:
             browser = str(getattr(result, "browser", None) or "firefox")
-        validation = validate_cookies_for_url(url, probe=probe, skip_probe_if_session=False)
+        validation = _validate_after_import(url, probe=probe, file_only=file_only)
         if not validation.ok:
             return {
                 "ok": False,
@@ -496,19 +543,40 @@ def recover_browser_cookies(
 
     errors: list[str] = []
     last_result: Any = None
+    timed_out = False
+    deadline = None if timeout_sec is None else time.monotonic() + max(0.05, float(timeout_sec))
+    budget = SILENT_IMPORT_TIMEOUT_SEC if timeout_sec is None else max(0.05, float(timeout_sec))
     for browser in browsers:
-        imported = import_cookies_from_browser(url, browser=browser)
+        remaining: float | None
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.05:
+                timed_out = True
+                errors.append(f"timed out after {budget:.0f}s")
+                break
+        else:
+            remaining = None
+        imported = import_cookies_from_browser(
+            url,
+            browser=browser,
+            timeout=remaining,
+        )
         last_result = imported
+        blob = str(imported.message or "")
+        if "timed out" in blob.lower():
+            timed_out = True
         if imported.ok:
-            validation = validate_cookies_for_url(url, probe=probe, skip_probe_if_session=False)
+            validation = _validate_after_import(url, probe=probe, file_only=file_only)
             if validation.ok:
                 return _finish_ok(browser, imported, validation)
             errors.append(f"{browser}: imported but validate failed ({validation.message})")
         else:
             errors.append(f"{browser}: {imported.message}")
+            if timed_out and deadline is not None and (deadline - time.monotonic()) <= 1.0:
+                break
     return {
         "ok": False,
-        "stage": "import",
+        "stage": "timeout" if timed_out else "import",
         "message": " | ".join(errors) or "Cookie import failed.",
         "result": last_result,
         "retried": False,
@@ -516,15 +584,51 @@ def recover_browser_cookies(
     }
 
 
-def silent_cookie_import(url: str, *, importer: Any | None = None) -> dict[str, Any]:
-    """Firefox then Edge, once each. Same import_cookies_from_browser as the fail-pause button."""
-    if importer is not None:
-        result = importer(url)
-        ok = bool(result.get("ok") if isinstance(result, dict) else getattr(result, "ok", False))
-        browser = None
-        if isinstance(result, dict):
-            browser = result.get("browser")
-        else:
-            browser = getattr(result, "browser", None)
-        return {"ok": ok, "result": result, "browser": browser or "firefox", "browsers": ["injected"]}
-    return recover_browser_cookies(url, browsers=AUTO_COOKIE_BROWSERS)
+def silent_cookie_import(
+    url: str,
+    *,
+    importer: Any | None = None,
+    timeout_sec: float = SILENT_IMPORT_TIMEOUT_SEC,
+) -> dict[str, Any]:
+    """Firefox then Edge, once each. File-only validate; hard timeout. Never blocks forever."""
+    try:
+        if importer is not None:
+            result = importer(url)
+            ok = bool(result.get("ok") if isinstance(result, dict) else getattr(result, "ok", False))
+            browser = None
+            if isinstance(result, dict):
+                browser = result.get("browser")
+            else:
+                browser = getattr(result, "browser", None)
+            return {
+                "ok": ok,
+                "result": result,
+                "browser": browser or "firefox",
+                "browsers": ["injected"],
+            }
+        from frameforge.download.cookie_validate import cookies_validated_in_session
+        from frameforge.download.cookies import has_cookies
+
+        if has_cookies(url) and cookies_validated_in_session(url):
+            return {
+                "ok": True,
+                "browser": "existing",
+                "skipped_import": True,
+                "stage": "ready",
+                "message": "Cookies already validated this session.",
+                "retried": False,
+            }
+        return recover_browser_cookies(
+            url,
+            browsers=AUTO_COOKIE_BROWSERS,
+            timeout_sec=timeout_sec,
+            file_only=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("silent cookie import failed for %s", url)
+        return {
+            "ok": False,
+            "stage": "error",
+            "message": f"cookie recovery error: {exc}",
+            "retried": False,
+        }

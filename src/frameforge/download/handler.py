@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from frameforge.paths import download_dir_for_site, downloads_dir, ensure_output
 from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
+
+log = logging.getLogger(__name__)
 
 
 def resolve_download_output_dir(job: Job, *, fallback: Path | None = None) -> Path:
@@ -223,14 +226,25 @@ def make_download_handler(
                                 "eta_str": None,
                             },
                         )
-                    imported = silent_cookie_import(job.url)
+                    try:
+                        imported = silent_cookie_import(job.url)
+                    except Exception as rec_exc:  # noqa: BLE001
+                        log.exception("silent cookie import crashed for job %s", job.id)
+                        imported = {
+                            "ok": False,
+                            "stage": "error",
+                            "message": f"cookie recovery error: {rec_exc}",
+                        }
                     if imported.get("ok"):
                         from frameforge.download.cookie_validate import mark_cookies_validated
 
                         mark_cookies_validated(job.url)
                         dl.cookiefile = _cookiefile_for_url(job.url)
                         browser = str(imported.get("browser") or "firefox").strip() or "firefox"
-                        toast = f"Cookies refreshed ({browser.capitalize()}) — retrying…"
+                        if imported.get("skipped_import"):
+                            toast = "Using existing cookies — retrying…"
+                        else:
+                            toast = f"Cookies refreshed ({browser.capitalize()}) — retrying…"
                         repo.merge_options(job.id, {"recovery_toast": toast})
                         if progress_cb:
                             progress_cb(
@@ -242,13 +256,18 @@ def make_download_handler(
                                     "eta_str": None,
                                 },
                             )
-                        if not apply_auto_retry_backoff(
-                            repo=repo,
-                            attempts=attempts,
-                            job_id=job.id,
-                            progress_cb=progress_cb,
-                            process_registry=process_registry,
-                        ):
+                        try:
+                            backoff_ok = apply_auto_retry_backoff(
+                                repo=repo,
+                                attempts=attempts,
+                                job_id=job.id,
+                                progress_cb=progress_cb,
+                                process_registry=process_registry,
+                            )
+                        except Exception:  # noqa: BLE001
+                            log.exception("auto-retry backoff crashed for job %s", job.id)
+                            break
+                        if not backoff_ok:
                             _raise_if_backoff_aborted()
                         if RETRY not in attempts:
                             attempts.append(RETRY)
