@@ -33,6 +33,7 @@ def build_settings_dialog(
     library: Any | None = None,
     on_pick_library_root: Any | None = None,
     on_pick_watch_folder: Any | None = None,
+    on_pick_download_root: Any | None = None,
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
     on_repair_folders: Any | None = None,
@@ -40,6 +41,11 @@ def build_settings_dialog(
     repair_status: Any | None = None,
     repair_button: Any | None = None,
 ) -> ft.AlertDialog:
+    from frameforge.paths import WINDOWS_DEFAULT_ROOT, frameforge_root, frameforge_root_warning
+
+    _current_root = frameforge_root()
+    _root_warning = frameforge_root_warning()
+
     fmt_value = label_for_preference(repo.get_setting("format_preference", "best"))
     fmt = ft.Dropdown(
         value=fmt_value,
@@ -383,6 +389,36 @@ def build_settings_dialog(
                 keep_frames,
                 ft.Text("Pause AI tasks under RAM pressure.", color=COLORS["text_secondary"], size=12),
                 ram,
+            ),
+            _card(
+                "Download Root",
+                ft.Text(
+                    "All downloads, upscaled files, models, and the database live under this folder. "
+                    f"Default: {WINDOWS_DEFAULT_ROOT} (Windows) — change takes effect after restart.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.Text(
+                    f"Current root: {_current_root}",
+                    selectable=True,
+                    size=12,
+                    color=COLORS["text_primary"],
+                ),
+                *(
+                    [
+                        ft.Text(
+                            f"\u26a0 {_root_warning}",
+                            color=COLORS["warn"],
+                            size=12,
+                        )
+                    ]
+                    if _root_warning
+                    else []
+                ),
+                ft.OutlinedButton(
+                    content="Change download root\u2026",
+                    on_click=lambda _e: on_pick_download_root and on_pick_download_root(),
+                ),
             ),
             _card(
                 "Library (local only)",

@@ -1542,6 +1542,35 @@ class FrameForgeUi:
         self._library_prompt_deferred = True
         self.close_dialog()
 
+    def pick_download_root(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_download_root)
+
+    async def _pick_download_root(self) -> None:
+        self.close_dialog()
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Choose download root folder")
+        if not path:
+            return
+        from frameforge.paths import invalidate_root_cache, set_media_root
+
+        set_media_root(path)
+        invalidate_root_cache()
+        try:
+            from frameforge.paths import ensure_output_tree
+
+            ensure_output_tree()
+        except OSError as exc:
+            self._show_toast(f"Could not create folders under {path}: {exc}")
+            return
+        self._show_toast(f"Download root set to {path} — restart for full effect")
+
     def pick_library_root(self, _e: Any = None) -> None:
         if self.page is None:
             return
@@ -2340,6 +2369,7 @@ class FrameForgeUi:
             library=self.library,
             on_pick_library_root=self.pick_library_root,
             on_pick_watch_folder=self.pick_watch_folder,
+            on_pick_download_root=self.pick_download_root,
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
             on_repair_folders=self.repair_folders,
