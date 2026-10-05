@@ -59,7 +59,7 @@ DOC_MARKERS = {
         "Sequential downloads",
         "SQLite",
         "100%",
-        "Downloads\\FrameForge",
+        "JEREMY'S FILES",
         "DirectML",
     ],
     ROOT / "DECISIONS.md": [
