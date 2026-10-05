@@ -4,7 +4,13 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 
 ## Download root
 
-`%USERPROFILE%\Downloads\FrameForge\` (created on launch):
+Default: `K:\JEREMY'S FILES\downloads` (Windows; falls back to `%USERPROFILE%\Downloads\FrameForge` if the K: drive is unavailable).
+Non-Windows default: `~/Downloads/FrameForge`.
+The root can be changed in **Settings → Download Root**; the choice is saved to `%APPDATA%\FrameForge\frameforge.cfg` (not SQLite) to avoid a bootstrap dependency. An existing customised path is never overwritten by FrameForge.
+
+Old installs using `%USERPROFILE%\Downloads\FrameForge\` continue to work; the path change only affects unset/fresh installs.
+
+`<configured root>/` (created on launch):
 
 | Path | Role |
 |------|------|
@@ -55,4 +61,4 @@ If you pick a folder that is already named `FrameForge`, Library is `<picked>/Li
 
 The same loose-file repair runs under the library `FrameForge` folder.
 
-Queue and History keep using `Downloads\FrameForge\database\frameforge.db`. Library metadata lives in that same database; library **media** lives under the picked `FrameForge/Library/` tree.
+Queue and History keep using `<root>\database\frameforge.db` (under the configured download root). Library metadata lives in that same database; library **media** lives under the picked `FrameForge/Library/` tree.

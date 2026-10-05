@@ -20,7 +20,7 @@ Target: Windows 11, AMD Ryzen 7 6800H + Radeon 680M, offline after setup.
 4. Detect/install missing dependencies; document exact commands and versions in `docs/DEPENDENCIES.md`.
 5. After every successful step: commit and push to `https://github.com/TheSeeker713/FrameForge` on `main`.
 6. Prefer simplicity and reliability over complexity.
-7. All user media under `%USERPROFILE%\Downloads\FrameForge\` (`downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `frameforge.db`).
+7. All user media under `K:\JEREMY'S FILES\downloads` by default (Windows); falls back to `%USERPROFILE%\Downloads\FrameForge` if K: drive unavailable. Non-Windows: `~/Downloads/FrameForge`. User may change root in Settings → Download Root (saved to `%APPDATA%\FrameForge\frameforge.cfg`, NOT SQLite). Layout under root: `downloads/`, `upscaled/`, `temp/`, `models/`, `archive/`, `database/frameforge.db`.
 8. Preserve original audio on every upscaled video; keep metadata when possible.
 9. Sequential download invariant is non-negotiable. Assert it in tests from Phase 1 onward.
 10. SQLite persistence must be proven with real on-disk DB files and process restart tests.

@@ -8,7 +8,7 @@ alwaysApply: true
 - Follow Phases → Steps in `docs/PHASES.md`. Never jump ahead.
 - After every step: real tests to 100%, then commit and push `main` to TheSeeker713/FrameForge.
 - Prefer simplicity. No Electron. **Flet GUI** (v0.5; CustomTkinter is not the default window).
-- All user media under `%USERPROFILE%\Downloads\FrameForge\`.
+- All user media under `K:\JEREMY'S FILES\downloads` by default (Windows; falls back to `%USERPROFILE%\Downloads\FrameForge` if K: drive absent). Non-Windows: `~/Downloads/FrameForge`. Root is user-configurable in Settings → Download Root (stored in `%APPDATA%\FrameForge\frameforge.cfg`).
 - **Sequential downloads only** — never more than one active download job.
 - SQLite WAL queue for persistence; prove with on-disk DB + restart tests.
 - Preserve original audio on upscales; keep metadata when possible.

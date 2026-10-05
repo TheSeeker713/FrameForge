@@ -16,7 +16,7 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - **TXT/MD bulk import** with preview, confirmation, and dedupe
 - Integrated local ONNX upscaling (DirectML preferred, CPU fallback)
 - AMD-friendly, offline-after-setup design
-- All user media under `%USERPROFILE%\Downloads\FrameForge\`
+- All user media under `K:\JEREMY'S FILES\downloads` by default (Windows); changeable in Settings → Download Root
 
 ## Features
 
@@ -58,12 +58,12 @@ python -m frameforge --gui
 ```powershell
 .\scripts\build_portable.ps1
 # dist\FrameForge\FrameForge.exe --version
-# Requires ffmpeg + aria2c on PATH; models under Downloads\FrameForge\models
+# Requires ffmpeg + aria2c on PATH; models under the configured root/models
 ```
 
 ## Output layout
 
-`%USERPROFILE%\Downloads\FrameForge\` → per-site download folders (`youtube/`, `x.com/`, …), `upscaled/<site>/`, `converted/<site>/`, plus global `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `frameforge.db`
+`K:\JEREMY'S FILES\downloads` (Windows default; changeable in Settings → Download Root) → per-site download folders (`youtube/`, `x.com/`, …), `upscaled/<site>/`, `converted/<site>/`, plus global `temp/`, `models/`, `archive/`, `cookies/`, `thumbnails/`, `database/frameforge.db`
 
 See [docs/UI_REDESIGN.md](docs/UI_REDESIGN.md), [docs/ACCEPTANCE_V05.md](docs/ACCEPTANCE_V05.md), [docs/V0.5_UI_COMPLETE.md](docs/V0.5_UI_COMPLETE.md), [docs/QUEUE_CLEAR.md](docs/QUEUE_CLEAR.md), [docs/HISTORY_V2.md](docs/HISTORY_V2.md), [docs/FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [docs/SPEED.md](docs/SPEED.md), [docs/HISTORY.md](docs/HISTORY.md), [docs/THUMBNAILS.md](docs/THUMBNAILS.md), [docs/COOKIES.md](docs/COOKIES.md), [docs/PAUSE_RESUME.md](docs/PAUSE_RESUME.md), [docs/TRAY_AND_QUIT.md](docs/TRAY_AND_QUIT.md), [docs/PLAYLISTS.md](docs/PLAYLISTS.md), [docs/FORMATS_AND_CONVERT.md](docs/FORMATS_AND_CONVERT.md), [docs/RESOURCES.md](docs/RESOURCES.md), [docs/SHORTCUTS.md](docs/SHORTCUTS.md), [docs/SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [docs/V0.4_COMPLETE.md](docs/V0.4_COMPLETE.md), [docs/V0.4.2_COMPLETE.md](docs/V0.4.2_COMPLETE.md), [docs/V0.4_PROMPT1_COMPLETE.md](docs/V0.4_PROMPT1_COMPLETE.md), and [docs/ORIGINAL11_100.md](docs/ORIGINAL11_100.md).
 

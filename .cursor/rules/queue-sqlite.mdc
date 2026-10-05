@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Queue / SQLite rules
 
-- Database at `%USERPROFILE%\Downloads\FrameForge\frameforge.db` with `PRAGMA journal_mode=WAL`.
+- Database at `<root>\database\frameforge.db` (under the configured download root; default `K:\JEREMY'S FILES\downloads\database\frameforge.db` on Windows) with `PRAGMA journal_mode=WAL`.
 - Jobs table tracks: id, url, title, status, priority, progress, error, paths, format_preference, upscale, timestamps, options_json.
 - Statuses: pending, downloading, download_completed, upscaling, completed, failed, cancelled.
 - Single worker claims next highest-priority pending job atomically.
