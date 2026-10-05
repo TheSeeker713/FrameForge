@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from frameforge.monitor.policy import MonitorSettings, ResourceMonitor
+from frameforge.monitor.sampler import ResourceSampler
 from frameforge.paths import ensure_output_tree, temp_dir, upscaled_dir
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.upscale.disk import (
@@ -35,7 +38,13 @@ from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 
 
 ProgressCb = Callable[[float], None]
+ResourceStateCb = Callable[[str, float, float], None]  # (reason, cpu_pct, ram_pct)
 log = logging.getLogger(__name__)
+
+# How long to sleep between resource re-samples during a backpressure pause.
+_BACKPRESSURE_POLL_INTERVAL = 2.0
+# Maximum time (seconds) to hold in backpressure before giving up and continuing.
+_BACKPRESSURE_MAX_WAIT = 120.0
 
 
 @dataclass
@@ -58,6 +67,8 @@ class UpscalePipeline:
         max_duration_minutes: float | None = DEFAULT_MAX_DURATION_MINUTES,
         keep_frames: bool = False,
         chunk_frames: int = DEFAULT_CHUNK_FRAMES,
+        resource_monitor: ResourceMonitor | None = None,
+        resource_sampler: ResourceSampler | None = None,
     ) -> None:
         ensure_output_tree()
         self._explicit_model = model_path
@@ -68,6 +79,8 @@ class UpscalePipeline:
         self.max_duration_minutes = max_duration_minutes
         self.keep_frames = keep_frames
         self.chunk_frames = max(1, int(chunk_frames))
+        self.resource_monitor: ResourceMonitor = resource_monitor or ResourceMonitor(MonitorSettings())
+        self.resource_sampler: ResourceSampler = resource_sampler or ResourceSampler()
 
     @property
     def upscale_available(self) -> bool:
@@ -120,6 +133,67 @@ class UpscalePipeline:
             encoding="utf-8",
         )
 
+    def _apply_backpressure(
+        self,
+        *,
+        should_stop: Callable[[], bool] | None = None,
+        resource_state_cb: ResourceStateCb | None = None,
+    ) -> None:
+        """Sample resources; if critical, sleep until pressure drops or timeout.
+
+        Emits ``resource_state_cb(reason, cpu_pct, ram_pct)`` when status
+        changes so the UI can display a live banner.  Never raises — worst
+        case we continue after the max-wait timeout.
+        """
+        if not self.resource_monitor.settings.enabled:
+            return
+        reading = self.resource_sampler.sample()
+        state = self.resource_monitor.ingest(reading)
+        if not state.warning:
+            return
+
+        wait_started = time.monotonic()
+        while True:
+            if should_stop and should_stop():
+                return
+            reason = state.reason or "resource_pressure"
+            cpu = reading.cpu_percent
+            ram = reading.ram_percent
+            log.warning("Upscale backpressure: %s (CPU %.0f%%, RAM %.0f%%)", reason, cpu, ram)
+            if resource_state_cb:
+                try:
+                    resource_state_cb(reason, cpu, ram)
+                except Exception:  # noqa: BLE001
+                    pass
+            time.sleep(_BACKPRESSURE_POLL_INTERVAL)
+            if should_stop and should_stop():
+                return
+            elapsed = time.monotonic() - wait_started
+            if elapsed >= _BACKPRESSURE_MAX_WAIT:
+                log.warning(
+                    "Backpressure timeout after %.0f s — resuming anyway", elapsed
+                )
+                if resource_state_cb:
+                    try:
+                        resource_state_cb("backpressure_timeout", cpu, ram)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return
+            reading = self.resource_sampler.sample()
+            state = self.resource_monitor.ingest(reading)
+            if not state.warning:
+                log.info(
+                    "Backpressure cleared (CPU %.0f%%, RAM %.0f%%) — resuming",
+                    reading.cpu_percent,
+                    reading.ram_percent,
+                )
+                if resource_state_cb:
+                    try:
+                        resource_state_cb("", reading.cpu_percent, reading.ram_percent)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return
+
     def run(
         self,
         input_video: Path,
@@ -130,6 +204,7 @@ class UpscalePipeline:
         should_stop: Callable[[], bool] | None = None,
         job_id: int | None = None,
         process_registry: ProcessRegistry | None = None,
+        resource_state_cb: ResourceStateCb | None = None,
     ) -> UpscaleResult:
         input_video = Path(input_video)
         if not self.upscaler.available:
@@ -246,6 +321,11 @@ class UpscalePipeline:
                     dirs["checkpoint"],
                     completed_frames=completed_frames,
                     completed_chunks=completed_chunks,
+                )
+                # Apply resource backpressure between chunks (non-fatal).
+                self._apply_backpressure(
+                    should_stop=should_stop,
+                    resource_state_cb=resource_state_cb,
                 )
                 if this_count < chunk_n:
                     break

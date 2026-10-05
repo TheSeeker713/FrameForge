@@ -78,3 +78,37 @@ Startup / **Repair folders** sweeps `temp/<job>/{frames,upscaled_frames}` older 
 - **Upscale chunk frames** — `upscale_chunk_frames`, default 128 (64–256)
 - **Warn if clip longer than (minutes)** — `upscale_max_duration_min`, default 15, **not a refuse**
 - **Keep last upscale PNG chunk (debug)** — `upscale_keep_frames`, default off
+
+## Onboarding and 4-Hour Gate (v0.6.14+)
+
+Before any upscale job starts, FrameForge shows an **upscale onboarding dialog** with:
+- Model status (smoke identity vs Real-ESRGAN vs missing)
+- Source resolution, duration, and frame count
+- **Estimated completion time** — hardware-probed when possible, otherwise from a
+  conservative fps table (iGPU 680M: ~0.6 fps at 1080p, ~1.5 fps at 720p)
+- Live CPU / RAM snapshot
+
+**Hard 4-hour gate**: if the estimate exceeds 4 hours the dialog prevents starting
+a full-file upscale. The user must choose one of:
+1. **Split into ~15-minute segments** — each segment gets its own unique subfolder under
+   `temp/<source_stem>_<ts>_segments/seg_NNNN/`. The queue then processes each
+   segment sequentially with full checkpoint/resume.
+2. **Proceed anyway** (shown with a warning) — for power users who want to override.
+3. **Cancel** — abort the job.
+
+After all segments are upscaled:
+- **Keep parts** — leave the individual upscaled segments in their subfolders.
+- **Concatenate (remaster)** — lossless concat of all upscaled segments with the
+  original audio remuxed from the source. Produces one final `.remastered.mp4`.
+
+## Resource Backpressure (v0.6.14+)
+
+The pipeline now applies **between-chunk backpressure**: after each ONNX chunk is
+encoded into a segment, the resource monitor is sampled. When CPU ≥ 95% or RAM ≥ 90%
+for the sustained window (default 8 s), processing pauses and polls every 2 s until
+resources drop or a 120-second timeout elapses. This prevents the upscaler from
+permanently starving the machine.
+
+A `resource_state_cb(reason, cpu_pct, ram_pct)` callback can be supplied to the
+pipeline for live UI banner updates. An empty `reason` string signals that pressure
+has cleared.
