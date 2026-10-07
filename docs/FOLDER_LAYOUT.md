@@ -4,7 +4,7 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 
 ## Download root
 
-When `K:\JEREMY'S FILES` exists, the whole app root is `K:\JEREMY'S FILES\FrameForge\` (downloads, database, cookies, models, and temp). The profile `Downloads\FrameForge` folder is not used. `FRAMEFORGE_ROOT` overrides that root. Pytest redirects `USERPROFILE` and stays on the temp tree.
+The app root is `FRAMEFORGE_ROOT` when set, otherwise `%APPDATA%\FrameForge\root.txt` when that file names an existing folder, otherwise `%USERPROFILE%\Downloads\FrameForge`. Pytest redirects `USERPROFILE` and stays on the temp tree.
 
 `<FrameForge root>\` (created on launch):
 

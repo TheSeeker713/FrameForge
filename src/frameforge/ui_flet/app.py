@@ -2262,7 +2262,7 @@ class FrameForgeUi:
         files = await picker.pick_files(
             dialog_title="Import URL list",
             file_type=ft.FilePickerFileType.CUSTOM,
-            allowed_extensions=["txt", "md"],
+            allowed_extensions=["txt", "md", "doc", "docx", "rtf"],
         )
         if not files:
             return
@@ -2661,6 +2661,12 @@ class FrameForgeUi:
             pass
         try:
             self.wait_library_move(LIBRARY_MOVE_JOIN_SEC)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from frameforge.library.private import wipe_private_play
+
+            wipe_private_play(self.library)
         except Exception:  # noqa: BLE001
             pass
         try:

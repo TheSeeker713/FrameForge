@@ -1,6 +1,6 @@
 # Site folders
 
-New FrameForge jobs write media under **`downloads/<bucket>/<category>/`** inside the app root: `K:\JEREMY'S FILES\FrameForge\` when that drive is mounted, otherwise `%USERPROFILE%\Downloads\FrameForge\`. The database, cookies, and models stay at that root. Existing jobs that already have a non-legacy `download_output_dir` keep that path.
+New FrameForge jobs write media under **`downloads/<bucket>/<category>/`** inside the app root. The root is `FRAMEFORGE_ROOT` when that variable is set, otherwise the path in `%APPDATA%\FrameForge\root.txt`, otherwise `%USERPROFILE%\Downloads\FrameForge\`. The database, cookies, and models stay at that root. On Windows, `cookies` and `database` are limited to the current user. Existing jobs that already have a non-legacy `download_output_dir` keep that path.
 
 ## Layout
 
@@ -18,13 +18,13 @@ New FrameForge jobs write media under **`downloads/<bucket>/<category>/`** insid
 
 Default category when none is set: `uncategorized`.
 
-Bulk TXT/MD import: a heading line without a URL (for example `Squirting women.`) becomes the category for the URLs that follow.
+Bulk import (`.txt`, `.md`, `.rtf`, `.doc`, `.docx`): a heading, a bold line, a `Category:` / `Subject:` label, or a plain line without a URL becomes the category for the links that follow. The folder name is the first two words. The host picks the bucket. A YouTube link and a news link under the same heading land in different site folders with the same category name.
 
-Examples (with K: mounted):
+Examples:
 
-- `K:\JEREMY'S FILES\FrameForge\downloads\youtube\uncategorized\`
-- `K:\JEREMY'S FILES\FrameForge\downloads\porn\squirting women\`
-- `K:\JEREMY'S FILES\FrameForge\downloads\x.com\uncategorized\`
+- `<root>\downloads\youtube\City council\`
+- `<root>\downloads\bbc.com\City council\`
+- `<root>\downloads\porn\Weather report\`
 
 ## `site_key` and bucket rules
 

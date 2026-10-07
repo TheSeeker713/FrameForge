@@ -6,11 +6,12 @@ alwaysApply: false
 
 # Bulk import rules
 
-- Accept `.txt` and `.md` files.
-- Extract every valid http/https URL with a robust regex (`findall`, not one-per-line `search`).
-- Ignore empty lines. `#` comments without a URL are ignored; lines like `# https://…` still yield the URL.
-- Heading lines without a URL set the project category for following links (`downloads/<bucket>/<category>/`).
-- Adult hosts enqueue under `downloads/porn/<category>/`; streaming sites under `downloads/<site>/<category>/`.
+- Accept `.txt`, `.md`, `.rtf`, `.doc`, and `.docx` files.
+- Extract every valid http/https URL with a robust regex (`findall`, not one-per-line `search`). Unescape Google Docs backslashes before scanning.
+- Ignore empty lines. `#` comments without a URL are ignored; lines like `# https://…` still yield the URL. `#` headings, bold lines, and `Category:` / `Subject:` labels are categories.
+- Heading lines without a URL set the project category for following links. The folder name is the first two words. The full heading is stored as `import_note`.
+- The host picks the bucket: adult hosts under `downloads/porn/<category>/`; every other host under `downloads/<site>/<category>/` (`youtube`, `x.com`, `bbc.com`, …).
+- A subject comes from non-URL link text, then a human slug in the path. A URL is never the job title. Skip listing and search URLs (`/search`, `/results`, `/tag/`, `/categories/`, `/feed`, `/explore`).
 - Support: bare URLs (watch, /shorts/, youtu.be, query strings), markdown `[text](url)`, `Title | URL`, inline URLs, UTF-8 and UTF-16 files.
 - Do not treat bare numbered markers (`1.`, `2)`) as titles.
 - Dedupe against existing queue URLs and download archive.

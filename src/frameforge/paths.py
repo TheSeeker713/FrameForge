@@ -1,21 +1,20 @@
 """Output path helpers for the FrameForge root.
 
-When ``K:\\JEREMY'S FILES`` is mounted, the whole app lives there:
-downloads, database, cookies, models, and temp. Nothing new is written to
+Order: ``FRAMEFORGE_ROOT``, then a local ``%APPDATA%\\FrameForge\\root.txt``
+when the user profile was not redirected, then
 ``%USERPROFILE%\\Downloads\\FrameForge``. Pytest redirects ``USERPROFILE``
-to a temp profile; those runs stay on that temp tree. ``FRAMEFORGE_ROOT``
-pins the root explicitly.
+and stays on that temp tree.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 APP_DIR_NAME = "FrameForge"
-# This machine's media volume. Absent on other PCs; profile Downloads is used.
-K_MEDIA_PARENT = Path(r"K:\JEREMY'S FILES")
 _ENV_MEDIA_ROOT = "FRAMEFORGE_ROOT"
 # Captured at import, before a test redirects USERPROFILE.
 _LAUNCH_USERPROFILE = os.environ.get("USERPROFILE")
@@ -46,16 +45,40 @@ def profile_frameforge_root() -> Path:
     return user_downloads() / APP_DIR_NAME
 
 
-def frameforge_root() -> Path:
-    """App root: downloads, database, cookies, models, and temp.
+def local_root_file() -> Path:
+    """Gitignored path outside the repo. One line: the FrameForge root."""
+    appdata = os.environ.get("APPDATA", "").strip()
+    base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+    return base / APP_DIR_NAME / "root.txt"
 
-    ``K:\\JEREMY'S FILES\\FrameForge`` when that drive is mounted.
-    """
+
+def _configured_root() -> Path | None:
+    """Read the local root file. Ignored when pytest has redirected USERPROFILE."""
+    if _userprofile_redirected():
+        return None
+    try:
+        text = local_root_file().read_text(encoding="utf-8-sig").strip().strip('"')
+    except OSError:
+        return None
+    if not text:
+        return None
+    candidate = Path(text)
+    try:
+        if candidate.is_dir():
+            return candidate
+    except OSError:
+        return None
+    return None
+
+
+def frameforge_root() -> Path:
+    """App root: downloads, database, cookies, models, and temp."""
     override = os.environ.get(_ENV_MEDIA_ROOT, "").strip()
     if override:
         return Path(override)
-    if not _userprofile_redirected() and K_MEDIA_PARENT.is_dir():
-        return K_MEDIA_PARENT / APP_DIR_NAME
+    configured = _configured_root()
+    if configured is not None:
+        return configured
     return profile_frameforge_root()
 
 
@@ -81,8 +104,8 @@ _MIGRATED = False
 def migrate_legacy_profile_root() -> None:
     """Copy database, models, and cookies off the profile Downloads folder once.
 
-    Finished videos already live on K:. This brings the queue and weights with
-    them. An explicit ``FRAMEFORGE_ROOT`` is left alone.
+    Finished videos may already live on another volume. This brings the queue
+    and weights with them. An explicit ``FRAMEFORGE_ROOT`` is left alone.
     """
     global _MIGRATED
     if _MIGRATED:
@@ -126,7 +149,7 @@ def migrate_legacy_profile_root() -> None:
 def download_scan_roots() -> list[Path]:
     """Folders the library should search for finished downloads.
 
-    The K: media root is first when it is separate from the profile tree.
+    A configured root is first when it is separate from the profile tree.
     """
     roots: list[Path] = []
     seen: set[str] = set()
@@ -322,6 +345,24 @@ def db_path() -> Path:
     return database_dir() / "frameforge.db"
 
 
+def restrict_dir_to_current_user(folder: Path) -> None:
+    """On Windows, leave only the current user with access. No shell theme changes."""
+    if sys.platform != "win32" or _userprofile_redirected():
+        return
+    if not folder.is_dir():
+        return
+    user = os.environ.get("USERNAME", "").strip()
+    if not user:
+        return
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.run(
+        ["icacls", str(folder), "/inheritance:r", "/grant:r", f"{user}:(OI)(CI)F"],
+        check=False,
+        capture_output=True,
+        creationflags=flags,
+    )
+
+
 def ensure_output_tree() -> Path:
     from frameforge.layout import repair_frameforge_tree
 
@@ -330,6 +371,8 @@ def ensure_output_tree() -> Path:
     root.mkdir(parents=True, exist_ok=True)
     for name in SUBDIRS:
         (root / name).mkdir(parents=True, exist_ok=True)
+    restrict_dir_to_current_user(root / "cookies")
+    restrict_dir_to_current_user(root / "database")
     dl = downloads_dir()
     dl.mkdir(parents=True, exist_ok=True)
     for name in DOWNLOAD_ASSET_SUBDIRS:

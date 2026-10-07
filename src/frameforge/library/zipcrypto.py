@@ -1,4 +1,7 @@
-"""Password zip using traditional ZipCrypto (not a security product)."""
+"""Password containers for Private library files.
+
+New packs are AES-256-GCM. Older ZipCrypto zips still open.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,15 @@ import time
 import zlib
 import zipfile
 from pathlib import Path
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+
+_AES_MAGIC = b"FFP1"
+_AES_SALT = 16
+_AES_NONCE = 12
+_AES_ROUNDS = 200_000
 
 _CRC_INIT = 0
 
@@ -64,7 +76,31 @@ def _dos_time(ts: float | None = None) -> tuple[int, int]:
     return dostime, dosdate
 
 
+def _aes_key(password: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=_AES_ROUNDS,
+    )
+    return kdf.derive(password.encode("utf-8"))
+
+
 def write_password_zip(zip_path: str | Path, source: str | Path, *, password: str, arcname: str | None = None) -> Path:
+    """Write one file as AES-256-GCM. The password is not stored."""
+    src = Path(source)
+    name = (arcname or src.name).encode("utf-8")
+    blob = struct.pack(">H", len(name)) + name + src.read_bytes()
+    salt = os.urandom(_AES_SALT)
+    nonce = os.urandom(_AES_NONCE)
+    sealed = AESGCM(_aes_key(password, salt)).encrypt(nonce, blob, None)
+    dest = Path(zip_path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(_AES_MAGIC + salt + nonce + sealed)
+    return dest.resolve()
+
+
+def write_zipcrypto_zip(zip_path: str | Path, source: str | Path, *, password: str, arcname: str | None = None) -> Path:
     """Write a single-file ZipCrypto zip that Python zipfile can read with pwd=."""
     src = Path(source)
     data = src.read_bytes()
@@ -132,9 +168,31 @@ def write_password_zip(zip_path: str | Path, source: str | Path, *, password: st
     return dest.resolve()
 
 
-def extract_password_zip(zip_path: str | Path, dest_dir: str | Path, *, password: str) -> Path:
-    dest = Path(dest_dir)
-    dest.mkdir(parents=True, exist_ok=True)
+def _extract_aes(raw: bytes, dest: Path, password: str) -> Path:
+    if len(raw) < 4 + _AES_SALT + _AES_NONCE + 16:
+        raise PermissionError("Wrong password or damaged file")
+    salt = raw[4 : 4 + _AES_SALT]
+    nonce_at = 4 + _AES_SALT
+    nonce = raw[nonce_at : nonce_at + _AES_NONCE]
+    sealed = raw[nonce_at + _AES_NONCE :]
+    try:
+        blob = AESGCM(_aes_key(password, salt)).decrypt(nonce, sealed, None)
+    except Exception as exc:  # noqa: BLE001 — authentication failure is a bad password
+        raise PermissionError("Wrong password or damaged file") from exc
+    if len(blob) < 2:
+        raise PermissionError("Wrong password or damaged file")
+    name_len = struct.unpack(">H", blob[:2])[0]
+    name = blob[2 : 2 + name_len].decode("utf-8", errors="replace")
+    payload = blob[2 + name_len :]
+    safe = Path(name).name
+    if not safe or safe in {".", ".."}:
+        raise FileNotFoundError("Empty private file")
+    out = dest / safe
+    out.write_bytes(payload)
+    return out.resolve()
+
+
+def _extract_zipcrypto(zip_path: Path, dest: Path, password: str) -> Path:
     with zipfile.ZipFile(zip_path) as zf:
         zf.setpassword(password.encode("utf-8"))
         try:
@@ -151,3 +209,15 @@ def extract_password_zip(zip_path: str | Path, dest_dir: str | Path, *, password
         if not out.exists():
             raise FileNotFoundError(names[0])
         return out.resolve()
+
+
+def extract_password_zip(zip_path: str | Path, dest_dir: str | Path, *, password: str) -> Path:
+    src = Path(zip_path)
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    raw = src.read_bytes()
+    if raw.startswith(_AES_MAGIC):
+        return _extract_aes(raw, dest, password)
+    if raw.startswith(b"PK"):
+        return _extract_zipcrypto(src, dest, password)
+    raise PermissionError("Wrong password or damaged file")

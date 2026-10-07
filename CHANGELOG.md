@@ -1,10 +1,16 @@
 # Changelog
 
+## 0.6.15
+
+- Bulk import reads `.txt`, `.md`, `.rtf`, `.doc`, and `.docx`. A heading in the document is the category (first two words). Each link’s host picks the folder: `downloads/<bucket>/<category>/`. YouTube, social, news, and adult hosts share that rule. Listing and search URLs are skipped. Import still only queues pending jobs.
+- New Private packs use AES-256-GCM. Older ZipCrypto packs still open. Decrypted playback files under `Private/play` are removed on quit.
+- The app root is no longer a path compiled into source. Order: `FRAMEFORGE_ROOT`, `%APPDATA%\FrameForge\root.txt`, then `%USERPROFILE%\Downloads\FrameForge`. On Windows, the cookies and database folders are limited to the current user.
+
 ## 0.6.14
 
 - Library / Queue / History: working **Select all** (and Clear selection) so bulk Add to collection, Remove, Delete files, Upscale, Private, re-download, and clear actually apply to every visible clip.
 - Downloads live under `downloads/<bucket>/<category>/` (adult → `downloads/porn/<category>/`); leftover root site folders migrate into that tree. Completed downloads index into Library in place. See [SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [FOLDER_LAYOUT.md](docs/FOLDER_LAYOUT.md), [LIBRARY.md](docs/LIBRARY.md).
-- App root on this machine is `K:\JEREMY'S FILES\FrameForge` when that drive is mounted (database, models, cookies included). Real-ESRGAN x4plus ONNX install script uses the Qualcomm release zip (old GitHub URL 404). Authenticate-site dialog layout no longer overlaps action buttons.
+- Real-ESRGAN x4plus ONNX install script uses the Qualcomm release zip (old GitHub URL 404). Authenticate-site dialog layout no longer overlaps action buttons.
 
 ## 0.6.13
 

@@ -214,9 +214,9 @@ See [SITE_FOLDERS.md](SITE_FOLDERS.md). New downloads use `FrameForge\<site_key>
 
 ## Bulk TXT/MD import
 
-Parser: `frameforge.download.bulk_import`. Accepts `.txt` / `.md` (UTF-8 or UTF-16). Extracts every `http(s)://` URL (YouTube watch, `/shorts/`, youtu.be, query strings, markdown `[text](url)`, inline). Preview dialog shows New URLs vs duplicates; confirm only enqueues **pending** (does not start downloads).
+Parser: `frameforge.download.bulk_import`. Accepts `.txt`, `.md`, `.rtf`, `.doc`, and `.docx` (UTF-8 or UTF-16). A heading becomes a two-word category; the host becomes the bucket. Extracts every `http(s)://` URL (YouTube watch, `/shorts/`, youtu.be, query strings, markdown `[text](url)`, inline, Google Docs backslash escapes). Skips listing and search URLs. Preview dialog shows New URLs vs duplicates; confirm only enqueues **pending** (does not start downloads).
 
-Fixtures: `tests/fixtures/youtube_bulk.md`, `tests/fixtures/youtube_md_links.md`, `tests/fixtures/bulk_urls.txt`.
+Fixtures: `tests/fixtures/youtube_bulk.md`, `tests/fixtures/youtube_md_links.md`, `tests/fixtures/bulk_urls.txt`, `tests/fixtures/mixed_import.md` (parser only; the YouTube id is the public-domain “Me at the zoo” clip and these tests do not download it).
 
 ## Manual GUI checklist (Phase 4/5)
 

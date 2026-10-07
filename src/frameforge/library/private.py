@@ -114,6 +114,16 @@ def send_to_private(
     return results
 
 
+def wipe_private_play(store: LibraryStore) -> None:
+    """Delete decrypted playback files. Safe when Private was never set up."""
+    try:
+        play = store.private_dir() / "play"
+    except Exception:  # noqa: BLE001 — no library root means there is nothing to wipe
+        return
+    if play.is_dir():
+        shutil.rmtree(play, ignore_errors=True)
+
+
 def unlock_session(store: LibraryStore, password: str) -> bool:
     return verify_password(password, store.get_setting(SETTING_HASH))
 

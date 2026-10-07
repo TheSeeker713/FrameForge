@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.14 (select-all + downloads layout)
+## Status: v0.6.15 (document categories + private AES)
 
-Package version is **0.6.14**. Library/Queue/History Select all drives bulk manage/delete. Media is under `downloads/<bucket>/<category>/` (porn bucket for adult hosts). K: whole-app root when mounted. v0.6.13 cookie-recovery hang fix remains.
+Package version is **0.6.15**. Bulk import reads txt, md, rtf, doc, and docx. The document supplies a two-word category; the link host supplies the folder (`downloads/<bucket>/<category>/`). New Private packs are AES-256-GCM. The app root is `FRAMEFORGE_ROOT`, then `%APPDATA%\FrameForge\root.txt`, then the profile Downloads folder. v0.6.14 select-all remains. v0.6.13 cookie-recovery hang fix remains.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

@@ -97,14 +97,25 @@ def sanitize_site_key(raw: str | None) -> str:
 
 
 def sanitize_category(raw: str | None) -> str:
-    """Windows-safe project category folder under a download bucket."""
+    """Windows-safe category folder: at most the first two words.
+
+    A second sentence is dropped before the word cut. Commas and ellipses
+    are not words. One word stays one word.
+    """
     text = str(raw or "").strip()
     text = _ILLEGAL_RE.sub("", text)
-    text = text.strip(" .")
-    # Strip a trailing sentence period often used in list headings.
-    if text.endswith("."):
-        text = text[:-1].rstrip(" .")
-    text = re.sub(r"\s+", " ", text)
+    text = text.replace("…", ".")
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    sentence = re.split(r"[.!?]", text, maxsplit=1)[0]
+    words: list[str] = []
+    for raw_word in sentence.split():
+        token = raw_word.strip(".,;:!?\"'`“”()[]{}")
+        token = token.strip("-–—")
+        if token:
+            words.append(token)
+        if len(words) >= 2:
+            break
+    text = " ".join(words)
     if not text:
         return DEFAULT_CATEGORY
     lowered = text.lower()

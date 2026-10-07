@@ -15,7 +15,7 @@ from frameforge.library.private import (
     verify_password,
 )
 from frameforge.library.store import LibraryStore
-from frameforge.library.zipcrypto import extract_password_zip, write_password_zip
+from frameforge.library.zipcrypto import extract_password_zip, write_password_zip, write_zipcrypto_zip
 from frameforge.util.recycle import FOF_ALLOWUNDO, recycle_flags
 
 
@@ -53,6 +53,24 @@ def test_copy_not_move_zip_password_and_disguise(tmp_path: Path):
     privates = store.list_private_items()
     assert len(privates) == 1
     repo.close()
+
+
+def test_aes_roundtrip_and_legacy_zipcrypto(tmp_path: Path):
+    src = tmp_path / "clip.mp4"
+    src.write_bytes(b"private-media-bytes-0123456789")
+    packed = write_password_zip(tmp_path / "new.ffpriv", src, password="hunter2")
+    assert packed.read_bytes().startswith(b"FFP1")
+    extracted = extract_password_zip(packed, tmp_path / "aes", password="hunter2")
+    assert extracted.read_bytes() == src.read_bytes()
+    try:
+        extract_password_zip(packed, tmp_path / "bad-aes", password="nope")
+        raise AssertionError("wrong password must fail")
+    except PermissionError:
+        pass
+    legacy = write_zipcrypto_zip(tmp_path / "old.zip", src, password="hunter2")
+    assert legacy.read_bytes().startswith(b"PK")
+    old = extract_password_zip(legacy, tmp_path / "zip", password="hunter2")
+    assert old.read_bytes() == src.read_bytes()
 
 
 def test_wrong_password_fails_closed(tmp_path: Path):

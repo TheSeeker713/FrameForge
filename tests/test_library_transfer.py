@@ -24,7 +24,7 @@ def test_transfer_module_has_no_uninterruptible_copy2():
     assert "copy2" not in source
     assert "TransferCancelled" in source
     assert volume_key(r"C:\Users\me\a.mp4") == "c:"
-    assert volume_key(r"K:\JEREMY'S FILES\video\a.mp4") == "k:"
+    assert volume_key(r"K:\Media\video\a.mp4") == "k:"
     assert same_volume(Path(r"C:\a\b.mp4"), Path(r"C:\x\y.mp4"))
     assert not same_volume(Path(r"C:\Downloads\a.mp4"), Path(r"K:\Library\a.mp4"))
 

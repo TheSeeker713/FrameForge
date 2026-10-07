@@ -57,6 +57,9 @@ Desktop.ini
 /dist/
 /build/
 
+# Local URL dumps (not fixtures)
+docs/youtubetest.md
+
 # Secrets
 .env
 .env.*
