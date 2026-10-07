@@ -1,21 +1,10 @@
 # Tray and quit policy
 
-## Close to tray
+- The caption **minimize** button hides FrameForge to the system tray. Downloads keep running. There is no Settings toggle for this.
+- Tray menu: **Show FrameForge**, **Pause current** / **Resume current**, **Download all pending**, **Import URL list**, **Import completed downloads**, **Quit**.
+- Window **X**, **Ctrl+Q**, and tray **Quit** still use the quit policy. They do not hide.
 
-Settings → **Close to system tray** (default **off**).
-
-- **On:** window **X** hides the window (`withdraw`) and shows a system tray icon. The sequential worker keeps running in the background. Pending jobs still do **not** auto-start.
-- **Off:** window **X** uses the quit policy below.
-
-File → **Quit**, **Ctrl+Q**, and tray **Quit** always use the quit policy (they do not hide).
-
-Tray implementation: `pystray` + Pillow, `icon.run_detached()` so CustomTkinter’s mainloop is not blocked. Tray callbacks marshal UI work with `widget.after(0, …)`.
-
-### Tray menu
-
-- **Show window** — `deiconify`
-- **Pause current** / **Resume current** — same worker methods as the queue buttons
-- **Quit** — quit policy
+Tray implementation: `pystray` + Pillow, `icon.run_detached()`. Flet callbacks are scheduled with `page.run_task`.
 
 ## Three quit options (active download or upscale)
 

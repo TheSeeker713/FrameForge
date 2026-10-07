@@ -27,7 +27,7 @@ Most open-source yt-dlp GUIs focus on concurrent downloads and skip local AI ups
 - Live download **% / speed / ETA** on the killable yt-dlp subprocess path
 - **Pause / Resume** downloads (hard-stop, keep `.part` files, continue on resume)
 - **Quit while busy:** cancel, pause, or wait-for-current — never silent exit
-- Optional **close to system tray** (default off)
+- **Minimize to the system tray** (downloads keep running; tray can show, pause, download, and import)
 - **Import cookies from browser** (Firefox first; Chromium fallback / manual Netscape)
 - Failure-driven **Authenticate this site / Import cookies** hint (no auto-open browser loops)
 - **Playlist picker:** flat expand, select a subset, enqueue pending jobs (no auto-start)

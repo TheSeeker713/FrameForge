@@ -39,6 +39,8 @@ class TrayService:
         on_quit: Callable[[], None] | None = None,
         pause_resume_label: Callable[[], str] | None = None,
         icon_factory: Callable[..., Any] | None = None,
+        menu_items: Callable[[], list[tuple[Any, Callable[[], None]]]] | None = None,
+        marshal_fn: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         self.widget = widget
         self.on_show = on_show
@@ -46,6 +48,8 @@ class TrayService:
         self.on_quit = on_quit
         self.pause_resume_label = pause_resume_label
         self._icon_factory = icon_factory
+        self._menu_items = menu_items
+        self._marshal_fn = marshal_fn
         self._icon: Any | None = None
         self._started = False
 
@@ -56,6 +60,9 @@ class TrayService:
     def marshal(self, fn: Callable[[], None] | None) -> None:
         if fn is None:
             return
+        if self._marshal_fn is not None:
+            self._marshal_fn(fn)
+            return
         from frameforge.gui.marshal import schedule_on_ui
 
         schedule_on_ui(self.widget, fn)
@@ -63,8 +70,27 @@ class TrayService:
     def _menu(self) -> Any:
         import pystray
 
-        def item(text: str, callback: Callable[[], None] | None) -> Any:
-            return pystray.MenuItem(text, lambda *_a: self.marshal(callback))
+        def item(text: Any, callback: Callable[[], None] | None, *, default: bool = False) -> Any:
+            label = text
+            if callable(text):
+
+                def label(_item: Any = None, fn: Callable[[], str] = text) -> str:
+                    try:
+                        return str(fn())
+                    except Exception:  # noqa: BLE001
+                        return "Pause / Resume"
+
+            return pystray.MenuItem(
+                label,
+                lambda *_a, cb=callback: self.marshal(cb),
+                default=default,
+            )
+
+        if self._menu_items is not None:
+            rows = list(self._menu_items())
+            return pystray.Menu(
+                *[item(text, callback, default=(index == 0)) for index, (text, callback) in enumerate(rows)]
+            )
 
         pause_text = "Pause current / Resume current"
         if self.pause_resume_label:
@@ -73,7 +99,7 @@ class TrayService:
             except Exception:  # noqa: BLE001
                 pass
         return pystray.Menu(
-            item("Show window", self.on_show),
+            item("Show window", self.on_show, default=True),
             item(pause_text, self.on_pause_resume),
             item("Quit", self.on_quit),
         )

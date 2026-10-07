@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.19
+
+- The Settings “Close to system tray” switch is gone. The window minimize button hides FrameForge to the tray and leaves the download running. The tray menu can show the window, pause or resume, start pending downloads, import a URL list, and import completed downloads.
+
 ## 0.6.18
 
 - The Windows `Downloads\FrameForge` folder is created only when onboarding chooses that default. A custom folder keeps the database, cookies, models, thumbnails, and videos together under `<picked>\FrameForge`.

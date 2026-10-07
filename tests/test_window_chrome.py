@@ -63,8 +63,13 @@ def test_default_gui_has_no_window_drag_area_and_native_close(tmp_path: Path):
     ui.page.window.prevent_close = True
     assert ui.handle_window_close() == "choice"
     assert ui.dialogs.kind == "quit"
-    ui.minimize_window()
-    assert ui.page.window.minimized is True
+    from tests.test_tray_service import _FakeIcon
+
+    ui._tray_icon_factory = _FakeIcon
+    assert ui.minimize_window() == "tray"
+    assert ui.page.window.visible is False
+    assert ui.page.window.skip_task_bar is True
+    assert ui.page.window.minimized is False
     ui.toggle_maximize()
     assert ui.page.window.maximized is True
     ui.shutdown()

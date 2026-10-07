@@ -134,10 +134,6 @@ def build_settings_dialog(
         label="Keep last upscale PNG chunk (debug)",
         value=str(repo.get_setting("upscale_keep_frames", "0") or "0") == "1",
     )
-    tray = ft.Switch(
-        label="Close to system tray",
-        value=repo.get_setting("close_to_tray", "0") == "1",
-    )
     fail_pause = ft.Switch(
         label="Pause queue on bot-check / login failures",
         value=repo.get_setting("fail_pause_on_auth", "1") == "1",
@@ -266,7 +262,6 @@ def build_settings_dialog(
         repo.set_setting("concurrent_fragments", str(concurrent_fragments(repo)))
         repo.set_setting("aria2_connections", str(aria2_connections(repo)))
         repo.set_setting("upscale_after_download", "1" if upscale.value and not upscale.disabled else "0")
-        repo.set_setting("close_to_tray", "1" if tray.value else "0")
         repo.set_setting("fail_pause_on_auth", "1" if fail_pause.value else "0")
         repo.set_setting("youtube_innertube", "1" if innertube.value else "0")
         repo.set_setting("youtube_use_ytdlp_clients", "1" if ytdlp_defaults.value else "0")
@@ -465,7 +460,6 @@ def build_settings_dialog(
             ),
             _card(
                 "System Behavior",
-                tray,
                 fail_pause,
                 js_tip,
             ),
@@ -494,7 +488,6 @@ def build_settings_dialog(
         "fragments": fragments,
         "aria2_n": aria2_n,
         "upscale": upscale,
-        "tray": tray,
         "fail_pause": fail_pause,
         "impersonate": impersonate_dd,
         "silent_cookies": silent_cookies,

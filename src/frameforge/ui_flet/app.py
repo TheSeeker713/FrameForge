@@ -194,6 +194,10 @@ class FrameForgeUi:
         if start_worker:
             self.worker.request_download_all()
         self.page: ft.Page | None = None
+        self.tray: Any | None = None
+        self._tray_icon_factory: Any | None = None
+        self._in_tray = False
+        self._tray_busy = False
         self.dialogs = DialogHost(self)
         self.settings_dialog: ft.AlertDialog | None = None
         self.settings_focus_count = 0
@@ -790,10 +794,143 @@ class FrameForgeUi:
                 self.page.update()
             return
 
-    def minimize_window(self) -> None:
+    def minimize_window(self) -> str:
+        """The caption minimize button hides to the tray. Downloads keep running."""
+        return self.hide_to_tray()
+
+    def hide_to_tray(self) -> str:
+        """Leave the taskbar, keep the worker, and show the tray icon."""
+        if self._tray_busy:
+            return "tray"
+        self._tray_busy = True
+        try:
+            try:
+                self._ensure_tray().start()
+            except Exception:  # noqa: BLE001
+                log.exception("Tray icon failed to start; minimizing to the taskbar")
+                win = getattr(self.page, "window", None) if self.page is not None else None
+                if win is not None:
+                    win.minimized = True
+                return "minimize"
+            self._in_tray = True
+            win = getattr(self.page, "window", None) if self.page is not None else None
+            if win is not None:
+                win.minimized = False
+                win.skip_task_bar = True
+                win.visible = False
+            if self.page is not None:
+                try:
+                    self.page.update()
+                except Exception:  # noqa: BLE001
+                    pass
+            return "tray"
+        finally:
+            self._tray_busy = False
+
+    def show_from_tray(self) -> None:
+        self._in_tray = False
         win = getattr(self.page, "window", None) if self.page is not None else None
         if win is not None:
-            win.minimized = True
+            win.skip_task_bar = False
+            win.visible = True
+            win.minimized = False
+            to_front = getattr(win, "to_front", None)
+            if callable(to_front):
+                try:
+                    to_front()
+                except Exception:  # noqa: BLE001
+                    pass
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _ensure_tray(self) -> Any:
+        if self.tray is not None:
+            return self.tray
+        from frameforge.gui.tray import TrayService
+
+        self.tray = TrayService(
+            menu_items=self._tray_menu_items,
+            marshal_fn=self._marshal_tray,
+            icon_factory=self._tray_icon_factory,
+        )
+        return self.tray
+
+    def _marshal_tray(self, fn: Any) -> None:
+        page = self.page
+        runner = getattr(page, "run_task", None) if page is not None else None
+        if callable(runner):
+
+            async def _on_loop() -> None:
+                fn()
+
+            try:
+                runner(_on_loop)
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        fn()
+
+    def _tray_menu_items(self) -> list[tuple[Any, Any]]:
+        return [
+            ("Show FrameForge", self.show_from_tray),
+            (self._tray_pause_label, self._tray_pause_resume),
+            ("Download all pending", self.download_all_pending),
+            ("Import URL list", self._tray_import_urls),
+            ("Import completed downloads", self._tray_import_completed),
+            ("Quit", self._tray_quit),
+        ]
+
+    def _tray_pause_label(self) -> str:
+        from frameforge.gui.exit_policy import list_active_work
+
+        if list_active_work(self.repo):
+            return "Pause current"
+        if self.repo.list_jobs("paused"):
+            return "Resume current"
+        return "Pause current"
+
+    def _tray_pause_resume(self) -> None:
+        from frameforge.gui.actions import can_pause, can_resume
+        from frameforge.gui.exit_policy import list_active_work
+
+        for job in list_active_work(self.repo):
+            if can_pause(job):
+                self.worker.pause_job(job.id)
+                self._activity_note = "Paused"
+                self.refresh_queue(force=True)
+                return
+        for job in self.repo.list_jobs("paused"):
+            if can_resume(job):
+                self.worker.resume_job(job.id)
+                self._activity_note = "Resumed"
+                self.refresh_queue(force=True)
+                return
+        self.pause_active()
+
+    def _tray_import_urls(self) -> None:
+        self.show_from_tray()
+        self.import_file()
+
+    def _tray_import_completed(self) -> None:
+        self.show_from_tray()
+        self.import_completed_downloads()
+
+    def _tray_quit(self) -> None:
+        self.show_from_tray()
+        self.handle_window_close()
+
+    def _stop_tray(self) -> None:
+        tray = self.tray
+        self._in_tray = False
+        if tray is None:
+            return
+        try:
+            tray.stop(timeout=1)
+        except Exception:  # noqa: BLE001
+            pass
 
     def toggle_maximize(self) -> None:
         win = getattr(self.page, "window", None) if self.page is not None else None
@@ -2706,6 +2843,11 @@ class FrameForgeUi:
         if "close" in name:
             self.handle_window_close()
             return
+        if "minimize" in name:
+            self.hide_to_tray()
+            return
+        if self._in_tray:
+            return
         if self._exiting or self._shutdown_complete:
             return
         if self.page is not None:
@@ -2777,6 +2919,7 @@ class FrameForgeUi:
                 hard_exit(0)
             return
         self._exiting = True
+        self._stop_tray()
         self._release_native_close()
         move_running = self.library_move_running
         self.cancel_library_move()
@@ -2839,6 +2982,7 @@ class FrameForgeUi:
         self._offer_download_location()
 
     def shutdown(self) -> None:
+        self._stop_tray()
         try:
             self.cancel_library_move()
             self.wait_library_move(LIBRARY_MOVE_JOIN_SEC)
