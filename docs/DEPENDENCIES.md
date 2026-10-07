@@ -38,6 +38,7 @@ python .\scripts\create_smoke_onnx.py
 | onnxruntime-directml | 1.24.4 |
 | customtkinter | 6.0.0 |
 | flet | 0.86.5 | Primary GUI (v0.5); pin used in tests |
+| flet-video | 0.86.5 | In-app Library player (mpv). Queue playback stays on the OS player |
 | Pillow | 12.3.0 |
 | pystray | 0.19.5 |
 | psutil | 7.2.2 |

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frameforge"
-version = "0.6.16"
+version = "0.6.18"
 description = "Local Windows video downloader + AI upscaler (sequential queue, SQLite, ONNX)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,7 @@ dependencies = [
   "onnxruntime-directml",
   "customtkinter",
   "flet==0.86.5",
+  "flet-video==0.86.5",
   "Pillow",
   "pystray",
   "psutil",
@@ -32,6 +33,9 @@ frameforge = "frameforge.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+frameforge = ["ui_flet/resources/*.dll"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

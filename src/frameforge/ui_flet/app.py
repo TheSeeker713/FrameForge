@@ -210,13 +210,17 @@ class FrameForgeUi:
         self.queue_list: ft.ListView | None = None
         self.queue_chrome: ft.Container | None = None
         self.history_list: ft.ListView | None = None
-        self.library_grid: ft.GridView | None = None
+        self.library_grid: ft.ListView | None = None
         self.library_grid_host: ft.Container | None = None
-        self.library_stack: ft.Stack | None = None
+        self.library_stack: ft.Column | None = None
         self.library_empty: ft.Container | None = None
         self.library_toolbar: ft.Control | None = None
         self.library_body: ft.Column | None = None
-        self.thumbs_grid: ft.GridView | None = None
+        self.thumbs_grid: ft.ListView | None = None
+        self._library_thumb_miss: set[int] = set()
+        self._library_video: Any | None = None
+        self.last_library_player: str | None = None
+        self._cookie_auto_resume_ids: set[int] = set()
         self.library_visible_count: int = 0
         self._library_visible_ids: list[int] = []
         self.library_selected_ids: set[int] = set()
@@ -281,8 +285,45 @@ class FrameForgeUi:
     def close_dialog(self, _e: Any = None) -> None:
         self.dialogs.close(_e)
 
+    def _auto_resume_validated_cookies(self, payload: dict[str, Any]) -> bool:
+        """Retry and resume when this session already has working cookies.
+
+        The silent import path validates cookies, retries once, then used to
+        stop on a dialog. A second attempt with those same cookies is what
+        the dialog's resume button did. One automatic resume per job; a
+        later failure still opens the dialog.
+        """
+        from frameforge.download.cookie_validate import cookies_validated_in_session
+        from frameforge.errors import (
+            AUTH_REQUIRED,
+            BOT_CHECK,
+            IMPERSONATION_MISSING,
+            RATE_LIMITED,
+            UNKNOWN,
+        )
+
+        cat = str(payload.get("category") or "")
+        if cat not in {AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, RATE_LIMITED, UNKNOWN}:
+            return False
+        url = str(payload.get("url") or "")
+        if not url or not cookies_validated_in_session(url):
+            return False
+        try:
+            jid = int(payload["job_id"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if jid in self._cookie_auto_resume_ids:
+            return False
+        self._cookie_auto_resume_ids.add(jid)
+        self._idle_reason = None
+        self._activity_note = "Retrying with saved cookies…"
+        self.bridge.handle_fail_pause_action("retry_resume", jid)
+        return True
+
     def _on_fail_pause(self, job: Any, payload: dict[str, Any]) -> None:
         self.fail_pause_payload = payload
+        if self._auto_resume_validated_cookies(payload):
+            return
         self.fail_pause_shown += 1
         pending = self.repo.count_by_status("pending")
         self._idle_reason = "fail_pause"
@@ -350,7 +391,12 @@ class FrameForgeUi:
                     status.value = str(recovered.get("message") or "")
                     status.visible = True
                     status.color = COLORS["success"] if recovered.get("ok") else COLORS["danger"]
-                    resume_btn.visible = bool(recovered.get("ok"))
+                    if recovered.get("ok"):
+                        self.bridge.handle_fail_pause_action("retry_resume", jid)
+                        self.close_dialog()
+                        self.refresh_queue()
+                        return
+                    resume_btn.visible = False
                     if self.page is not None:
                         self.page.update()
                     return
@@ -491,16 +537,7 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.library_grid = ft.GridView(
-            expand=True,
-            runs_count=4,
-            max_extent=220,
-            child_aspect_ratio=0.72,
-            spacing=8,
-            run_spacing=8,
-            padding=8,
-            build_controls_on_demand=False,
-        )
+        self.library_grid = ft.ListView(expand=True, spacing=8, padding=4)
         self.thumbs_grid = self.library_grid
         self.library_grid_host = ft.Container(
             expand=True,
@@ -509,14 +546,14 @@ class FrameForgeUi:
         )
         self.library_empty = ft.Container(
             visible=False,
-            expand=True,
+            expand=False,
             bgcolor=COLORS["app_bg"],
             alignment=ft.Alignment.CENTER,
         )
-        self.library_stack = ft.Stack(
+        self.library_stack = ft.Column(
             [self.library_grid_host, self.library_empty],
             expand=True,
-            fit=ft.StackFit.EXPAND,
+            spacing=0,
         )
         self.library_toolbar = ft.Container()
         self.library_body = ft.Column(
@@ -1088,11 +1125,12 @@ class FrameForgeUi:
             self._show_toast("Download folder not found")
 
     def open_downloads_folder(self, _e: Any = None) -> None:
-        from frameforge.paths import downloads_dir
+        from frameforge.paths import downloads_dir, may_create
         from frameforge.util.reveal import open_folder
 
         root = downloads_dir()
-        root.mkdir(parents=True, exist_ok=True)
+        if may_create(root):
+            root.mkdir(parents=True, exist_ok=True)
         open_folder(root, launch=self.reveal_launch)
 
     def open_folder_selected(self) -> None:
@@ -1285,6 +1323,22 @@ class FrameForgeUi:
             log.exception("Failed to scan library folder for orphans")
             orphans = []
         pending = len(self._pending_library_jobs()) + len(self._pending_disk_videos()) if self.library.is_onboarded() else 0
+        from frameforge.library.thumbs import ensure_library_thumbnail
+
+        prepared: list[Any] = []
+        for item in items:
+            if item.id in self._library_thumb_miss:
+                prepared.append(item)
+                continue
+            thumb = item.thumb_path
+            if thumb and Path(thumb).is_file():
+                prepared.append(item)
+                continue
+            updated = ensure_library_thumbnail(self.library, item)
+            if not (updated.thumb_path and Path(updated.thumb_path).is_file()):
+                self._library_thumb_miss.add(item.id)
+            prepared.append(updated)
+        items = prepared
         self._library_visible_ids = [item.id for item in items]
         try:
             alive = {row.id for row in self.library.list_items(include_private=True)}
@@ -1359,8 +1413,11 @@ class FrameForgeUi:
             self.library_empty.data = state.data
         if self.library_grid_host is not None:
             self.library_grid_host.visible = not show_empty
+            self.library_grid_host.expand = not show_empty
         if self.library_grid is not None:
             self.library_grid.visible = not show_empty
+        if self.library_empty is not None:
+            self.library_empty.expand = show_empty
         if self.page is not None:
             try:
                 self.page.update()
@@ -1806,17 +1863,38 @@ class FrameForgeUi:
         self._show_toast(f"Moved {len(files)} junk file(s)")
 
     def play_library_item(self, item_id: int) -> None:
-        from frameforge.library.actions import play_library_item
+        """Play a library file inside FrameForge. Queue rows still use the OS player."""
         from frameforge.library.scan import heal_item
         from frameforge.util.reveal import RevealError
 
         try:
             item = heal_item(self.library, self.library.get(item_id))
-            play_library_item(item, launch=self.reveal_launch)
+            path = Path(item.path)
+            if not path.is_file():
+                raise RevealError(f"Path does not exist: {path}")
         except RevealError:
             self._show_toast("File not found — cannot play")
+            return
         except KeyError:
             self._show_toast("File not found — cannot play")
+            return
+        self.last_library_player = str(path.resolve())
+        if self.page is None:
+            return
+        try:
+            from frameforge.ui_flet.components.player import library_player_dialog
+
+            dlg, video = library_player_dialog(
+                title=item.title or path.name,
+                media_path=path,
+                on_close=self.close_dialog,
+            )
+        except Exception:
+            log.exception("In-app player failed to open")
+            self._show_toast("In-app player could not open this file")
+            return
+        self._library_video = video
+        self.dialogs.open("library_player", dlg, replace=True)
 
     def reveal_library_item(self, item_id: int) -> None:
         from frameforge.library.actions import reveal_library_item
@@ -2805,6 +2883,12 @@ def run_gui(**kwargs: Any) -> None:
     if _GUI_RUNNING:
         raise RuntimeError("FrameForge GUI is already running in this process")
     _GUI_RUNNING = True
+    try:
+        from frameforge.ui_flet.no_location import disable_flet_location_plugin
+
+        disable_flet_location_plugin()
+    except Exception:  # noqa: BLE001
+        log.exception("Could not disable the Flet location plugin")
     ui = create_ui(**kwargs)
 
     def _main(page: ft.Page) -> None:

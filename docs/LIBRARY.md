@@ -28,13 +28,14 @@ The 2026-08-16 audit of this machine’s youtube tree (`library_move_20260816_10
 
 ## Layout
 
-- Grid: one card per **playable** indexed file (title, thumb if the thumb file exists, resolution). Count in the toolbar equals visible cards.
+- List: one row per **playable** indexed file (thumbnail, title, resolution). Count in the toolbar equals visible rows. The list is a `ListView`, the same scrollable control as Queue, so a populated library is not a blank gray panel.
 - Missing `library_items.path` is re-found under `library_root` by filename before the grid loads.
 - **Select all** selects every clip in the current filtered grid; **Clear selection** clears it. With a selection, toolbar bulk actions work: Add to collection, Upscale eligible, Remove from library, Delete files… (Recycle Bin), Send to Private.
 - Completed downloads under `downloads/…` are indexed into Library in place (no forced move) when the Library tab refreshes.
-- Click thumb or card → Play via the Windows default player (`os.startfile`). Reveal uses `explorer /select,path` only (no shell theme changes). Upscale when height is known and **&lt; 2160**.
+- Click the thumbnail or **Play** → play inside FrameForge (`flet-video` / mpv). Queue and History thumbnails still open the Windows default player. Reveal uses `explorer /select,path` only (no shell theme changes). Upscale when height is known and **&lt; 2160**.
+- A missing thumbnail is filled from the job's saved image, or from one ffmpeg frame of the video file.
 - If videos exist on disk under the library folder but are not indexed, **Scan library folder** imports those orphans.
-- Empty state with a setup / import / scan CTA. GridView is given a bounded host and builds tiles immediately (not on-demand), so a populated library is never a blank gray panel.
+- Empty state with a setup / import / scan CTA.
 
 **Duplicates:** toolbar **Duplicates…** groups files by normalized title (bracket `[id]` segments ignored) + file size + duration (ffprobe, cached on the row). Keep higher resolution / newer mtime; extras go to Recycle Bin.
 

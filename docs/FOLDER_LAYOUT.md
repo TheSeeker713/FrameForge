@@ -4,7 +4,7 @@ FrameForge never dumps media, thumbnails, or SQLite files into a bare picked fol
 
 ## Download root
 
-The app home (database, cookies, models, temp) is `FRAMEFORGE_ROOT` when set, otherwise a saved home from an existing install, otherwise `%USERPROFILE%\Downloads\FrameForge`. The first launch asks where new videos go. Skip uses the Windows user folder. Choosing a folder stores videos under `<picked>\FrameForge\downloads\`. Pytest redirects `USERPROFILE` and stays on the temp tree.
+The first launch asks where FrameForge should live. Choosing a folder stores the whole tree under `<picked>\FrameForge\` (videos in `downloads\`). Skip is the only answer that creates `%USERPROFILE%\Downloads\FrameForge`. `FRAMEFORGE_ROOT` still overrides that. Pytest redirects `USERPROFILE` and stays on the temp tree. Before the question is answered, files stay under `%APPDATA%\FrameForge\pending` and the Windows Downloads folder is left alone.
 
 `<FrameForge root>\` (created on launch):
 

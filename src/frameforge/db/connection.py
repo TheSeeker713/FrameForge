@@ -39,7 +39,10 @@ def configure_connection(conn: sqlite3.Connection) -> sqlite3.Connection:
 
 def connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
     path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    from frameforge.paths import may_create
+
+    if may_create(path.parent):
+        path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(
         str(path),
         timeout=CONNECT_TIMEOUT_SEC,

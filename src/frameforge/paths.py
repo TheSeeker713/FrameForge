@@ -1,11 +1,12 @@
 """Output path helpers for the FrameForge root.
 
-App home (database, cookies, models, temp): ``FRAMEFORGE_ROOT``, then a
-local root file when that folder already holds an install, then
-``%USERPROFILE%\\Downloads\\FrameForge``.
+App home (database, cookies, models, temp) follows the folder chosen in
+onboarding. A custom pick keeps the whole tree under ``<picked>\\FrameForge``.
+``%USERPROFILE%\\Downloads\\FrameForge`` is created only when onboarding
+explicitly uses that Windows default (Skip).
 
-Download folder: the first-run choice. Skip uses the Windows user folder.
-Pytest redirects ``USERPROFILE`` and stays on that temp tree.
+``FRAMEFORGE_ROOT`` still overrides everything. Pytest redirects
+``USERPROFILE`` and stays on that temp tree.
 """
 
 from __future__ import annotations
@@ -86,19 +87,75 @@ def _configured_root() -> Path | None:
     return None
 
 
+def _paths_equal(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return os.path.normcase(str(a)) == os.path.normcase(str(b))
+
+
+def _app_home_for_download_dir(choice: Path) -> Path:
+    """``.../FrameForge/downloads`` → ``.../FrameForge``."""
+    path = Path(choice)
+    if path.name.lower() == "downloads":
+        return path.parent
+    return path
+
+
+def _profile_tree_allowed() -> bool:
+    """True when creating ``%USERPROFILE%\\Downloads\\FrameForge`` is intentional.
+
+    That folder is the Windows default from onboarding Skip. A custom pick,
+    and the time before any answer, must not create it. Pytest redirects
+    ``USERPROFILE`` onto a temp tree and may use that temp default.
+    """
+    if os.environ.get(_ENV_MEDIA_ROOT, "").strip():
+        return True
+    if _userprofile_redirected():
+        return True
+    if not download_location_chosen():
+        return False
+    choice = _read_download_choice()
+    if choice is None:
+        return False
+    return _paths_equal(_app_home_for_download_dir(choice), profile_frameforge_root())
+
+
+def may_create(path: Path) -> bool:
+    """False for ``%USERPROFILE%\\Downloads\\FrameForge`` unless that default was chosen."""
+    profile = profile_frameforge_root()
+    try:
+        Path(path).resolve().relative_to(profile.resolve())
+    except ValueError:
+        return True
+    except OSError:
+        return True
+    return _profile_tree_allowed()
+
+
 def frameforge_root() -> Path:
     """App home: database, cookies, models, and temp.
 
-    A saved root file is an existing install's app home. It is not a
-    network location and it is not the download folder.
+    A custom download folder owns this home (its ``FrameForge`` parent).
+    The Windows Downloads folder is used only after onboarding Skip.
+    Before any answer, files stay under ``%APPDATA%\\FrameForge\\pending``.
     """
     override = os.environ.get(_ENV_MEDIA_ROOT, "").strip()
     if override:
         return Path(override)
+    if _userprofile_redirected():
+        return profile_frameforge_root()
+    choice = _read_download_choice()
+    if choice is not None and download_location_chosen():
+        return _app_home_for_download_dir(choice)
     configured = _configured_root()
-    if configured is not None:
+    if configured is not None and (
+        not _paths_equal(configured, profile_frameforge_root()) or _profile_tree_allowed()
+    ):
         return configured
-    return profile_frameforge_root()
+    if _profile_tree_allowed():
+        return profile_frameforge_root()
+    return _appdata_dir() / "pending"
 
 
 def _userprofile_redirected() -> bool:
@@ -201,7 +258,8 @@ def download_staging_dir(output_dir: Path | None = None) -> Path:
             pass
         else:
             dest = downloads_dir().parent / "temp" / "dl"
-    dest.mkdir(parents=True, exist_ok=True)
+    if may_create(dest):
+        dest.mkdir(parents=True, exist_ok=True)
     return dest
 
 
@@ -229,25 +287,38 @@ def system_downloads_dir() -> Path:
     return profile_frameforge_root() / "downloads"
 
 
+def _remember_app_home(home: Path) -> None:
+    folder = _appdata_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    local_root_file().write_text(str(home), encoding="utf-8")
+
+
 def _remember_download_dir(path: Path) -> Path:
     folder = _appdata_dir()
     folder.mkdir(parents=True, exist_ok=True)
     download_choice_file().write_text(str(path), encoding="utf-8")
     download_onboarded_file().write_text("1", encoding="utf-8")
+    _remember_app_home(_app_home_for_download_dir(path))
     return path
 
 
 def skip_download_location() -> Path:
-    """Use the Windows user folder and remember that the question was answered."""
+    """Use the Windows user folder and remember that the question was answered.
+
+    This is the only onboarding answer that creates
+    ``%USERPROFILE%\\Downloads\\FrameForge``.
+    """
     dest = system_downloads_dir()
     dest.mkdir(parents=True, exist_ok=True)
     return _remember_download_dir(dest)
 
 
 def choose_download_location(picked: str | Path) -> Path:
-    """Put new videos under ``<picked>/FrameForge/downloads``.
+    """Put the whole app tree under ``<picked>/FrameForge``.
 
     Picking a folder that is already named FrameForge uses that folder.
+    Videos go in ``downloads/``. Database, cookies, models, and temp stay
+    beside that folder. The Windows Downloads folder is not created.
     """
     folder = Path(picked)
     home = folder if folder.name.lower() == APP_DIR_NAME.lower() else folder / APP_DIR_NAME
@@ -257,7 +328,7 @@ def choose_download_location(picked: str | Path) -> Path:
 
 
 def downloads_dir() -> Path:
-    """Where new videos are written. The app home can be a different folder."""
+    """Where new videos are written. Same FrameForge folder as the app home."""
     saved = _read_download_choice()
     if saved is not None:
         return saved
@@ -449,21 +520,23 @@ def ensure_output_tree() -> Path:
 
     migrate_legacy_profile_root()
     root = frameforge_root()
-    root.mkdir(parents=True, exist_ok=True)
-    for name in SUBDIRS:
-        (root / name).mkdir(parents=True, exist_ok=True)
-    restrict_dir_to_current_user(root / "cookies")
-    restrict_dir_to_current_user(root / "database")
+    if may_create(root):
+        root.mkdir(parents=True, exist_ok=True)
+        for name in SUBDIRS:
+            (root / name).mkdir(parents=True, exist_ok=True)
+        restrict_dir_to_current_user(root / "cookies")
+        restrict_dir_to_current_user(root / "database")
     dl = downloads_dir()
-    dl.mkdir(parents=True, exist_ok=True)
-    for name in DOWNLOAD_ASSET_SUBDIRS:
-        (dl / name).mkdir(parents=True, exist_ok=True)
+    if may_create(dl):
+        dl.mkdir(parents=True, exist_ok=True)
+        for name in DOWNLOAD_ASSET_SUBDIRS:
+            (dl / name).mkdir(parents=True, exist_ok=True)
     media = media_root()
     try:
         separate_media = media.resolve() != root.resolve()
     except OSError:
         separate_media = True
-    if separate_media:
+    if separate_media and may_create(media):
         media.mkdir(parents=True, exist_ok=True)
         (media / "downloads").mkdir(parents=True, exist_ok=True)
         (media / "temp" / "dl").mkdir(parents=True, exist_ok=True)

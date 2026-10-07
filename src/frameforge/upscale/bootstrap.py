@@ -28,7 +28,10 @@ def maybe_create_smoke_onnx(root: Path | None = None) -> Path | None:
     """Write Identity ONNX if the models dir has none. Best-effort; never raises."""
     folder = Path(root) if root is not None else models_dir()
     try:
-        folder.mkdir(parents=True, exist_ok=True)
+        from frameforge.paths import may_create
+
+        if may_create(folder):
+            folder.mkdir(parents=True, exist_ok=True)
         existing = list_onnx(folder)
         if existing:
             return None
@@ -56,7 +59,10 @@ def bootstrap_models(root: Path | None = None) -> Path:
     """Create models dir; if empty, log once and try a smoke Identity ONNX."""
     global _LOGGED_EMPTY
     folder = Path(root) if root is not None else models_dir()
-    folder.mkdir(parents=True, exist_ok=True)
+    from frameforge.paths import may_create
+
+    if may_create(folder):
+        folder.mkdir(parents=True, exist_ok=True)
     if not list_onnx(folder):
         if not _LOGGED_EMPTY:
             log.warning(

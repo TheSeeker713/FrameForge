@@ -1,4 +1,4 @@
-"""Library grid binds playable items; play uses the default player."""
+"""Library list binds playable items; play opens the in-app player."""
 
 from __future__ import annotations
 
@@ -91,6 +91,51 @@ def test_scan_indexes_disk_orphans(tmp_path: Path):
     assert orphan_videos(store) == []
     assert len(list_playable_items(store)) == 2
     repo.close()
+
+
+def test_tile_uses_real_thumbnail_file(tmp_path: Path):
+    from PIL import Image
+
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    root = store.complete_onboarding(tmp_path / "Lib")
+    src = _clip(root / "Uncategorized" / "thumb.mp4")
+    thumb = tmp_path / "still.jpg"
+    Image.new("RGB", (8, 8), (20, 40, 80)).save(thumb, "JPEG")
+    item = store.add_item(path=src, title="Thumb", thumb_path=str(thumb))
+    tile = library_tile(item, on_play=lambda _i: None)
+    assert tile.data["thumb_kind"] == "image"
+    assert tile.data["player"] == "library"
+    repo.close()
+
+
+def test_play_opens_in_app_player(tmp_path: Path):
+    from tests.flet_fakes import FakePage
+
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    root = store.complete_onboarding(tmp_path / "Lib")
+    src = _clip(root / "Uncategorized" / "play.mp4", data=b"m" * 300)
+    item = store.add_item(path=src, title="Play me")
+    opened = play_library_item(item, launch=False)
+    assert opened.resolve() == src.resolve()
+    ui = FrameForgeUi(
+        repo=repo,
+        worker=SequentialWorker(repo, download_handler=lambda j, r: None),
+        start_worker=False,
+        recover_on_launch=False,
+    )
+    ui.reveal_launch = False
+    ui.page = FakePage()
+    ui.build()
+    ui.refresh_library()
+    assert ui.library_visible_count == 1
+    assert isinstance(ui.library_grid, __import__("flet").ListView)
+    ui.play_library_item(item.id)
+    assert ui.last_library_player == str(src.resolve())
+    assert ui.dialogs.kind == "library_player"
+    assert ui.page.dialog.data["path"] == str(src.resolve())
+    ui.shutdown()
 
 
 def test_play_opens_default_player_path(tmp_path: Path):

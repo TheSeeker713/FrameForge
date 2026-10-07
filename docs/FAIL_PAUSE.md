@@ -70,7 +70,9 @@ Before fail-pause, the download handler runs the automatic **recovery ladder**. 
 
 `drm_blocked` does **not** fail-pause with cookie import; skip the job.
 
-If the auto cookie path is exhausted, you must choose a fail-pause action. The worker does not silently continue failing the rest of the list.
+If cookies for that site were already validated in this session, FrameForge retries the job and resumes the queue **without** the dialog. That is one automatic resume per job. A later failure of the same job still opens the dialog. Choosing **Import from Firefox / browser** after that, once validation succeeds, also retries and resumes immediately.
+
+If the auto cookie path is exhausted and cookies are not validated, you must choose a fail-pause action. The worker does not silently continue failing the rest of the list.
 
 The Flet UI calls the same handlers via `UiBridge.retry_job` / `handle_fail_pause_action` (see [UI_BRIDGE.md](UI_BRIDGE.md)). Retry that fails again hits the same disarm + `on_fail_pause` entrypoint.
 

@@ -100,23 +100,42 @@ def library_tile(
     on_watch_later: Any | None = None,
 ) -> ft.Container:
     thumb = _thumb_src(item.thumb_path)
-    preview_inner: ft.Control
+    play_icon = ft.Icon(ft.Icons.PLAY_CIRCLE_FILLED, color="#FFFFFF", size=42)
     if thumb:
-        preview_inner = ft.Image(src=thumb, width=200, height=112, fit=ft.BoxFit.COVER)
+        picture: ft.Control = ft.Image(
+            src=thumb,
+            width=240,
+            height=135,
+            fit=ft.BoxFit.COVER,
+            error_content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color=COLORS["text_secondary"], size=36),
+        )
+        thumb_kind = "image"
     else:
-        preview_inner = ft.Container(
-            width=200,
-            height=112,
+        picture = ft.Container(
+            width=240,
+            height=135,
             bgcolor=COLORS["select"],
             alignment=ft.Alignment.CENTER,
-            content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color=COLORS["text_secondary"]),
+            content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color=COLORS["text_secondary"], size=36),
         )
+        thumb_kind = "placeholder"
     preview = ft.Container(
-        content=preview_inner,
-        width=200,
-        height=112,
+        width=240,
+        height=135,
+        border_radius=8,
+        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        bgcolor="#0F172A",
         on_click=lambda _e, i=item.id: on_play and on_play(i),
-        data={"play": item.id},
+        tooltip="Play in FrameForge",
+        data={"play": item.id, "thumb_kind": thumb_kind},
+        content=ft.Stack(
+            [
+                picture,
+                ft.Container(alignment=ft.Alignment.CENTER, content=play_icon),
+            ],
+            width=240,
+            height=135,
+        ),
     )
     upscale_ok = can_upscale_library_item(item)
     upscale_btn = ft.TextButton(
@@ -134,55 +153,71 @@ def library_tile(
         border=ft.Border.all(1, COLORS["accent"] if selected else COLORS["border"]),
         border_radius=RADIUS_CARD,
         padding=8,
-        content=ft.Column(
+        content=ft.Row(
             [
-                ft.Row([check, ft.Container(expand=True), preview], spacing=4),
-                ft.Text(
-                    item.title or Path_name(item.path),
-                    max_lines=2,
-                    color=COLORS["text_primary"],
-                    size=13,
-                    weight=ft.FontWeight.W_500,
-                ),
-                ft.Text(
-                    " · ".join(
-                        p
-                        for p in (
-                            item.source or "",
-                            item.resolution_label,
-                            _date_label(item.date_added),
-                        )
-                        if p
-                    ),
-                    color=COLORS["text_secondary"],
-                    size=11,
-                    max_lines=1,
-                ),
-                ft.Row(
+                check,
+                preview,
+                ft.Column(
                     [
-                        ft.TextButton(content="Play", on_click=lambda _e, i=item.id: on_play and on_play(i)),
-                        ft.TextButton(content="Reveal", on_click=lambda _e, i=item.id: on_reveal and on_reveal(i)),
-                        upscale_btn,
-                    ],
-                    spacing=0,
-                ),
-                ft.Row(
-                    [
-                        ft.TextButton(
-                            content="★ Fav" if item.is_favorite else "Fav",
-                            on_click=lambda _e, i=item.id: on_favorite and on_favorite(i),
+                        ft.Text(
+                            item.title or Path_name(item.path),
+                            max_lines=2,
+                            color=COLORS["text_primary"],
+                            size=14,
+                            weight=ft.FontWeight.W_600,
                         ),
-                        ft.TextButton(
-                            content="Later" if item.watch_later else "Watch later",
-                            on_click=lambda _e, i=item.id: on_watch_later and on_watch_later(i),
+                        ft.Text(
+                            " · ".join(
+                                p
+                                for p in (
+                                    item.source or "",
+                                    item.resolution_label,
+                                    _date_label(item.date_added),
+                                )
+                                if p
+                            ),
+                            color=COLORS["text_secondary"],
+                            size=12,
+                            max_lines=1,
+                        ),
+                        ft.Row(
+                            [
+                                ft.TextButton(
+                                    content="Play",
+                                    on_click=lambda _e, i=item.id: on_play and on_play(i),
+                                ),
+                                ft.TextButton(
+                                    content="Reveal",
+                                    on_click=lambda _e, i=item.id: on_reveal and on_reveal(i),
+                                ),
+                                upscale_btn,
+                                ft.TextButton(
+                                    content="★ Fav" if item.is_favorite else "Fav",
+                                    on_click=lambda _e, i=item.id: on_favorite and on_favorite(i),
+                                ),
+                                ft.TextButton(
+                                    content="Later" if item.watch_later else "Watch later",
+                                    on_click=lambda _e, i=item.id: on_watch_later and on_watch_later(i),
+                                ),
+                            ],
+                            spacing=0,
+                            wrap=True,
                         ),
                     ],
-                    spacing=0,
+                    spacing=4,
+                    expand=True,
                 ),
             ],
-            spacing=4,
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
-        data={"item_id": item.id, "job_id": item.job_id, "path": item.path},
+        data={
+            "item_id": item.id,
+            "job_id": item.job_id,
+            "path": item.path,
+            "thumb_kind": thumb_kind,
+            "player": "library",
+        },
         on_click=lambda _e, i=item.id: on_play and on_play(i),
     )
 

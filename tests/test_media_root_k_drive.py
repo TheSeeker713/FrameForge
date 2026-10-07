@@ -33,19 +33,30 @@ def test_redirected_userprofile_keeps_media_on_temp_tree(monkeypatch, tmp_path: 
 def test_frameforge_root_env_pins_media_root(monkeypatch, tmp_path: Path):
     pinned = tmp_path / "pinned"
     monkeypatch.setenv("FRAMEFORGE_ROOT", str(pinned))
+    # A saved download folder (this PC's K: choice) must not leak into the test.
+    monkeypatch.setattr("frameforge.paths._read_download_choice", lambda: None)
     assert frameforge_root() == pinned
     assert media_root() == pinned
     assert download_dir_for_site("youtube") == pinned / "downloads" / "youtube" / "uncategorized"
     assert downloads_dir() == pinned / "downloads"
 
 
-def test_missing_root_file_uses_profile_root(monkeypatch, tmp_path: Path):
+def test_missing_root_file_does_not_create_windows_downloads(monkeypatch, tmp_path: Path):
+    profile = tmp_path / "profile"
+    monkeypatch.setenv("USERPROFILE", str(profile))
     monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
+    from frameforge.paths import ensure_output_tree, profile_frameforge_root
+
     assert not local_root_file().exists()
-    assert media_root() == frameforge_root()
-    assert download_dir_for_site("pornhub.com") == frameforge_root() / "downloads" / "porn" / "uncategorized"
+    pending = tmp_path / "appdata" / "FrameForge" / "pending"
+    assert frameforge_root() == pending
+    assert media_root() == pending
+    assert download_dir_for_site("pornhub.com") == pending / "downloads" / "porn" / "uncategorized"
+    ensure_output_tree()
+    assert (pending / "database").is_dir()
+    assert not profile_frameforge_root().exists()
 
 
 def test_root_file_pins_media_root(monkeypatch, tmp_path: Path):
@@ -96,20 +107,40 @@ def test_choose_download_location_nests_under_pick(monkeypatch, tmp_path: Path):
     assert again == dest
 
 
-def test_separate_download_folder_stays_in_the_library_scan(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+def test_custom_download_location_does_not_create_windows_downloads(monkeypatch, tmp_path: Path):
+    profile = tmp_path / "profile"
+    monkeypatch.setenv("USERPROFILE", str(profile))
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
     monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
-    pinned = tmp_path / "AppHome"
-    pinned.mkdir()
-    root_file = local_root_file()
-    root_file.parent.mkdir(parents=True, exist_ok=True)
-    root_file.write_text(str(pinned), encoding="utf-8")
+    from frameforge.paths import ensure_output_tree, profile_frameforge_root
+
+    dest = choose_download_location(tmp_path / "Videos")
+    home = tmp_path / "Videos" / "FrameForge"
+    assert dest == home / "downloads"
+    assert frameforge_root() == home
+    ensure_output_tree()
+    assert (home / "database").is_dir()
+    assert (home / "models").is_dir()
+    assert (home / "cookies").is_dir()
+    assert not profile_frameforge_root().exists()
+    assert download_scan_roots() == [home]
+
+
+def test_skip_is_the_only_path_that_creates_windows_downloads(monkeypatch, tmp_path: Path):
+    profile = tmp_path / "profile"
+    monkeypatch.setenv("USERPROFILE", str(profile))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
+    monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
+    from frameforge.paths import ensure_output_tree, profile_frameforge_root
+
+    assert not profile_frameforge_root().exists()
     dest = skip_download_location()
-    assert frameforge_root() == pinned
-    assert dest == tmp_path / "profile" / "Downloads" / "FrameForge" / "downloads"
-    assert download_scan_roots() == [pinned, dest]
+    assert dest == profile / "Downloads" / "FrameForge" / "downloads"
+    assert frameforge_root() == profile / "Downloads" / "FrameForge"
+    ensure_output_tree()
+    assert (profile / "Downloads" / "FrameForge" / "models").is_dir()
 
 
 def test_paths_source_has_no_personal_folder_name():

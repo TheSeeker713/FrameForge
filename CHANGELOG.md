@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.18
+
+- The Windows `Downloads\FrameForge` folder is created only when onboarding chooses that default. A custom folder keeps the database, cookies, models, thumbnails, and videos together under `<picked>\FrameForge`.
+
+## 0.6.17
+
+- Library rows show thumbnails and play inside FrameForge. Queue and History still open the Windows default player.
+- The Flet window no longer starts Windows location. FrameForge does not read or send coordinates; the stock Flet client was constructing a WinRT Geolocator at launch. That plugin is replaced with a no-op.
+- When cookies for the failing site are already validated this session, the queue retries and resumes on its own. The pause dialog remains for a later failure, or when cookies are not validated.
+
 ## 0.6.16
 
 - First launch asks where new videos should go. Choose a folder, or skip and use the Windows user folder (`%USERPROFILE%\Downloads\FrameForge\downloads`). The queue, cookies, and models stay in the app home. A local disk used for downloads is a folder on this PC, not a network share.

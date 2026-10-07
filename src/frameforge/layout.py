@@ -190,18 +190,23 @@ def repair_frameforge_tree(
 ) -> dict[str, int]:
     """Organize thumbs/db/root videos. Keep per-site folders as media homes. Never Recycles."""
     root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
+    from frameforge.paths import may_create
+
+    allowed = may_create(root)
+    if allowed:
+        root.mkdir(parents=True, exist_ok=True)
     thumbs = root / "thumbnails"
     database = root / "database"
     videos = root / "downloads" / "videos"
     metadata = root / "metadata"
     junk = root / "temp" / "junk"
-    thumbs.mkdir(parents=True, exist_ok=True)
-    database.mkdir(parents=True, exist_ok=True)
-    (root / "downloads").mkdir(parents=True, exist_ok=True)
-    videos.mkdir(parents=True, exist_ok=True)
-    metadata.mkdir(parents=True, exist_ok=True)
-    junk.mkdir(parents=True, exist_ok=True)
+    if allowed:
+        thumbs.mkdir(parents=True, exist_ok=True)
+        database.mkdir(parents=True, exist_ok=True)
+        (root / "downloads").mkdir(parents=True, exist_ok=True)
+        videos.mkdir(parents=True, exist_ok=True)
+        metadata.mkdir(parents=True, exist_ok=True)
+        junk.mkdir(parents=True, exist_ok=True)
     moved = {
         "thumbs": 0,
         "db": 0,

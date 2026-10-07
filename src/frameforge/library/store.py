@@ -321,6 +321,14 @@ class LibraryStore:
         self.conn.commit()
         return self.get(item_id)
 
+    def set_thumb_path(self, item_id: int, thumb_path: str | Path) -> LibraryItem:
+        self.conn.execute(
+            "UPDATE library_items SET thumb_path = ?, date_modified = ? WHERE id = ?",
+            (str(thumb_path), utc_now(), item_id),
+        )
+        self.conn.commit()
+        return self.get(item_id)
+
     def update_item_path(self, item_id: int, path: str | Path) -> LibraryItem:
         dest = str(Path(path).resolve()) if Path(path).exists() else str(Path(path))
         self.conn.execute(
