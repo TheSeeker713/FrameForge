@@ -1,6 +1,6 @@
 # Site folders
 
-New FrameForge jobs write media under **`downloads/<bucket>/<category>/`** inside the app root. The root is `FRAMEFORGE_ROOT` when that variable is set, otherwise the path in `%APPDATA%\FrameForge\root.txt`, otherwise `%USERPROFILE%\Downloads\FrameForge\`. The database, cookies, and models stay at that root. On Windows, `cookies` and `database` are limited to the current user. Existing jobs that already have a non-legacy `download_output_dir` keep that path.
+New FrameForge jobs write media under **`downloads/<bucket>/<category>/`**. The queue, cookies, and models stay in the app home (`FRAMEFORGE_ROOT`, an existing install's saved home, or `%USERPROFILE%\Downloads\FrameForge`). The download folder is a separate first-run choice. Skip uses the Windows user folder `%USERPROFILE%\Downloads\FrameForge\downloads`. Choose a folder and videos go to `<picked>\FrameForge\downloads\<bucket>\<category>\`. On Windows, `cookies` and `database` are limited to the current user. Existing jobs that already have a non-legacy `download_output_dir` keep that path.
 
 ## Layout
 

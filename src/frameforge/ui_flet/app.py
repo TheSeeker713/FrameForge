@@ -2245,6 +2245,54 @@ class FrameForgeUi:
                     pass
         return self.file_picker
 
+    def _offer_download_location(self) -> None:
+        from frameforge.paths import download_location_chosen
+
+        if self.page is None or download_location_chosen():
+            return
+        self.open_download_onboarding()
+
+    def open_download_onboarding(self) -> ft.AlertDialog:
+        from frameforge.paths import system_downloads_dir
+        from frameforge.ui_flet.components.modals import download_location_dialog
+
+        dlg = download_location_dialog(
+            system_label=str(system_downloads_dir()),
+            on_choose=self.pick_download_location,
+            on_skip=self.skip_download_location,
+        )
+        return self.dialogs.open("download_location", dlg, replace=True)
+
+    def skip_download_location(self, _e: Any = None) -> None:
+        from frameforge.paths import skip_download_location
+
+        skip_download_location()
+        self.close_dialog()
+        self._show_toast("Downloads will use your Windows folder")
+
+    def pick_download_location(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_download_location)
+
+    async def _pick_download_location(self) -> None:
+        from frameforge.paths import choose_download_location
+
+        self.close_dialog()
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            self.open_download_onboarding()
+            return
+        path = await getter(dialog_title="Choose download folder")
+        if not path:
+            self.open_download_onboarding()
+            return
+        dest = choose_download_location(path)
+        self._show_toast(f"Downloads will go to {dest}")
+
     def import_file(self, path: str | None = None) -> ft.AlertDialog | None:
         """Hero Import: picker (or explicit path) → confirm modal → pending only. Never arms."""
         if path:
@@ -2710,6 +2758,7 @@ class FrameForgeUi:
         page.add(self.build())
         self._schedule_tick()
         self._start_tree_repair(toast=False)
+        self._offer_download_location()
 
     def shutdown(self) -> None:
         try:

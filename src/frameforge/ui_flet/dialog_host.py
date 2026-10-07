@@ -85,7 +85,7 @@ class DialogHost:
             self.close(_e)
 
         # Onboarding and reset stay modal so barrier/settings dismiss cannot eat them.
-        if kind not in {"quit", "library_onboard", "reset_library"}:
+        if kind not in {"quit", "library_onboard", "reset_library", "download_location"}:
             from frameforge.ui_flet.components.modals import wire_closable
 
             wire_closable(dialog, _scoped_close)

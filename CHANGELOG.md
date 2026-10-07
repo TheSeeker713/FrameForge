@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.16
+
+- First launch asks where new videos should go. Choose a folder, or skip and use the Windows user folder (`%USERPROFILE%\Downloads\FrameForge\downloads`). The queue, cookies, and models stay in the app home. A local disk used for downloads is a folder on this PC, not a network share.
+
 ## 0.6.15
 
 - Bulk import reads `.txt`, `.md`, `.rtf`, `.doc`, and `.docx`. A heading in the document is the category (first two words). Each link’s host picks the folder: `downloads/<bucket>/<category>/`. YouTube, social, news, and adult hosts share that rule. Listing and search URLs are skipped. Import still only queues pending jobs.

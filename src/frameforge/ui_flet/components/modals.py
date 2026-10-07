@@ -172,6 +172,35 @@ def authenticate_dialog(
     return dlg
 
 
+def download_location_dialog(
+    *,
+    system_label: str,
+    on_choose: Any,
+    on_skip: Any,
+) -> ft.AlertDialog:
+    """First launch: pick a download folder, or use the Windows user folder."""
+    from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
+
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Where should downloads go?"),
+        content=ft.Text(
+            "Choose a folder for new videos. FrameForge creates a FrameForge folder "
+            "there and sorts each file by site and category.\n\n"
+            "Skip and new videos use your Windows folder:\n"
+            f"{system_label}\n\n"
+            "The queue, cookies, and models stay in the app folder. "
+            "This choice is on your PC only.",
+            selectable=True,
+        ),
+        actions=[
+            elevated_outlined_button("Use Windows folder", on_click=on_skip),
+            elevated_filled_button("Choose folder", on_click=on_choose),
+        ],
+    )
+    return dlg
+
+
 def bulk_import_dialog(new_count: int, dup_count: int, *, on_add: Any, on_cancel: Any) -> ft.AlertDialog:
     dlg = ft.AlertDialog(
         modal=False,

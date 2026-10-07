@@ -6,13 +6,16 @@ from pathlib import Path
 
 from frameforge.download.ytdlp import YtDlpDownloader
 from frameforge.paths import (
+    choose_download_location,
     download_dir_for_site,
+    download_location_chosen,
     download_scan_roots,
     download_staging_dir,
     downloads_dir,
     frameforge_root,
     local_root_file,
     media_root,
+    skip_download_location,
 )
 
 
@@ -65,6 +68,48 @@ def test_root_file_pins_media_root(monkeypatch, tmp_path: Path):
     dl = YtDlpDownloader(output_dir=dest)
     temp = str(dl.build_opts()["paths"]["temp"]).replace("\\", "/")
     assert temp.endswith("/MediaRoot/temp/dl")
+
+
+def test_skip_download_location_uses_windows_folder(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
+    monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
+    dest = skip_download_location()
+    assert dest == tmp_path / "Downloads" / "FrameForge" / "downloads"
+    assert downloads_dir() == dest
+    assert download_location_chosen()
+    assert download_dir_for_site("youtube") == dest / "youtube" / "uncategorized"
+
+
+def test_choose_download_location_nests_under_pick(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
+    monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
+    picked = tmp_path / "Videos"
+    dest = choose_download_location(picked)
+    assert dest == picked / "FrameForge" / "downloads"
+    assert downloads_dir() == dest
+    assert download_dir_for_site("bbc.com", "City council") == dest / "bbc.com" / "City council"
+    again = choose_download_location(picked / "FrameForge")
+    assert again == dest
+
+
+def test_separate_download_folder_stays_in_the_library_scan(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
+    monkeypatch.setattr("frameforge.paths._userprofile_redirected", lambda: False)
+    pinned = tmp_path / "AppHome"
+    pinned.mkdir()
+    root_file = local_root_file()
+    root_file.parent.mkdir(parents=True, exist_ok=True)
+    root_file.write_text(str(pinned), encoding="utf-8")
+    dest = skip_download_location()
+    assert frameforge_root() == pinned
+    assert dest == tmp_path / "profile" / "Downloads" / "FrameForge" / "downloads"
+    assert download_scan_roots() == [pinned, dest]
 
 
 def test_paths_source_has_no_personal_folder_name():

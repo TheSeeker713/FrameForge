@@ -1,9 +1,11 @@
 """Output path helpers for the FrameForge root.
 
-Order: ``FRAMEFORGE_ROOT``, then a local ``%APPDATA%\\FrameForge\\root.txt``
-when the user profile was not redirected, then
-``%USERPROFILE%\\Downloads\\FrameForge``. Pytest redirects ``USERPROFILE``
-and stays on that temp tree.
+App home (database, cookies, models, temp): ``FRAMEFORGE_ROOT``, then a
+local root file when that folder already holds an install, then
+``%USERPROFILE%\\Downloads\\FrameForge``.
+
+Download folder: the first-run choice. Skip uses the Windows user folder.
+Pytest redirects ``USERPROFILE`` and stays on that temp tree.
 """
 
 from __future__ import annotations
@@ -41,15 +43,28 @@ def user_downloads() -> Path:
 
 
 def profile_frameforge_root() -> Path:
-    """``%USERPROFILE%\\Downloads\\FrameForge``, ignoring the K: drive."""
+    """``%USERPROFILE%\\Downloads\\FrameForge`` — the Windows user default."""
     return user_downloads() / APP_DIR_NAME
 
 
-def local_root_file() -> Path:
-    """Gitignored path outside the repo. One line: the FrameForge root."""
+def _appdata_dir() -> Path:
     appdata = os.environ.get("APPDATA", "").strip()
     base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
-    return base / APP_DIR_NAME / "root.txt"
+    return base / APP_DIR_NAME
+
+
+def local_root_file() -> Path:
+    """Existing app home (queue, cookies, models), outside the repo."""
+    return _appdata_dir() / "root.txt"
+
+
+def download_choice_file() -> Path:
+    """Folder the user picked for new videos. Absent until onboarding answers."""
+    return _appdata_dir() / "download_dir.txt"
+
+
+def download_onboarded_file() -> Path:
+    return _appdata_dir() / "download_onboarded.txt"
 
 
 def _configured_root() -> Path | None:
@@ -72,7 +87,11 @@ def _configured_root() -> Path | None:
 
 
 def frameforge_root() -> Path:
-    """App root: downloads, database, cookies, models, and temp."""
+    """App home: database, cookies, models, and temp.
+
+    A saved root file is an existing install's app home. It is not a
+    network location and it is not the download folder.
+    """
     override = os.environ.get(_ENV_MEDIA_ROOT, "").strip()
     if override:
         return Path(override)
@@ -94,7 +113,7 @@ def _userprofile_redirected() -> bool:
 
 
 def media_root() -> Path:
-    """Same folder as ``frameforge_root``. Downloads are not split onto C:."""
+    """App home. New videos use ``downloads_dir``, which may be another folder."""
     return frameforge_root()
 
 
@@ -149,11 +168,18 @@ def migrate_legacy_profile_root() -> None:
 def download_scan_roots() -> list[Path]:
     """Folders the library should search for finished downloads.
 
-    A configured root is first when it is separate from the profile tree.
+    The app home is always included. A download folder that lives somewhere
+    else is included too, so a first-run choice stays visible in the library.
     """
+    candidates = [media_root(), frameforge_root()]
+    downloads = downloads_dir()
+    try:
+        downloads.resolve().relative_to(frameforge_root().resolve())
+    except (ValueError, OSError):
+        candidates.append(downloads)
     roots: list[Path] = []
     seen: set[str] = set()
-    for candidate in (media_root(), frameforge_root()):
+    for candidate in candidates:
         try:
             key = str(candidate.resolve()).lower()
         except OSError:
@@ -170,16 +196,71 @@ def download_staging_dir(output_dir: Path | None = None) -> Path:
     dest = temp_dir() / "dl"
     if output_dir is not None:
         try:
-            Path(output_dir).resolve().relative_to(media_root().resolve())
+            Path(output_dir).resolve().relative_to(downloads_dir().resolve())
         except (ValueError, OSError):
             pass
         else:
-            dest = media_root() / "temp" / "dl"
+            dest = downloads_dir().parent / "temp" / "dl"
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
 
+def _read_download_choice() -> Path | None:
+    if _userprofile_redirected():
+        return None
+    try:
+        text = download_choice_file().read_text(encoding="utf-8-sig").strip().strip('"')
+    except OSError:
+        return None
+    if not text:
+        return None
+    return Path(text)
+
+
+def download_location_chosen() -> bool:
+    """True after the first-run download question is answered. Tests stay quiet."""
+    if _userprofile_redirected():
+        return True
+    return download_onboarded_file().is_file()
+
+
+def system_downloads_dir() -> Path:
+    """Skip target: the Windows user's FrameForge downloads folder."""
+    return profile_frameforge_root() / "downloads"
+
+
+def _remember_download_dir(path: Path) -> Path:
+    folder = _appdata_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    download_choice_file().write_text(str(path), encoding="utf-8")
+    download_onboarded_file().write_text("1", encoding="utf-8")
+    return path
+
+
+def skip_download_location() -> Path:
+    """Use the Windows user folder and remember that the question was answered."""
+    dest = system_downloads_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    return _remember_download_dir(dest)
+
+
+def choose_download_location(picked: str | Path) -> Path:
+    """Put new videos under ``<picked>/FrameForge/downloads``.
+
+    Picking a folder that is already named FrameForge uses that folder.
+    """
+    folder = Path(picked)
+    home = folder if folder.name.lower() == APP_DIR_NAME.lower() else folder / APP_DIR_NAME
+    dest = home / "downloads"
+    dest.mkdir(parents=True, exist_ok=True)
+    return _remember_download_dir(dest)
+
+
 def downloads_dir() -> Path:
+    """Where new videos are written. The app home can be a different folder."""
+    saved = _read_download_choice()
+    if saved is not None:
+        return saved
     return frameforge_root() / "downloads"
 
 
