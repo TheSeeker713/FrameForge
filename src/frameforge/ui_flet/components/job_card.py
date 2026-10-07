@@ -321,6 +321,7 @@ def build_queue_chrome(
     on_download_all: Callable[[], None] | None = None,
     on_retry_failed: Callable[[], None] | None = None,
     on_clear_finished: Callable[[], None] | None = None,
+    on_select_all: Callable[[], None] | None = None,
     on_clear_selected: Callable[[], None] | None = None,
     on_undo: Callable[[], None] | None = None,
     on_pause: Callable[[], None] | None = None,
@@ -354,6 +355,13 @@ def build_queue_chrome(
         )
     buttons.append(
         elevated_outlined_button(
+            "Select all",
+            disabled=not spec.get("select_all_enabled"),
+            on_click=lambda _e: on_select_all and on_select_all(),
+        )
+    )
+    buttons.append(
+        elevated_outlined_button(
             "Clear selected",
             disabled=not spec.get("clear_selected_enabled"),
             on_click=lambda _e: on_clear_selected and on_clear_selected(),
@@ -371,22 +379,33 @@ def build_queue_chrome(
     return bind_hover_elevation(row)
 
 
-def empty_queue_state() -> ft.Container:
+def empty_queue_state(download_root: str | None = None) -> ft.Container:
+    lines = [
+        ft.Text("Queue is empty", size=20, weight=ft.FontWeight.BOLD, color=COLORS["text_primary"]),
+        ft.Text(
+            "Add URLs above or import a file to get started.",
+            color=COLORS["text_secondary"],
+        ),
+        ft.Text(
+            "Tip: Downloads never start until you press Download",
+            color=COLORS["accent"],
+        ),
+    ]
+    if download_root:
+        lines.append(
+            ft.Text(
+                f"Files save to {download_root}",
+                color=COLORS["text_secondary"],
+                size=12,
+                selectable=True,
+                text_align=ft.TextAlign.CENTER,
+            )
+        )
     return ft.Container(
         expand=True,
         alignment=ft.Alignment.CENTER,
         content=ft.Column(
-            [
-                ft.Text("Queue is empty", size=20, weight=ft.FontWeight.BOLD, color=COLORS["text_primary"]),
-                ft.Text(
-                    "Add URLs above or import a file to get started.",
-                    color=COLORS["text_secondary"],
-                ),
-                ft.Text(
-                    "Tip: Downloads never start until you press Download",
-                    color=COLORS["accent"],
-                ),
-            ],
+            lines,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=8,
         ),

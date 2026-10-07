@@ -63,6 +63,12 @@ See [PLAYLISTS.md](PLAYLISTS.md), [FORMATS_AND_CONVERT.md](FORMATS_AND_CONVERT.m
 - **Suite:** `python -m pytest -q` → **261 passed / 0 skipped / 0 failed**
 - See [V0.4.2_COMPLETE.md](V0.4.2_COMPLETE.md), [QUEUE_CLEAR.md](QUEUE_CLEAR.md), [HISTORY_V2.md](HISTORY_V2.md), [FAIL_PAUSE.md](FAIL_PAUSE.md), [SPEED.md](SPEED.md).
 
+## v0.6.14 (select-all + downloads layout)
+
+- `tests/test_library_select_all.py` — Select all selects visible Library clips; bulk Remove clears the index (does not reappear until Library open / new completions publish again). Queue Select all selects every queue job.
+- `tests/test_site_dirs.py`, `test_site_download_paths.py`, `test_media_root_k_drive.py`, `test_bulk_import_youtube.py` — `downloads/<bucket>/<category>/` and heading categories / porn bucket.
+- Library publish runs on Library tab open, Skip onboarding, and when the completed-job count changes — not on every toolbar refresh (so Remove from library sticks).
+
 ## v0.6.13 (cookie recovery hang)
 
 - Silent Firefox: 60s hard timeout, file-only validate, no `unknown`+existing-cookies re-import. Timeout → fail-pause; later Download all claims pending. Setting OFF = plain downloads.

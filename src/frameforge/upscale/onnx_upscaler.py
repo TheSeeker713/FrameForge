@@ -58,6 +58,7 @@ def find_model(explicit: Path | None = None, *, root: Path | None = None) -> Pat
     folder = Path(root) if root is not None else models_dir()
     preferred = [
         folder / "RealESRGAN_x4plus.onnx",
+        folder / "real_esrgan_x4plus.onnx",
         folder / "realesrgan-x4plus.onnx",
         folder / "frameforge_x2_resize.onnx",
         folder / "frameforge_smoke_identity.onnx",
@@ -104,6 +105,15 @@ def model_status(*, explicit: Path | None = None, root: Path | None = None) -> d
     }
 
 
+def _static_dim(value: object) -> int | None:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        number = int(value)
+        return number if number > 0 else None
+    return None
+
+
 def create_session(model_path: Path) -> ort.InferenceSession:
     available = ort.get_available_providers()
     providers = (
@@ -137,10 +147,18 @@ class OnnxUpscaler:
         self.tile = tile
         self.overlap = overlap
         self.scale = 2
+        self.input_height: int | None = None
+        self.input_width: int | None = None
         self.provider = "none"
         if found is not None:
             self.session = create_session(found)
             self.input_name = self.session.get_inputs()[0].name
+            in_shape = self.session.get_inputs()[0].shape
+            if len(in_shape) == 4:
+                self.input_height = _static_dim(in_shape[2])
+                self.input_width = _static_dim(in_shape[3])
+            if self.input_height and self.tile > self.input_height:
+                self.tile = self.input_height
             self.scale = self._infer_scale()
             self.provider = self.session.get_providers()[0]
 
@@ -151,12 +169,44 @@ class OnnxUpscaler:
     def _infer_scale(self) -> int:
         if self.session is None:
             return 2
-        probe = np.zeros((1, 3, 16, 16), dtype=np.float32)
+        try:
+            out_shape = self.session.get_outputs()[0].shape
+            in_w = self.input_width
+            out_w = _static_dim(out_shape[-1]) if len(out_shape) >= 2 else None
+            if in_w and out_w and out_w % in_w == 0:
+                return max(1, out_w // in_w)
+        except Exception:
+            pass
+        probe_h = self.input_height or 16
+        probe_w = self.input_width or 16
+        probe = np.zeros((1, 3, probe_h, probe_w), dtype=np.float32)
         try:
             out = self.session.run(None, {self.input_name: probe})[0]
-            return max(1, int(out.shape[-1] // 16))
+            return max(1, int(out.shape[-1] // probe_w))
         except Exception:
             return 2
+
+    def _run_tile(self, tile_bgr: np.ndarray) -> np.ndarray:
+        """Run one tile. Pad up to a fixed model size, then crop back to the tile."""
+        if self.session is None:
+            raise UpscaleConfigError(self.unavailable_reason)
+        th, tw = tile_bgr.shape[:2]
+        fitted = tile_bgr
+        req_h = self.input_height
+        req_w = self.input_width
+        if req_h and req_w and (th != req_h or tw != req_w):
+            if th > req_h or tw > req_w:
+                fitted = tile_bgr[:req_h, :req_w]
+                th, tw = fitted.shape[:2]
+            pad_b = max(0, req_h - th)
+            pad_r = max(0, req_w - tw)
+            if pad_b or pad_r:
+                fitted = cv2.copyMakeBorder(
+                    fitted, 0, pad_b, 0, pad_r, cv2.BORDER_REFLECT_101
+                )
+        out = self.session.run(None, {self.input_name: _to_nchw(fitted)})[0]
+        up = _from_nchw(out)
+        return up[: th * self.scale, : tw * self.scale]
 
     def upscale_image(self, img_bgr: np.ndarray) -> np.ndarray:
         if not self.available or self.session is None or self.model_path is None:
@@ -168,8 +218,7 @@ class OnnxUpscaler:
             return cv2.resize(img_bgr, (w * 2, h * 2), interpolation=cv2.INTER_CUBIC)
 
         if max(h, w) <= self.tile:
-            out = self.session.run(None, {self.input_name: _to_nchw(img_bgr)})[0]
-            return _from_nchw(out)
+            return self._run_tile(img_bgr)
 
         scale = self.scale
         out_h, out_w = h * scale, w * scale
@@ -181,7 +230,7 @@ class OnnxUpscaler:
                 y2 = min(h, y + self.tile)
                 x2 = min(w, x + self.tile)
                 tile = img_bgr[y:y2, x:x2]
-                up = _from_nchw(self.session.run(None, {self.input_name: _to_nchw(tile)})[0])
+                up = self._run_tile(tile)
                 oy, ox = y * scale, x * scale
                 acc[oy : oy + up.shape[0], ox : ox + up.shape[1]] += up.astype(np.float32)
                 weight[oy : oy + up.shape[0], ox : ox + up.shape[1]] += 1.0

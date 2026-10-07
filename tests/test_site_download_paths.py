@@ -1,4 +1,4 @@
-"""Step 3 — new downloads land in per-site folders; resume keeps the same path."""
+"""New downloads land under downloads/<bucket>/<category>/; resume keeps the same path."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from frameforge.db.repository import JobRepository
 from frameforge.download.handler import resolve_download_output_dir
 from frameforge.download.ytdlp import YtDlpDownloader
-from frameforge.paths import download_dir_for_site, frameforge_root
+from frameforge.paths import download_dir_for_site, downloads_dir
 
 
 def test_youtube_job_dir_and_opts_contain_youtube(tmp_path: Path):
@@ -15,15 +15,28 @@ def test_youtube_job_dir_and_opts_contain_youtube(tmp_path: Path):
     job = repo.enqueue("https://www.youtube.com/watch?v=abc123")
     dest = resolve_download_output_dir(job)
     assert dest == download_dir_for_site("youtube")
-    assert dest.name == "youtube"
-    assert dest.parent == frameforge_root()
+    assert dest.name == "uncategorized"
+    assert dest.parent.name == "youtube"
+    assert dest.parent.parent == downloads_dir()
+    assert downloads_dir() in dest.parents
     assert dest.is_dir()
     dl = YtDlpDownloader(output_dir=dest)
     opts = dl.build_opts()
     home = str(opts.get("paths", {}).get("home", "")).replace("\\", "/")
     assert "youtube" in home
+    assert "downloads" in home
     assert opts["paths"]["temp"]
     assert "%(id)s" in str(opts["outtmpl"])
+    repo.close()
+
+
+def test_pornhub_job_dir_uses_porn_bucket(tmp_path: Path):
+    repo = JobRepository(tmp_path / "ph.db")
+    job = repo.enqueue("https://www.pornhub.com/view_video.php?viewkey=abc")
+    dest = resolve_download_output_dir(job)
+    assert dest.parent.name == "porn"
+    assert dest.parent.parent == downloads_dir()
+    assert "pornhub.com" not in dest.parts
     repo.close()
 
 
@@ -31,8 +44,8 @@ def test_x_com_job_dir_contains_x_com(tmp_path: Path):
     repo = JobRepository(tmp_path / "x.db")
     job = repo.enqueue("https://x.com/user/status/99")
     dest = resolve_download_output_dir(job)
-    assert dest.name == "x.com"
-    assert "x.com" in dest.parts
+    assert dest.parent.name == "x.com"
+    assert "downloads" in dest.parts
     dl = YtDlpDownloader(output_dir=dest)
     assert "x.com" in str(dl.build_opts()["paths"]["home"]).replace("\\", "/")
     repo.close()

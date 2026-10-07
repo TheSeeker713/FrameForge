@@ -61,6 +61,23 @@ def _path_under_library(missing: Path, library_root: Path | None) -> bool:
         return False
 
 
+def _find_download_media(
+    missing: Path,
+    by_name: dict[str, Path],
+    by_id: dict[str, Path],
+) -> Path | None:
+    found = by_name.get(missing.name.lower())
+    if found is None:
+        vid = youtube_id_from_filename(missing.name)
+        if vid:
+            hit = by_id.get(vid.lower())
+            if hit is not None and hit.suffix.lower() == missing.suffix.lower():
+                found = hit
+    if found is None or not found.is_file():
+        return None
+    return found
+
+
 def heal_job_download_paths(
     repo: JobRepository,
     *,
@@ -84,16 +101,43 @@ def heal_job_download_paths(
                 continue
             if not _path_under_library(missing, library_root):
                 continue
-            found = by_name.get(missing.name.lower())
+            found = _find_download_media(missing, by_name, by_id)
             if found is None:
-                vid = youtube_id_from_filename(missing.name)
-                if vid:
-                    hit = by_id.get(vid.lower())
-                    if hit is not None and hit.suffix.lower() == missing.suffix.lower():
-                        found = hit
-            if found is None or not found.is_file():
                 continue
             _update_job_paths(repo, job, missing, found)
+            healed += 1
+            break
+    return healed
+
+
+def remap_missing_download_paths(
+    repo: JobRepository,
+    *,
+    download_roots: list[Path] | None = None,
+) -> int:
+    """Point completed jobs at files after root→downloads layout moves."""
+    from frameforge.paths import download_scan_roots
+
+    roots = list(download_roots) if download_roots is not None else download_scan_roots()
+    by_name, by_id = index_download_media(roots)
+    healed = 0
+    for job in repo.list_jobs("completed", include_queue_hidden=True):
+        if job_media_file(job) is not None:
+            continue
+        for raw in (job.download_path, job.output_path):
+            if not raw:
+                continue
+            missing = Path(raw)
+            if missing.is_file():
+                continue
+            found = _find_download_media(missing, by_name, by_id)
+            if found is None:
+                continue
+            _update_job_paths(repo, job, missing, found)
+            opts = job.options()
+            out = opts.get("download_output_dir") if isinstance(opts, dict) else None
+            if out and not Path(str(out)).is_dir():
+                repo.merge_options(job.id, {"download_output_dir": str(found.parent)})
             healed += 1
             break
     return healed
@@ -165,8 +209,16 @@ def _update_job_paths(repo: JobRepository, job: Job, old: Path, new: Path) -> No
         kwargs["download_path"] = str(new)
     if job.output_path and paths_equal(job.output_path, old):
         kwargs["output_path"] = str(new)
-    if kwargs:
-        repo.set_paths(job.id, **kwargs)
+    # Prefer filling whichever path was missing after a layout move.
+    if not kwargs:
+        if job.download_path and not Path(job.download_path).is_file():
+            kwargs["download_path"] = str(new)
+        if job.output_path and not Path(job.output_path).is_file():
+            kwargs["output_path"] = str(new)
+        if not kwargs:
+            kwargs["download_path"] = str(new)
+            kwargs["output_path"] = str(new)
+    repo.set_paths(job.id, **kwargs)
 
 
 def move_into_library(
@@ -273,6 +325,63 @@ def move_path_into_library(
     if item.path != str(dest):
         item = store.update_item_path(item.id, dest)
     return IngestResult(item=item, moved=moved, source_path=src, dest_path=dest)
+
+
+def _path_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int:
+    """Show finished downloads in Library without moving the files.
+
+    When no library folder has been chosen and a finished file already lives
+    under the app root, use ``<FrameForge>/Library`` and finish onboarding so
+    the grid is not blocked on a move wizard. This only creates the Library
+    folder. It does not run folder repair or relocate site downloads.
+    A library folder that is set but not onboarded is left for that wizard.
+    """
+    remap_missing_download_paths(repo)
+    jobs = [
+        job
+        for job in repo.list_jobs("completed", include_queue_hidden=True)
+        if job_media_file(job) is not None
+    ]
+    if not jobs:
+        return 0
+    if store.root() is None:
+        from frameforge.layout import LIBRARY_DIR_NAME, ensure_library_tree
+        from frameforge.library.store import SETTING_ROOT
+        from frameforge.paths import frameforge_root
+
+        root = frameforge_root()
+        if any(_path_under(path, root) for job in jobs if (path := job_media_file(job)) is not None):
+            home = ensure_library_tree(root / LIBRARY_DIR_NAME)
+            store.set_setting(SETTING_ROOT, str(home))
+            store.mark_onboarded()
+    elif not store.is_onboarded():
+        return 0
+    added = 0
+    for job in jobs:
+        path = job_media_file(job)
+        if path is None:
+            continue
+        if store.get_by_job_id(job.id) is not None or store.get_by_path(path) is not None:
+            continue
+        store.add_item(
+            path=path,
+            title=job.title,
+            source=source_label_from_job(job),
+            job_id=job.id,
+            width=job.source_width,
+            height=job.source_height,
+            thumb_path=job.thumbnail_path,
+        )
+        added += 1
+    return added
 
 
 def ingest_completed_jobs(

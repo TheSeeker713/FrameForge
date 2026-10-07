@@ -244,25 +244,36 @@ def test_library_tab_label_and_onboarding_dialog(tmp_path: Path):
     src = _clip(tmp_path / "dl" / "ui.mp4")
     _completed_job(repo, src, title="UI clip")
     dlg = ui.on_library_opened()
+    assert src.is_file()
+    items = ui.library.list_items()
+    assert items
+    assert Path(items[0].path).resolve() == src.resolve()
+    assert ui.library_visible_count == 1
     assert dlg is not None
     assert dlg.data["step"] == "pick"
     assert ui.library.is_onboarded() is False
-    move_dlg = ui.apply_library_root(tmp_path / "Lib")
-    assert ui.library.is_onboarded() is False
-    assert ui.library.root() is not None
-    assert move_dlg is not None
-    assert move_dlg.data["step"] == "move"
-    assert move_dlg.data["pending"] >= 1
-    assert any("UI clip" in t for t in move_dlg.data["sample"])
-    ui.confirm_library_move()
-    assert ui.library.is_onboarded()
-    assert ui.library.list_items()
-    dest = Path(ui.library.list_items()[0].path)
-    assert dest.is_file()
-    assert dest.parent.name == "Uncategorized"
-    assert not src.exists()
-    assert ui.on_library_opened() is None
     ui.shutdown()
+
+
+def test_publish_indexes_site_download_in_place(tmp_path: Path, monkeypatch):
+    from frameforge.library.ingest import publish_completed_downloads
+
+    root = tmp_path / "FrameForge"
+    root.mkdir()
+    monkeypatch.setattr("frameforge.paths.frameforge_root", lambda: root)
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    src = _clip(root / "pornhub.com" / "clip.mp4")
+    _completed_job(repo, src, title="Site clip", url="https://www.pornhub.com/view_video.php?viewkey=abc")
+    added = publish_completed_downloads(repo, store)
+    assert added == 1
+    assert store.is_onboarded()
+    assert store.root() == (root / "Library").resolve()
+    assert src.is_file()
+    assert Path(store.list_items()[0].path).resolve() == src.resolve()
+    assert not (root / "videos").exists()
+    assert publish_completed_downloads(repo, store) == 0
+    repo.close()
 
 
 def test_onboarding_skip_keeps_download_files(tmp_path: Path):
@@ -278,10 +289,10 @@ def test_onboarding_skip_keeps_download_files(tmp_path: Path):
     ui.skip_library_onboarding()
     assert ui.library.is_onboarded()
     assert src.is_file()
-    assert ui.library.list_items() == []
-    empty = ui.library_empty
-    assert empty is not None
-    assert "Import" in str(empty.data.get("cta") or empty.content)
+    items = ui.library.list_items()
+    assert items
+    assert Path(items[0].path).resolve() == src.resolve()
+    assert ui.library_visible_count == 1
     ui.shutdown()
 
 

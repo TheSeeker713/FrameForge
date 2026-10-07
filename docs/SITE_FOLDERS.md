@@ -1,27 +1,32 @@
 # Site folders
 
-New FrameForge jobs write media into **per-site subfolders** under `%USERPROFILE%\Downloads\FrameForge\`. Existing jobs that already have a flat `download_output_dir` keep that path (no mass migration).
+New FrameForge jobs write media under **`downloads/<bucket>/<category>/`** inside the app root: `K:\JEREMY'S FILES\FrameForge\` when that drive is mounted, otherwise `%USERPROFILE%\Downloads\FrameForge\`. The database, cookies, and models stay at that root. Existing jobs that already have a non-legacy `download_output_dir` keep that path.
 
 ## Layout
 
 | Output | Path |
 |--------|------|
-| Downloads (new jobs) | `Downloads\FrameForge\<site_key>\` |
-| Upscaled | `Downloads\FrameForge\upscaled\<site_key>\` |
-| Converted MP3 | `Downloads\FrameForge\converted\<site_key>\` |
-| Thumbnails | `Downloads\FrameForge\thumbnails\` (global) |
-| Cookies | `Downloads\FrameForge\cookies\` (global) |
-| SQLite DB | `Downloads\FrameForge\frameforge.db` (global) |
+| Downloads (new jobs) | `<root>\downloads\<bucket>\<category>\` |
+| Adult / pornographic | `<root>\downloads\porn\<category>\` |
+| Streaming (YouTube, X, …) | `<root>\downloads\youtube\<category>\`, `…\x.com\…`, … |
+| Upscaled | `<root>\downloads\upscaled\<bucket>\` |
+| Converted MP3 | `<root>\downloads\converted\<bucket>\` |
+| Thumbnails | `<root>\thumbnails\` (global) |
+| Cookies | `<root>\cookies\` (global) |
+| SQLite DB | `<root>\database\frameforge.db` (global) |
 | Temp / models / archive | unchanged global folders |
 
-Examples:
+Default category when none is set: `uncategorized`.
 
-- `%USERPROFILE%\Downloads\FrameForge\youtube\`
-- `%USERPROFILE%\Downloads\FrameForge\x.com\`
-- `%USERPROFILE%\Downloads\FrameForge\reddit.com\`
-- `%USERPROFILE%\Downloads\FrameForge\other\` (unparseable URL)
+Bulk TXT/MD import: a heading line without a URL (for example `Squirting women.`) becomes the category for the URLs that follow.
 
-## `site_key` rules
+Examples (with K: mounted):
+
+- `K:\JEREMY'S FILES\FrameForge\downloads\youtube\uncategorized\`
+- `K:\JEREMY'S FILES\FrameForge\downloads\porn\squirting women\`
+- `K:\JEREMY'S FILES\FrameForge\downloads\x.com\uncategorized\`
+
+## `site_key` and bucket rules
 
 1. Prefer the job’s extractor label when it is not generic; otherwise parse the URL host.
 2. Lowercase; strip leading `www.`.
@@ -29,9 +34,12 @@ Examples:
    - `youtube.com`, `m.youtube.com`, `youtu.be`, `music.youtube.com`, extractor `Youtube` → `youtube`
    - `twitter.com`, `mobile.twitter.com`, `x.com` → `x.com`
    - `reddit.com` / `old.reddit.com` → `reddit.com`
-4. Sanitize for Windows folders: strip `<>:"/\|?*` and control characters; trim spaces and trailing dots. Empty or reserved names (`downloads`, `upscaled`, `converted`, `temp`, `models`, `archive`, `cookies`, `thumbnails`) → `other`.
-5. Directories are created on demand when a download, upscale, or convert actually writes.
+4. Adult hosts (`pornhub.com`, `xvideos.com`, …) keep a site_key for badges, but the **download bucket** is always `porn`.
+5. Sanitize for Windows folders: strip `<>:"/\|?*` and control characters; trim spaces and trailing dots. Empty or reserved names → `other` (site) or `uncategorized` (category).
+6. Directories are created on demand when a download, upscale, or convert actually writes.
 
-Pause/resume keeps the persisted `download_output_dir` so partials stay in the same site folder.
+On startup, leftover root-level site folders (old `youtube\`, `pornhub.com\`, …) are moved into `downloads/<bucket>/uncategorized` when they contain no in-flight `.part` / `.aria2` files.
 
-Open folder / Reveal use the job’s stored file path, so they follow site subfolders automatically. Queue rows show the site key as a badge when no higher-priority badge (paused / recommended / playlist) is present.
+Pause/resume keeps the persisted `download_output_dir` so partials stay in the same folder (legacy root paths are remapped for pending jobs).
+
+Open folder / Reveal use the job’s stored file path. Queue rows show the site key as a badge when no higher-priority badge is present.

@@ -3,18 +3,9 @@
 Extracts http(s) video URLs from text and markdown lists, then previews
 and enqueues them as **pending** (never auto-starts downloads).
 
-Parser notes
-------------
-Previously: one URL per line via ``URL_RE.search``, markdown ``[text](url)``,
-and ``Title | URL``. Lines starting with ``#`` were skipped entirely (so
-``# https://youtube.com/watch?v=…`` yielded nothing). Files were read as
-UTF-8 only, so UTF-16 Notepad “Unicode” lists decoded to NUL-padded text
-and matched **zero** URLs.
-
-Now: find **all** ``https?://`` matches per line (and markdown link groups),
-strip trailing punctuation, keep unique order, decode UTF-8/UTF-16, and
-still honor ``Title | URL`` plus ``[text](url)`` titles. Known hosts
-without a scheme (youtube.com, youtu.be, x.com) get ``https://`` prepended.
+Heading lines without a URL become the project category for following
+links (``downloads/<bucket>/<category>/``). Adult hosts use the ``porn``
+bucket; streaming sites use their site key (``youtube``, ``x.com``, …).
 """
 
 from __future__ import annotations
@@ -37,12 +28,15 @@ BARE_HOST_RE = re.compile(
     re.IGNORECASE,
 )
 _TRAIL_PUNCT = ".,;:)]>\"'"
+_NUMBERED_TITLE_RE = re.compile(r"^\d+([.)])\s*$")
+_MD_HEADING_RE = re.compile(r"^#{1,6}\s+(.+)$")
 
 
 @dataclass
 class ImportItem:
     url: str
     title: str | None = None
+    category: str | None = None
 
 
 @dataclass
@@ -101,10 +95,47 @@ def _ensure_scheme(url: str) -> str | None:
     return None
 
 
+def _line_has_url(line: str) -> bool:
+    if URL_RE.search(line) or MD_LINK_RE.search(line) or BARE_HOST_RE.search(line):
+        return True
+    return False
+
+
+def _heading_category(line: str) -> str | None:
+    """Return a project category from a heading line that has no URL."""
+    text = line.strip()
+    if not text or _line_has_url(text):
+        return None
+    md = _MD_HEADING_RE.match(text)
+    if md:
+        text = md.group(1).strip()
+    elif text.startswith("#"):
+        # Comment-only line without a URL — not a category.
+        return None
+    # Skip bare list markers / separators.
+    if re.fullmatch(r"[-*_]{2,}", text):
+        return None
+    if re.fullmatch(r"\d+([.)])?", text):
+        return None
+    from frameforge.paths_site import sanitize_category
+
+    return sanitize_category(text)
+
+
+def _clean_title(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    title = raw.strip()
+    if not title or _NUMBERED_TITLE_RE.match(title):
+        return None
+    return title
+
+
 def parse_lines(text: str) -> list[ImportItem]:
-    """Extract unique http(s) URLs in document order."""
+    """Extract unique http(s) URLs in document order, with category headings."""
     items: list[ImportItem] = []
     seen: set[str] = set()
+    current_category: str | None = None
 
     def add(raw: str, title: str | None = None) -> None:
         url = _ensure_scheme(_clean_url(raw))
@@ -118,11 +149,16 @@ def parse_lines(text: str) -> list[ImportItem]:
                         break
             return
         seen.add(url)
-        items.append(ImportItem(url=url, title=title))
+        items.append(ImportItem(url=url, title=title, category=current_category))
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
+            continue
+
+        heading = _heading_category(line)
+        if heading is not None:
+            current_category = heading
             continue
 
         pipe_title: str | None = None
@@ -131,10 +167,10 @@ def parse_lines(text: str) -> list[ImportItem]:
             left, right = left.strip(), right.strip()
             if right.lower().startswith(("http://", "https://", "www.", "youtube.", "youtu.be")):
                 if left and not left.lower().startswith("http"):
-                    pipe_title = left
+                    pipe_title = _clean_title(left)
 
         for md in MD_LINK_RE.finditer(line):
-            add(md.group(2), md.group(1).strip() or None)
+            add(md.group(2), _clean_title(md.group(1)))
 
         for found in URL_RE.finditer(line):
             before = line[: found.start()].strip(" \t-:*#")
@@ -147,7 +183,7 @@ def parse_lines(text: str) -> list[ImportItem]:
                 and "[" not in before
                 and not before.startswith("|")
             ):
-                title = before
+                title = _clean_title(before)
             add(found.group(0), title)
 
         for found in BARE_HOST_RE.finditer(line):
@@ -181,11 +217,16 @@ def confirm_add(
     upscale: bool = False,
 ) -> list[int]:
     from frameforge.download.metadata import site_label_from_url
+    from frameforge.paths import download_dir_for_site
+    from frameforge.paths_site import DEFAULT_CATEGORY, sanitize_category, site_key_from_url
 
     ids: list[int] = []
     for item in preview.items:
         if repo.url_in_queue(item.url) or repo.archive_lookup(item.url) is not None:
             continue
+        site_key = site_key_from_url(item.url)
+        category = sanitize_category(item.category) if item.category else DEFAULT_CATEGORY
+        out_dir = download_dir_for_site(site_key, category)
         # Bulk: inexpensive hostname label only (no per-URL network probe)
         job = repo.enqueue(
             item.url,
@@ -194,6 +235,11 @@ def confirm_add(
             priority=priority,
             format_preference=format_preference,
             upscale=upscale,
+            options={
+                "download_output_dir": str(out_dir),
+                "download_category": category,
+                "site_key": site_key,
+            },
         )
         ids.append(job.id)
     return ids

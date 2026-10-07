@@ -250,15 +250,9 @@ class YtDlpDownloader:
         self.recovery_steps: list[str] = []
 
     def _staging_dir(self) -> Path:
-        from frameforge.paths import frameforge_root, temp_dir
+        from frameforge.paths import download_staging_dir
 
-        dest = temp_dir() / "dl"
-        try:
-            Path(self.output_dir).resolve().relative_to(frameforge_root().resolve())
-        except ValueError:
-            dest = Path(self.output_dir) / ".ff-temp"
-        dest.mkdir(parents=True, exist_ok=True)
-        return dest
+        return download_staging_dir(Path(self.output_dir))
 
     def _yt_paths(self) -> dict[str, str]:
         self.output_dir.mkdir(parents=True, exist_ok=True)

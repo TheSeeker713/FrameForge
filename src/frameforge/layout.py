@@ -1,6 +1,6 @@
 """FrameForge directory contract: never dump into a bare picked folder.
 
-Policy: keep per-site folders (youtube/, x.com/, …) as media homes.
+Policy: media lives under ``downloads/<bucket>/<category>/`` (porn, youtube, …).
 Repair moves loose thumbs, SQLite files, root-level videos, leftover parts into
 temp/junk, and info.json into metadata/. It never Recycles.
 """
@@ -35,6 +35,8 @@ CONTRACT_DIRS = frozenset(
         "upscaled",
         "converted",
         "metadata",
+        "library",
+        "videos",
         PRIVATE_FOLDER.lower(),
     }
 )
@@ -140,13 +142,25 @@ def _count_junk(folders: list[Path]) -> int:
 
 
 def _media_dirs(root: Path) -> list[Path]:
+    """Bucket/category trees under downloads/, plus any leftover root site folders."""
     found: list[Path] = []
     if not root.is_dir():
         return found
+    downloads = root / "downloads"
+    if downloads.is_dir():
+        for bucket in downloads.iterdir():
+            if not bucket.is_dir():
+                continue
+            if bucket.name.lower() in CONTRACT_DIRS:
+                continue
+            found.append(bucket)
+            for category in bucket.iterdir():
+                if category.is_dir() and category.name.lower() not in CONTRACT_DIRS:
+                    found.append(category)
     for child in root.iterdir():
         if not child.is_dir():
             continue
-        if child.name.lower() in CONTRACT_DIRS:
+        if child.name.lower() in CONTRACT_DIRS or child.name.lower() == "downloads":
             continue
         found.append(child)
     return found
@@ -179,11 +193,12 @@ def repair_frameforge_tree(
     root.mkdir(parents=True, exist_ok=True)
     thumbs = root / "thumbnails"
     database = root / "database"
-    videos = root / "videos"
+    videos = root / "downloads" / "videos"
     metadata = root / "metadata"
     junk = root / "temp" / "junk"
     thumbs.mkdir(parents=True, exist_ok=True)
     database.mkdir(parents=True, exist_ok=True)
+    (root / "downloads").mkdir(parents=True, exist_ok=True)
     videos.mkdir(parents=True, exist_ok=True)
     metadata.mkdir(parents=True, exist_ok=True)
     junk.mkdir(parents=True, exist_ok=True)

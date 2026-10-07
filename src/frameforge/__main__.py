@@ -41,12 +41,12 @@ def main(argv: list[str] | None = None) -> int:
         from frameforge.db.repository import JobRepository
         from frameforge.library.reset import reset_library_state
         from frameforge.library.store import LibraryStore
-        from frameforge.paths import db_path, frameforge_root
+        from frameforge.paths import db_path, download_scan_roots
 
         ensure_output_tree()
         repo = JobRepository(db_path())
         store = LibraryStore(repo)
-        reset_library_state(store, download_roots=[frameforge_root()])
+        reset_library_state(store, download_roots=download_scan_roots())
         repo.close()
         print("Library index and onboarding flags cleared. Media files were not deleted.")
         return 0

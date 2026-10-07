@@ -9,6 +9,10 @@ alwaysApply: false
 - Accept `.txt` and `.md` files.
 - Extract every valid http/https URL with a robust regex (`findall`, not one-per-line `search`).
 - Ignore empty lines. `#` comments without a URL are ignored; lines like `# https://…` still yield the URL.
+- Heading lines without a URL set the project category for following links (`downloads/<bucket>/<category>/`).
+- Adult hosts enqueue under `downloads/porn/<category>/`; streaming sites under `downloads/<site>/<category>/`.
 - Support: bare URLs (watch, /shorts/, youtu.be, query strings), markdown `[text](url)`, `Title | URL`, inline URLs, UTF-8 and UTF-16 files.
+- Do not treat bare numbered markers (`1.`, `2)`) as titles.
 - Dedupe against existing queue URLs and download archive.
 - Always preview counts and require confirmation before enqueue. Never auto-start.
+- Stamp `download_output_dir`, `download_category`, and `site_key` on enqueue.

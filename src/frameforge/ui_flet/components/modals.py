@@ -58,6 +58,17 @@ def format_dialog(*, on_apply: Any, on_cancel: Any) -> ft.AlertDialog:
     return dlg
 
 
+def _auth_button(label: str, on_click: Any, *, filled: bool = False) -> ft.Control:
+    if filled:
+        return ft.FilledButton(
+            content=label,
+            bgcolor=COLORS["accent"],
+            on_click=on_click,
+            width=440,
+        )
+    return ft.OutlinedButton(content=label, on_click=on_click, width=440)
+
+
 def authenticate_dialog(
     domain: str,
     *,
@@ -71,13 +82,17 @@ def authenticate_dialog(
     prefill: str = "",
     error: str = "",
 ) -> ft.AlertDialog:
+    initial = (prefill or "").strip()
+    if not initial and domain and domain != "site":
+        initial = domain
     field = ft.TextField(
-        value=prefill or domain or "",
-        hint_text="https://example.com/ or example.com",
+        value=initial,
+        label="Site",
+        hint_text="example.com or a page URL",
         border_color=COLORS["border"],
         focused_border_color=COLORS["accent"],
     )
-    err = ft.Text(error, color=COLORS["danger"], visible=bool(error))
+    err = ft.Text(error, color=COLORS["danger"], visible=bool(error), selectable=True)
     from frameforge.download.cookies import cookie_store_status
 
     store = cookie_store_status()
@@ -103,40 +118,39 @@ def authenticate_dialog(
         title=ft.Text("Authenticate site"),
         content=ft.Column(
             [
-                ft.Text(f"Authenticate {domain}", weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "Prefer Firefox import, or a Netscape cookies.txt from an extension. "
-                    "Chrome often fails on modern Windows (App-Bound Encryption / DPAPI) — "
-                    "FrameForge cannot decrypt those cookies. Log in in Firefox first if the site shows a bot check.",
+                    "Log in with Firefox if the site shows a bot check, then import those cookies. "
+                    "Chrome on Windows usually cannot be read (App-Bound Encryption).",
                     color=COLORS["text_secondary"],
+                    size=13,
                 ),
                 cookies_path,
                 cookies_list,
                 ft.OutlinedButton(content="Open cookies folder", on_click=_open_cookies),
                 field,
-                ft.ListTile(title=ft.Text("Import from Firefox (recommended)"), on_click=on_firefox),
-                ft.ListTile(title=ft.Text("Choose cookies.txt file"), on_click=on_txt),
+                _auth_button("Import from Firefox (recommended)", on_firefox, filled=True),
+                _auth_button("Choose cookies.txt file", on_txt),
                 ft.Text(
-                    "Export steps: open the site in Firefox → log in → use a cookies.txt extension "
-                    "(e.g. “Get cookies.txt LOCALLY”) → save the file → Choose cookies.txt file here.",
+                    "Export: open the site in Firefox, log in, save a Netscape cookies.txt "
+                    "with an extension such as “Get cookies.txt LOCALLY”, then choose that file.",
                     color=COLORS["text_secondary"],
                     size=12,
                 ),
-                ft.ListTile(title=ft.Text("Import from Edge"), on_click=on_edge),
-                ft.ListTile(
-                    title=ft.Text("Import from Chrome (often blocked by App-Bound Encryption)"),
-                    on_click=on_chrome,
-                ),
+                _auth_button("Import from Edge", on_edge),
+                _auth_button("Import from Chrome", on_chrome),
                 err,
             ],
-            width=420,
-            spacing=8,
+            width=440,
+            height=420,
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
         ),
         actions=[
             ft.OutlinedButton(content="Copy error", on_click=on_copy),
             ft.OutlinedButton(content="Cancel", on_click=on_close),
             ft.FilledButton(content="Done", bgcolor=COLORS["accent"], on_click=on_close),
         ],
+        actions_alignment=ft.MainAxisAlignment.END,
         bgcolor=COLORS["surface"],
         on_dismiss=on_close,
     )
@@ -190,27 +204,56 @@ def playlist_dialog(
     on_cancel: Any,
     on_select_all: Any | None = None,
     on_select_none: Any | None = None,
+    selected_count: int | None = None,
 ) -> ft.AlertDialog:
     n = len(entries)
+    chosen = n if selected_count is None else max(0, int(selected_count))
+    enqueue_btn = ft.FilledButton(
+        content=f"Enqueue selected ({chosen})",
+        bgcolor=COLORS["accent"],
+        on_click=on_enqueue,
+    )
+    enqueue_btn.disabled = chosen <= 0
+
+    def _select_all(e: Any = None) -> None:
+        if on_select_all:
+            on_select_all()
+        enqueue_btn.content = f"Enqueue selected ({n})"
+        enqueue_btn.disabled = n <= 0
+        dlg.data["selected_count"] = n
+
+    def _select_none(e: Any = None) -> None:
+        if on_select_none:
+            on_select_none()
+        enqueue_btn.content = "Enqueue selected (0)"
+        enqueue_btn.disabled = True
+        dlg.data["selected_count"] = 0
+
     dlg = ft.AlertDialog(
         modal=False,
         title=ft.Text("Playlist"),
         content=ft.Column(
             [
                 ft.Text(f"{title} • {n} videos found", color=COLORS["text_secondary"]),
-                ft.TextButton(content="Select all", on_click=lambda e: on_select_all and on_select_all()),
-                ft.TextButton(content="Select none", on_click=lambda e: on_select_none and on_select_none()),
+                ft.TextButton(content="Select all", on_click=_select_all, data={"kind": "select_all"}),
+                ft.TextButton(content="Select none", on_click=_select_none, data={"kind": "select_none"}),
             ],
             width=440,
         ),
         actions=[
-            ft.FilledButton(content=f"Enqueue selected ({n})", bgcolor=COLORS["accent"], on_click=on_enqueue),
+            enqueue_btn,
             ft.OutlinedButton(content="Cancel", on_click=on_cancel),
         ],
         bgcolor=COLORS["surface"],
         on_dismiss=on_cancel,
     )
-    dlg.data = {"on_enqueue": on_enqueue, "on_cancel": on_cancel}
+    dlg.data = {
+        "on_enqueue": on_enqueue,
+        "on_cancel": on_cancel,
+        "selected_count": chosen,
+        "total": n,
+        "enqueue": enqueue_btn,
+    }
     return dlg
 
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.14
+
+- Library / Queue / History: working **Select all** (and Clear selection) so bulk Add to collection, Remove, Delete files, Upscale, Private, re-download, and clear actually apply to every visible clip.
+- Downloads live under `downloads/<bucket>/<category>/` (adult → `downloads/porn/<category>/`); leftover root site folders migrate into that tree. Completed downloads index into Library in place. See [SITE_FOLDERS.md](docs/SITE_FOLDERS.md), [FOLDER_LAYOUT.md](docs/FOLDER_LAYOUT.md), [LIBRARY.md](docs/LIBRARY.md).
+- App root on this machine is `K:\JEREMY'S FILES\FrameForge` when that drive is mounted (database, models, cookies included). Real-ESRGAN x4plus ONNX install script uses the Qualcomm release zip (old GitHub URL 404). Authenticate-site dialog layout no longer overlaps action buttons.
+
 ## 0.6.13
 
 - P0: silent Firefox cookie recovery no longer hangs the sequential worker. Hard **60s** total timeout (process tree killed), file-only Netscape validate (no live `extract_info` probe), unknown failures no longer re-import just because a cookie file exists. Timeout/import fail → fail-pause once; Download all / Retry / Skip / Stop clear the halt latch. `auto_cookie_recovery` OFF is the pre-recovery download path (no Firefox wait). Recovery exceptions are logged and fail the job — they do not kill the worker thread. See [FAIL_PAUSE.md](docs/FAIL_PAUSE.md), [COOKIES.md](docs/COOKIES.md).

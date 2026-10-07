@@ -1,4 +1,4 @@
-"""Per-site folder keys derived from job URL / extractor."""
+"""Per-site download buckets and category folder keys."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-# Host / extractor aliases → folder name under the FrameForge root.
+# Host / extractor aliases → streaming site folder under downloads/.
 SITE_ALIASES: dict[str, str] = {
     "youtube.com": "youtube",
     "m.youtube.com": "youtube",
@@ -29,12 +29,42 @@ SITE_ALIASES: dict[str, str] = {
     "vm.tiktok.com": "tiktok.com",
     "vxtwitter.com": "x.com",
     "fxtwitter.com": "x.com",
+    "pornhub.com": "pornhub.com",
+    "www.pornhub.com": "pornhub.com",
+    "pornhub": "pornhub.com",
+    "pornhubpremium.com": "pornhub.com",
+    "xvideos.com": "xvideos.com",
+    "www.xvideos.com": "xvideos.com",
+    "xnxx.com": "xnxx.com",
+    "www.xnxx.com": "xnxx.com",
+    "xhamster.com": "xhamster.com",
+    "www.xhamster.com": "xhamster.com",
 }
+
+# Adult hosts land under downloads/porn/{category}, not downloads/pornhub.com/.
+PORN_SITE_KEYS: frozenset[str] = frozenset(
+    {
+        "pornhub.com",
+        "pornhubpremium.com",
+        "xvideos.com",
+        "xnxx.com",
+        "xhamster.com",
+        "redtube.com",
+        "youporn.com",
+        "tube8.com",
+        "spankbang.com",
+        "chaturbate.com",
+        "onlyfans.com",
+    }
+)
+
+DEFAULT_CATEGORY = "uncategorized"
+PORN_BUCKET = "porn"
 
 _ILLEGAL_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _GENERIC_EXTRACTORS = frozenset({"", "generic", "unknown", "html5", "genericweb"})
 
-# Do not let a site_key collide with global FrameForge subdirs.
+# Do not let a site_key collide with global FrameForge / downloads subdirs.
 _RESERVED = frozenset(
     {
         "downloads",
@@ -47,6 +77,8 @@ _RESERVED = frozenset(
         "thumbnails",
         "database",
         "videos",
+        "metadata",
+        "library",
         "frameforge.db",
     }
 )
@@ -64,12 +96,40 @@ def sanitize_site_key(raw: str | None) -> str:
     return text[:64]
 
 
+def sanitize_category(raw: str | None) -> str:
+    """Windows-safe project category folder under a download bucket."""
+    text = str(raw or "").strip()
+    text = _ILLEGAL_RE.sub("", text)
+    text = text.strip(" .")
+    # Strip a trailing sentence period often used in list headings.
+    if text.endswith("."):
+        text = text[:-1].rstrip(" .")
+    text = re.sub(r"\s+", " ", text)
+    if not text:
+        return DEFAULT_CATEGORY
+    lowered = text.lower()
+    if lowered in _RESERVED or lowered == DEFAULT_CATEGORY:
+        return DEFAULT_CATEGORY if lowered == DEFAULT_CATEGORY else sanitize_site_key(text)
+    return text[:80]
+
+
 def _apply_alias(host_or_label: str) -> str:
     key = sanitize_site_key(host_or_label)
     if key == "other":
         return key
     if key in SITE_ALIASES:
         return SITE_ALIASES[key]
+    return key
+
+
+def download_bucket_for_site_key(site_key: str | None) -> str:
+    """Top-level folder under downloads/: porn, youtube, x.com, …"""
+    raw = str(site_key or "").strip().lower()
+    if raw == PORN_BUCKET:
+        return PORN_BUCKET
+    key = sanitize_site_key(site_key)
+    if key in PORN_SITE_KEYS:
+        return PORN_BUCKET
     return key
 
 
@@ -103,7 +163,9 @@ def site_key_from_job(job: Any) -> str:
     opts = job.options() if hasattr(job, "options") else {}
     cached = opts.get("site_key") if isinstance(opts, dict) else None
     if cached:
-        return sanitize_site_key(str(cached))
+        key = sanitize_site_key(str(cached))
+        if key != PORN_BUCKET:
+            return key
 
     from_ext = site_key_from_extractor(getattr(job, "extractor", None))
     if from_ext:
@@ -118,6 +180,17 @@ def site_key_from_job(job: Any) -> str:
             continue
         parent = Path(str(raw)).parent.name
         key = _apply_alias(parent)
-        if key != "other":
+        if key != "other" and key != PORN_BUCKET and key != DEFAULT_CATEGORY:
             return key
     return "other"
+
+
+def category_from_job(job: Any) -> str:
+    opts = job.options() if hasattr(job, "options") else {}
+    if not isinstance(opts, dict):
+        return DEFAULT_CATEGORY
+    for key in ("download_category", "project_category", "category"):
+        raw = opts.get(key)
+        if raw:
+            return sanitize_category(str(raw))
+    return DEFAULT_CATEGORY

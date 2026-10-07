@@ -47,7 +47,7 @@ def test_repair_moves_loose_thumbs_and_db(tmp_path: Path):
     assert not (root / "shot.jpg").exists()
     assert (root / "database" / "frameforge.db").is_file()
     assert not (root / "frameforge.db").exists()
-    assert (root / "videos" / "clip.mp4").is_file()
+    assert (root / "downloads" / "videos" / "clip.mp4").is_file()
     assert not (root / "clip.mp4").exists()
 
 
@@ -58,7 +58,7 @@ def test_db_path_is_under_database_dir():
 
 def test_repair_sweeps_site_folder_thumbs_keeps_videos(tmp_path: Path):
     root = tmp_path / "FrameForge"
-    yt = root / "youtube"
+    yt = root / "downloads" / "youtube" / "uncategorized"
     yt.mkdir(parents=True)
     (yt / "clip.mp4").write_bytes(b"media")
     (yt / "clip.webp").write_bytes(b"thumb")
@@ -78,7 +78,7 @@ def test_repair_sweeps_site_folder_thumbs_keeps_videos(tmp_path: Path):
 
 def test_repair_site_folders_false_leaves_youtube_thumbs(tmp_path: Path):
     root = tmp_path / "FrameForge"
-    yt = root / "youtube"
+    yt = root / "downloads" / "youtube" / "uncategorized"
     yt.mkdir(parents=True)
     (yt / "clip.webp").write_bytes(b"thumb")
     (yt / "clip.mp4").write_bytes(b"media")
@@ -91,7 +91,7 @@ def test_repair_updates_job_and_library_thumb_paths(tmp_path: Path):
     from tests.test_library import _clip, _completed_job
 
     root = tmp_path / "FrameForge"
-    yt = root / "youtube"
+    yt = root / "downloads" / "youtube" / "uncategorized"
     yt.mkdir(parents=True)
     thumb = yt / "show.webp"
     thumb.write_bytes(b"thumb")
@@ -139,7 +139,7 @@ def test_repair_summary_dialog_shows_counts():
 
 def test_repair_relocates_part_aria2_and_info_json(tmp_path: Path):
     root = tmp_path / "FrameForge"
-    yt = root / "youtube"
+    yt = root / "downloads" / "youtube" / "uncategorized"
     yt.mkdir(parents=True)
     (yt / "clip.mp4").write_bytes(b"media")
     (yt / "clip.mp4.part").write_bytes(b"partial")

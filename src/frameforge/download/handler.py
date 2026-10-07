@@ -18,21 +18,31 @@ log = logging.getLogger(__name__)
 
 
 def resolve_download_output_dir(job: Job, *, fallback: Path | None = None) -> Path:
-    """Site folder for new jobs; keep resume paths and explicit non-default output dirs."""
+    """``downloads/<bucket>/<category>/`` for new jobs; keep in-progress resume paths."""
+    from frameforge.paths import is_legacy_root_media_dir
+    from frameforge.paths_site import category_from_job
+
     opts = job.options()
     existing = opts.get("download_output_dir")
+    status = getattr(job, "status", None)
     if existing:
         dest = Path(existing)
+        # Pending jobs stamped with the old root site folders get remapped.
+        if is_legacy_root_media_dir(dest) and status in {None, "pending", "failed", "cancelled"}:
+            dest = download_dir_for_site(site_key_from_job(job), category_from_job(job))
         dest.mkdir(parents=True, exist_ok=True)
         return dest
     if fallback is not None:
         try:
-            if fallback.resolve() != downloads_dir().resolve():
+            if (
+                fallback.resolve() != downloads_dir().resolve()
+                and not is_legacy_root_media_dir(fallback)
+            ):
                 fallback.mkdir(parents=True, exist_ok=True)
                 return fallback
         except OSError:
             pass
-    dest = download_dir_for_site(site_key_from_job(job))
+    dest = download_dir_for_site(site_key_from_job(job), category_from_job(job))
     dest.mkdir(parents=True, exist_ok=True)
     return dest
 
@@ -62,6 +72,8 @@ def make_download_handler(
         if process_registry is not None and process_registry.was_paused(job.id):
             raise DownloadPaused("paused")
 
+        from frameforge.paths_site import category_from_job
+
         out_dir = resolve_download_output_dir(job, fallback=dl.output_dir)
         dl.output_dir = out_dir
         repo.merge_options(
@@ -69,6 +81,7 @@ def make_download_handler(
             {
                 "download_output_dir": str(out_dir),
                 "site_key": site_key_from_job(job),
+                "download_category": category_from_job(job),
             },
         )
 

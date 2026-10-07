@@ -218,6 +218,7 @@ class FrameForgeUi:
         self.library_body: ft.Column | None = None
         self.thumbs_grid: ft.GridView | None = None
         self.library_visible_count: int = 0
+        self._library_visible_ids: list[int] = []
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
         self.library_sort: str = "date"
@@ -501,8 +502,17 @@ class FrameForgeUi:
             build_controls_on_demand=False,
         )
         self.thumbs_grid = self.library_grid
-        self.library_grid_host = ft.Container(expand=True, content=self.library_grid)
-        self.library_empty = ft.Container(visible=False, expand=True)
+        self.library_grid_host = ft.Container(
+            expand=True,
+            bgcolor=COLORS["app_bg"],
+            content=self.library_grid,
+        )
+        self.library_empty = ft.Container(
+            visible=False,
+            expand=True,
+            bgcolor=COLORS["app_bg"],
+            alignment=ft.Alignment.CENTER,
+        )
         self.library_stack = ft.Stack(
             [self.library_grid_host, self.library_empty],
             expand=True,
@@ -515,8 +525,24 @@ class FrameForgeUi:
             spacing=8,
         )
         self.floating = ft.Container(visible=False)
+        from frameforge.paths import downloads_dir
+
+        download_root = downloads_dir()
+        self.download_location = ft.Row(
+            [
+                ft.Text(
+                    f"Downloads save to {download_root}",
+                    size=12,
+                    color=COLORS["text_secondary"],
+                    selectable=True,
+                    expand=True,
+                ),
+                ft.TextButton(content="Open folder", on_click=self.open_downloads_folder),
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
         queue_body = ft.Column(
-            [self.queue_chrome, self.floating, self.queue_list],
+            [self.download_location, self.queue_chrome, self.floating, self.queue_list],
             expand=True,
             spacing=8,
         )
@@ -525,6 +551,10 @@ class FrameForgeUi:
                 ft.TextButton(content="All", on_click=lambda _e: self.set_history_filter(None)),
                 ft.TextButton(content="Completed", on_click=lambda _e: self.set_history_filter("completed")),
                 ft.TextButton(content="Failed", on_click=lambda _e: self.set_history_filter("failed")),
+                ft.OutlinedButton(
+                    content="Select all",
+                    on_click=lambda _e: self.select_all_history(),
+                ),
                 ft.OutlinedButton(
                     content="Re-download selected",
                     on_click=lambda _e: self.redownload_history(),
@@ -591,6 +621,7 @@ class FrameForgeUi:
             on_download_all=self.download_all_pending,
             on_retry_failed=self.retry_all_failed,
             on_clear_finished=self.clear_finished,
+            on_select_all=self.select_all_queue,
             on_clear_selected=self.clear_selected,
             on_undo=self.undo_clear,
             on_pause=self.pause_active,
@@ -651,7 +682,9 @@ class FrameForgeUi:
         if self.queue_list is None:
             return
         if not jobs:
-            self.queue_list.controls = [empty_queue_state()]
+            from frameforge.paths import downloads_dir
+
+            self.queue_list.controls = [empty_queue_state(download_root=str(downloads_dir()))]
         else:
             self.queue_list.controls = [
                 build_job_card(
@@ -797,6 +830,10 @@ class FrameForgeUi:
             self._activity_note = None
             self._idle_reason = None
         self.refresh_queue()
+        completed = self.repo.count_by_status("completed", include_queue_hidden=True)
+        if completed != getattr(self, "_library_seen_completed", None):
+            self._library_seen_completed = completed
+            self.refresh_library(publish=True)
         self._sync_header()
         if self.page is not None:
             self.last_chrome = apply_page_chrome(self.page, set_size=False)
@@ -1050,8 +1087,17 @@ class FrameForgeUi:
         except RevealError:
             self._show_toast("Download folder not found")
 
+    def open_downloads_folder(self, _e: Any = None) -> None:
+        from frameforge.paths import downloads_dir
+        from frameforge.util.reveal import open_folder
+
+        root = downloads_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        open_folder(root, launch=self.reveal_launch)
+
     def open_folder_selected(self) -> None:
-        from frameforge.util.reveal import RevealError, open_job_folder
+        from frameforge.download.handler import resolve_download_output_dir
+        from frameforge.util.reveal import RevealError, open_folder, open_job_folder
 
         ids = sorted(self.selected_ids)
         if not ids:
@@ -1060,7 +1106,8 @@ class FrameForgeUi:
         try:
             open_job_folder(job, launch=self.reveal_launch)
         except RevealError:
-            pass
+            dest = resolve_download_output_dir(job)
+            open_folder(dest, launch=self.reveal_launch)
 
     def reveal_file_selected(self) -> None:
         from frameforge.util.reveal import RevealError, reveal_job_file
@@ -1084,6 +1131,20 @@ class FrameForgeUi:
             j.id for j in self.queue_jobs() if j.upscale_recommended and j.status == "completed"
         }
         self.refresh_queue(force=True)
+
+    def select_all_queue(self, _e: Any = None) -> None:
+        self.selected_ids = {j.id for j in self.queue_jobs()}
+        self.refresh_queue(force=True)
+
+    def select_all_history(self, _e: Any = None) -> None:
+        jobs = self.repo.list_history(
+            status=self.history_status,
+            search=self.history_search or None,
+            domain=self.history_domain,
+        )
+        self.selected_ids = {j.id for j in jobs}
+        self.refresh_history()
+        self._sync_floating()
 
     def handle_overflow(self, job_id: int, action: str) -> None:
         self.selected_ids = {job_id}
@@ -1183,9 +1244,9 @@ class FrameForgeUi:
         page = self.page
         if page is None or page.__class__.__name__ == "FakePage":
             return []
-        from frameforge.paths import frameforge_root
+        from frameforge.paths import download_scan_roots
 
-        return [frameforge_root()]
+        return download_scan_roots()
 
     def _pending_disk_videos(self):
         from frameforge.library.scan import download_videos_not_in_library
@@ -1194,11 +1255,18 @@ class FrameForgeUi:
             return []
         return download_videos_not_in_library(self.library, roots=self._migrate_disk_roots())
 
-    def refresh_library(self) -> None:
+    def refresh_library(self, *, publish: bool = False) -> None:
         if self.library_grid is None:
             return
         from frameforge.library.scan import list_playable_items, orphan_videos
 
+        if publish:
+            from frameforge.library.ingest import publish_completed_downloads
+
+            try:
+                publish_completed_downloads(self.repo, self.library)
+            except Exception:
+                log.exception("Failed to publish completed downloads into Library")
         try:
             items = list_playable_items(
                 self.library,
@@ -1217,6 +1285,13 @@ class FrameForgeUi:
             log.exception("Failed to scan library folder for orphans")
             orphans = []
         pending = len(self._pending_library_jobs()) + len(self._pending_disk_videos()) if self.library.is_onboarded() else 0
+        self._library_visible_ids = [item.id for item in items]
+        try:
+            alive = {row.id for row in self.library.list_items(include_private=True)}
+            self.library_selected_ids &= alive
+        except Exception:
+            log.exception("Failed to prune library selection")
+        selected_visible = sum(1 for i in self._library_visible_ids if i in self.library_selected_ids)
         if self.library_toolbar is not None:
             toolbar = build_library_toolbar(
                 count=len(items),
@@ -1233,6 +1308,10 @@ class FrameForgeUi:
                 on_move_new=self.open_library_new_files,
                 pending_new=pending,
                 has_selection=bool(self.library_selected_ids),
+                selected_count=len(self.library_selected_ids),
+                visible_selected_count=selected_visible,
+                on_select_all=self.select_all_library,
+                on_clear_selection=self.clear_library_selection,
                 on_bulk_upscale=self.upscale_library_selected,
                 on_bulk_remove=lambda: self.confirm_library_remove(delete_files=False),
                 on_bulk_delete=lambda: self.confirm_library_remove(delete_files=True),
@@ -1297,7 +1376,7 @@ class FrameForgeUi:
             self.on_library_opened()
 
     def on_library_opened(self, _e: Any = None) -> ft.AlertDialog | None:
-        self.refresh_library()
+        self.refresh_library(publish=True)
         if not self.library.is_onboarded():
             return self.open_library_onboarding()
         pending_jobs = self._pending_library_jobs()
@@ -1587,7 +1666,7 @@ class FrameForgeUi:
         self._library_move_progress = None
         self._library_move_summary = None
         self.close_dialog()
-        self.refresh_library()
+        self.refresh_library(publish=True)
 
     def set_library_search(self, value: str) -> None:
         self.library_search = value or ""
@@ -1610,6 +1689,22 @@ class FrameForgeUi:
             self.library_selected_ids.discard(item_id)
         else:
             self.library_selected_ids.add(item_id)
+        self.refresh_library()
+
+    def select_all_library(self, _e: Any = None) -> None:
+        """Select every clip currently visible in the Library grid (honors filters)."""
+        visible = getattr(self, "_library_visible_ids", None)
+        if visible is None and self.library_grid is not None:
+            visible = [
+                int(c.data["item_id"])
+                for c in self.library_grid.controls
+                if getattr(c, "data", None) and c.data.get("item_id") is not None
+            ]
+        self.library_selected_ids = set(visible or [])
+        self.refresh_library()
+
+    def clear_library_selection(self, _e: Any = None) -> None:
+        self.library_selected_ids.clear()
         self.refresh_library()
 
     def scan_library_folder(self, _e: Any = None) -> int:
@@ -2343,6 +2438,7 @@ class FrameForgeUi:
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
             on_repair_folders=self.repair_folders,
+            on_open_downloads=self.open_downloads_folder,
             on_install_models=self.install_upscale_models,
             repair_status=self._repair_status,
             repair_button=self._repair_button,

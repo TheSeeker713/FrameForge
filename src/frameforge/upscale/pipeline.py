@@ -225,6 +225,7 @@ class UpscalePipeline:
             chunk_frames=chunk_n,
             free_bytes=free_bytes_for(self.work_root),
             volume=str(self.work_root),
+            scale=max(1, int(self.upscaler.scale)),
         )
         dirs["base"].mkdir(parents=True, exist_ok=True)
         dirs["segments"].mkdir(parents=True, exist_ok=True)

@@ -30,6 +30,8 @@ The 2026-08-16 audit of this machine’s youtube tree (`library_move_20260816_10
 
 - Grid: one card per **playable** indexed file (title, thumb if the thumb file exists, resolution). Count in the toolbar equals visible cards.
 - Missing `library_items.path` is re-found under `library_root` by filename before the grid loads.
+- **Select all** selects every clip in the current filtered grid; **Clear selection** clears it. With a selection, toolbar bulk actions work: Add to collection, Upscale eligible, Remove from library, Delete files… (Recycle Bin), Send to Private.
+- Completed downloads under `downloads/…` are indexed into Library in place (no forced move) when the Library tab refreshes.
 - Click thumb or card → Play via the Windows default player (`os.startfile`). Reveal uses `explorer /select,path` only (no shell theme changes). Upscale when height is known and **&lt; 2160**.
 - If videos exist on disk under the library folder but are not indexed, **Scan library folder** imports those orphans.
 - Empty state with a setup / import / scan CTA. GridView is given a bounded host and builds tiles immediately (not on-demand), so a populated library is never a blank gray panel.

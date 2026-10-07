@@ -116,7 +116,10 @@ def check_environment() -> dict[str, Any]:
         extractor_count = len(gen_extractor_classes())
     except Exception:  # noqa: BLE001
         extractor_count = 0
+    from frameforge.paths import downloads_dir
+
     onnx = check_onnx_providers()
+    downloads_at = downloads_dir()
     ok = (
         python["ok"]
         and all(p["ok"] for p in packages.values())
@@ -149,5 +152,6 @@ def check_environment() -> dict[str, Any]:
             js.get("tip") or f"JS runtime: {js.get('runtime')} ({js.get('path')})",
             impersonate_note,
             f"yt-dlp extractors: {extractor_count}",
+            f"Download folder: {downloads_at}",
         ],
     }

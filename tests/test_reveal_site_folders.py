@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from frameforge.db.repository import JobRepository
-from frameforge.paths import download_dir_for_site, frameforge_root
+from frameforge.paths import download_dir_for_site, media_root
 from frameforge.util.reveal import (
     containing_folder,
     explorer_select_command,
@@ -37,7 +37,8 @@ def test_reveal_resolves_file_under_youtube_site_folder(tmp_path: Path):
     repo.close()
 
 
-def test_download_dir_for_site_youtube_is_under_frameforge_root():
+def test_download_dir_for_site_youtube_is_under_media_root():
     dest = download_dir_for_site("youtube")
-    assert dest.parent == frameforge_root()
-    assert dest.name == "youtube"
+    assert dest == media_root() / "downloads" / "youtube" / "uncategorized"
+    assert dest.parent.name == "youtube"
+    assert "downloads" in dest.parts

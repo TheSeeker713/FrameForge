@@ -1,4 +1,4 @@
-"""Step 2 — per-site download / upscale / convert directory builders."""
+"""Per-site download / upscale / convert directory builders under downloads/."""
 
 from __future__ import annotations
 
@@ -6,33 +6,35 @@ from frameforge.paths import (
     converted_dir,
     converted_dir_for_site,
     download_dir_for_site,
-    frameforge_root,
+    downloads_dir,
+    media_root,
     upscaled_dir,
     upscaled_dir_for_site,
 )
 
 
-def test_download_dir_for_site_under_root():
-    root = frameforge_root()
+def test_download_dir_for_site_under_downloads():
+    root = media_root()
     yt = download_dir_for_site("youtube")
-    assert yt == root / "youtube"
-    assert root in yt.parents or yt.parent == root
-    xc = download_dir_for_site("x.com")
-    assert xc.name == "x.com"
-    assert str(root) in str(xc)
+    assert yt == root / "downloads" / "youtube" / "uncategorized"
+    assert downloads_dir() in yt.parents
+    xc = download_dir_for_site("x.com", "clips")
+    assert xc == root / "downloads" / "x.com" / "clips"
+    porn = download_dir_for_site("pornhub.com", "Squirting women.")
+    assert porn == root / "downloads" / "porn" / "Squirting women"
     other = download_dir_for_site("other")
-    assert other.name == "other"
-    assert other.parent == root
+    assert other == root / "downloads" / "other" / "uncategorized"
 
 
-def test_upscaled_and_converted_include_site_segment():
-    root = frameforge_root()
+def test_upscaled_and_converted_live_under_downloads():
+    root = media_root()
     up = upscaled_dir_for_site("youtube")
     assert up.parent == upscaled_dir()
+    assert upscaled_dir() == downloads_dir() / "upscaled"
     assert up.name == "youtube"
     assert str(root) in str(up)
-    conv = converted_dir_for_site("x.com")
+    conv = converted_dir_for_site("pornhub.com")
     assert conv.parent == converted_dir()
-    assert conv.name == "x.com"
+    assert conv.name == "porn"
+    assert "downloads" in conv.parts
     assert "converted" in conv.parts
-    assert "x.com" in conv.parts

@@ -7,6 +7,7 @@ from typing import Any
 import flet as ft
 
 from frameforge.download.formats import PRESET_LABELS, label_for_preference
+from frameforge.paths import downloads_dir
 from frameforge.ui_flet.elevation import elevated_filled_button, elevated_outlined_button
 from frameforge.ui_flet.theme import COLORS, RADIUS_CARD
 
@@ -36,6 +37,7 @@ def build_settings_dialog(
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
     on_repair_folders: Any | None = None,
+    on_open_downloads: Any | None = None,
     on_install_models: Any | None = None,
     repair_status: Any | None = None,
     repair_button: Any | None = None,
@@ -422,9 +424,21 @@ def build_settings_dialog(
             _card(
                 "Folders",
                 ft.Text(
-                    "Keep per-site download folders. Move thumbs next to videos into thumbnails/, "
-                    "leftover .part/.aria2/.ytdl into temp/junk/, info.json into metadata/. "
-                    "Never Recycles without you. Runs in the background.",
+                    f"New downloads save to {downloads_dir()}",
+                    selectable=True,
+                    size=12,
+                    color=COLORS["text_primary"],
+                ),
+                ft.OutlinedButton(
+                    content="Open downloads folder",
+                    on_click=lambda _e: on_open_downloads and on_open_downloads(),
+                ),
+                ft.Text(
+                    "Videos land under downloads/<site>/<category>/ "
+                    "(adult sites use downloads/porn/<category>/). "
+                    "Upscaled and converted stay under downloads/ too. "
+                    "Repair moves thumbs into thumbnails/, leftover .part/.aria2/.ytdl "
+                    "into temp/junk/, info.json into metadata/. Never Recycles without you.",
                     color=COLORS["text_secondary"],
                     size=12,
                 ),

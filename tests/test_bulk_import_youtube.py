@@ -93,6 +93,44 @@ def test_preview_dialog_counts_new_urls(tmp_path: Path):
     repo.close()
 
 
+def test_headings_set_category_and_porn_bucket(tmp_path: Path, monkeypatch):
+    from frameforge.paths import download_dir_for_site
+
+    root = tmp_path / "FrameForge"
+    root.mkdir()
+    monkeypatch.setenv("FRAMEFORGE_ROOT", str(root))
+    text = "\n".join(
+        [
+            "Squirting women.",
+            "https://www.pornhub.com/view_video.php?viewkey=aaa",
+            "1. https://www.pornhub.com/view_video.php?viewkey=bbb",
+            "",
+            "Another topic",
+            "https://www.youtube.com/watch?v=ccccccccccc",
+        ]
+    )
+    items = parse_lines(text)
+    assert items[0].category == "Squirting women"
+    assert items[1].category == "Squirting women"
+    assert items[1].title is None
+    assert items[2].category == "Another topic"
+    repo = JobRepository(tmp_path / "cat.db")
+    from frameforge.download.bulk_import import ImportPreview
+
+    ids = confirm_add(ImportPreview(items=items), repo)
+    assert len(ids) == 3
+    ph = repo.get(ids[0])
+    assert Path(ph.options()["download_output_dir"]) == download_dir_for_site(
+        "pornhub.com", "Squirting women"
+    )
+    assert "porn" in Path(ph.options()["download_output_dir"]).parts
+    yt = repo.get(ids[2])
+    assert Path(yt.options()["download_output_dir"]) == download_dir_for_site(
+        "youtube", "Another topic"
+    )
+    repo.close()
+
+
 def test_import_enqueues_pending_does_not_arm(tmp_path: Path):
     repo = JobRepository(tmp_path / "idle.db")
     preview = preview_import(FIX / "youtube_bulk.md", repo)

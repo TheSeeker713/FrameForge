@@ -624,6 +624,10 @@ def build_library_toolbar(
     on_move_new: Any | None,
     pending_new: int,
     has_selection: bool,
+    selected_count: int = 0,
+    visible_selected_count: int | None = None,
+    on_select_all: Any | None = None,
+    on_clear_selection: Any | None = None,
     on_bulk_upscale: Any | None = None,
     on_bulk_remove: Any | None = None,
     on_bulk_delete: Any | None = None,
@@ -669,6 +673,31 @@ def build_library_toolbar(
         on_click=lambda _e: on_scan and on_scan(),
     )
     scan_btn.visible = orphan_count > 0
+    visible_sel = selected_count if visible_selected_count is None else visible_selected_count
+    all_selected = count > 0 and visible_sel >= count
+    select_all_btn = elevated_outlined_button(
+        "Clear selection" if all_selected else "Select all",
+        on_click=lambda _e: (
+            on_clear_selection()
+            if all_selected and on_clear_selection
+            else on_select_all and on_select_all()
+        ),
+    )
+    select_all_btn.disabled = count <= 0
+    select_all_btn.data = {"kind": "select_all", "all_selected": all_selected}
+    clear_btn = elevated_outlined_button(
+        "Clear selection",
+        on_click=lambda _e: on_clear_selection and on_clear_selection(),
+    )
+    clear_btn.disabled = not has_selection
+    clear_btn.visible = has_selection and not all_selected
+    clear_btn.data = {"kind": "clear_selection"}
+    selection_label = ft.Text(
+        f"{selected_count} selected" if selected_count else "",
+        color=COLORS["accent"],
+        size=12,
+        weight=ft.FontWeight.W_600,
+    )
     add_btn = elevated_outlined_button(
         "Add to collection…",
         on_click=lambda _e: on_add_collection(),
@@ -685,6 +714,9 @@ def build_library_toolbar(
     row = ft.Row(
         [
             ft.Text(f"{count} in Library", color=COLORS["text_secondary"], size=13),
+            selection_label,
+            select_all_btn,
+            clear_btn,
             search_field,
             ft.Text(f"Sort: {sort}", size=12, color=COLORS["text_secondary"]),
             sort_menu,
@@ -714,7 +746,18 @@ def build_library_toolbar(
         "move": move_btn,
         "scan": scan_btn,
         "add": add_btn,
+        "select_all": select_all_btn,
+        "clear_selection": clear_btn,
         "count": count,
+        "selected_count": selected_count,
         "orphan_count": orphan_count,
     }
-    return ft.Column([row], spacing=4, data={"count": count, "orphan_count": orphan_count})
+    return ft.Column(
+        [row],
+        spacing=4,
+        data={
+            "count": count,
+            "selected_count": selected_count,
+            "orphan_count": orphan_count,
+        },
+    )
