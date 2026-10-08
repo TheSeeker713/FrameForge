@@ -55,7 +55,6 @@ _GUI_RUNNING = False
 SHUTDOWN_WATCHDOG_SEC = 3.0
 QUIT_HARD_EXIT_DELAY_SEC = 0.35
 LIBRARY_MOVE_JOIN_SEC = 15.0
-CLOSE_DEBOUNCE_SEC = 0.25
 
 
 def _placeholder_panel(label: str) -> ft.Container:
@@ -2501,10 +2500,9 @@ class FrameForgeUi:
         return self.open_quit_dialog()
 
     def open_quit_dialog(self) -> ft.AlertDialog:
-        from frameforge.gui.exit_policy import list_active_work
         from frameforge.ui_flet.components.modals import quit_confirm_dialog
 
-        busy = bool(list_active_work(self.repo))
+        busy = bool(getattr(self.worker, "stage_busy", False))
         self.quit_choice: str | None = None
 
         def stay(_e=None) -> None:
@@ -2982,29 +2980,18 @@ class FrameForgeUi:
         schedule_hard_exit(max(0.2, float(seconds)), 0)
 
     def handle_window_close(self, _e: Any = None) -> str:
-        now = time.monotonic()
+        """First X opens Quit FrameForge?. Quit runs only from that button."""
         if self._exiting or self._shutdown_complete:
-            self._commit_quit()
             return "quit"
         if getattr(self.dialogs, "kind", None) == "quit":
-            if now - self._last_close_event < CLOSE_DEBOUNCE_SEC:
-                return "choice"
-            self._commit_quit()
-            return "quit"
-        self._last_close_event = now
+            return "choice"
+        self._last_close_event = time.monotonic()
         self._close_clicks += 1
         try:
-            dlg = self.open_quit_dialog()
-            opened = dlg is not None and (
-                bool(getattr(dlg, "open", False)) or self.dialogs.kind == "quit"
-            )
-            if not opened:
-                self._commit_quit()
-                return "quit"
-            return "choice"
+            self.open_quit_dialog()
         except Exception:  # noqa: BLE001
-            self._commit_quit()
-            return "quit"
+            log.exception("Quit dialog failed to open")
+        return "choice"
 
     def _finish_exit(self) -> None:
         self._commit_quit()

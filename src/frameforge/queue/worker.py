@@ -49,6 +49,7 @@ class SequentialWorker:
     _armed: threading.Event = field(default_factory=threading.Event)
     _wait_to_quit: threading.Event = field(default_factory=threading.Event)
     _fail_pause_halt: threading.Event = field(default_factory=threading.Event)
+    _stage_busy: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _only_ids: set[int] | None = field(default=None, init=False, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -135,6 +136,11 @@ class SequentialWorker:
     @property
     def is_fail_paused(self) -> bool:
         return self._fail_pause_halt.is_set()
+
+    @property
+    def stage_busy(self) -> bool:
+        """True while a download, upscale, or convert handler is on the worker thread."""
+        return self._stage_busy.is_set()
 
     def halt_after_fail(self) -> None:
         """Disarm and refuse further claims until the user explicitly resumes."""
@@ -490,6 +496,7 @@ class SequentialWorker:
                 pass
 
     def _run_download(self, job: Job) -> bool:
+        self._stage_busy.set()
         self._record_event(job.id, "download_start")
         try:
             self.download_handler(job, self.repo)
@@ -523,10 +530,12 @@ class SequentialWorker:
             self._maybe_fail_pause(job.id)
             return True
         finally:
+            self._stage_busy.clear()
             self._last_download_finished = time.time()
             self.processes.unregister(job.id)
 
     def _run_upscale(self, job: Job) -> bool:
+        self._stage_busy.set()
         self.repo.update_status(job.id, "upscaling", progress=0)
         self._record_event(job.id, "upscale_start")
         try:
@@ -559,9 +568,11 @@ class SequentialWorker:
             self._maybe_fail_pause(job.id)
             return True
         finally:
+            self._stage_busy.clear()
             self.processes.unregister(job.id)
 
     def _run_convert(self, job: Job) -> bool:
+        self._stage_busy.set()
         self._record_event(job.id, "convert_start")
         try:
             if not self.convert_handler:
@@ -593,4 +604,5 @@ class SequentialWorker:
             self._maybe_fail_pause(job.id)
             return True
         finally:
+            self._stage_busy.clear()
             self.processes.unregister(job.id)

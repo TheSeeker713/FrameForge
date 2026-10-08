@@ -80,5 +80,9 @@ On **Quit**:
 
 **Cancel** closes the confirm and leaves the app usable.
 
+## Path (v0.6.27) — X never waits on the database
+
+The first window X only opens the existing “Quit FrameForge?” dialog. It does not query SQLite, and a dialog error does not quit. A second X leaves that dialog up. Quit runs only from the Quit button. Busy wording (“A download is in progress”) comes from the worker’s in-memory stage flag. If the fail-pause dialog is up, X replaces it with the quit dialog in the same open. Minimize still hides to the tray.
+
 Tests keep `exit_process_on_quit=False`. A subprocess test proves `hard_exit`
 actually terminates a Python process.

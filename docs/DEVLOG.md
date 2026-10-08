@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.27
+
+The close button was waiting on SQLite, then sometimes quitting with no confirm when that wait or the dialog failed. The first X now only opens the existing quit dialog. Busy wording comes from the worker thread flag, and Quit is the only control that exits.
+
 ## 2026-10-08 — v0.6.26
 
 Eporner’s extractor reads a hash from the page, then asks the site API. Without a browser fingerprint that page is the wrong page, so the API answers “Video is not available” for a video that still plays. Eporner was not impersonated, and the classifier treated that sentence as final. The first request now uses Chrome, and the same sentence retries once as a browser before that job is failed.

@@ -25,11 +25,10 @@ def test_modals_have_locked_actions(tmp_path: Path):
     assert "will not start" in blob.lower() or "press Download" in blob
     pl = ui.open_playlist_modal("Summer Reel", list(range(8)))
     assert "Playlist" in str(pl.title.value)
-    job = ui.repo.enqueue("https://example.com/live")
-    ui.repo.update_status(job.id, "downloading")
+    ui.worker._stage_busy.set()
     q = ui.open_quit_busy()
     body = str(getattr(q.content, "value", q.content))
-    assert "in progress" in body.lower() or "Quit FrameForge" in str(q.title.value)
+    assert "in progress" in body.lower()
     action_blob = " ".join(str(getattr(a, "content", a)) for a in q.actions)
     assert "Quit" in action_blob
     assert "Cancel" in action_blob

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.27
+
+- The window X opens “Quit FrameForge?” immediately. It does not query the database, and a second X does not quit. Quit runs only from the Quit button. If a download is in progress, the dialog says so from the worker’s in-memory flag. Minimize still hides to the tray.
+
 ## 0.6.26
 
 - “Video is not available” from Eporner is the site API rejecting a page that was not fetched as a browser. Eporner is now fetched as Chrome, and that sentence retries once as a browser before the job fails. It does not ask for cookies and does not pause the queue.

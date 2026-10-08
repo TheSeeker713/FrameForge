@@ -42,8 +42,7 @@ def test_idle_close_opens_simple_confirm(tmp_path: Path):
 def test_busy_quit_is_still_quit_or_cancel(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.page = FakePage()
-    job = ui.repo.enqueue("https://example.com/live")
-    ui.repo.update_status(job.id, "downloading")
+    ui.worker._stage_busy.set()
     assert ui.handle_window_close() == "choice"
     body = str(getattr(ui.quit_dialog.content, "value", ui.quit_dialog.content))
     assert "in progress" in body.lower()
@@ -76,18 +75,20 @@ def test_duplicate_close_event_keeps_confirm(tmp_path: Path):
     ui.shutdown()
 
 
-def test_second_close_after_debounce_quits(tmp_path: Path):
+def test_second_close_does_not_quit(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.page = FakePage()
-    job = ui.repo.enqueue("https://example.com/live")
-    ui.repo.update_status(job.id, "downloading")
+    job = ui.repo.enqueue("https://example.com/still")
+    ui.worker._stage_busy.set()
     assert ui.handle_window_close() == "choice"
     ui._last_close_event = 0.0
-    assert ui.handle_window_close() == "quit"
-    assert ui._shutdown_complete is True
+    assert ui.handle_window_close() == "choice"
+    assert ui._shutdown_complete is False
+    assert ui.repo.get(job.id).status == "pending"
+    ui.shutdown()
 
 
-def test_quit_dialog_failure_still_quits(tmp_path: Path):
+def test_quit_dialog_failure_does_not_quit(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.page = FakePage()
 
@@ -95,8 +96,52 @@ def test_quit_dialog_failure_still_quits(tmp_path: Path):
         raise RuntimeError("modal failed")
 
     ui.open_quit_dialog = boom  # type: ignore[method-assign]
-    assert ui.handle_window_close() == "quit"
-    assert ui._shutdown_complete is True
+    assert ui.handle_window_close() == "choice"
+    assert ui._shutdown_complete is False
+    ui.shutdown()
+
+
+def test_first_x_does_not_query_sqlite(tmp_path: Path, monkeypatch):
+    ui = _ui(tmp_path)
+    ui.page = FakePage()
+
+    def boom(*_a, **_k):
+        raise AssertionError("close queried sqlite")
+
+    monkeypatch.setattr("frameforge.gui.exit_policy.list_active_work", boom)
+    assert ui.handle_window_close() == "choice"
+    assert ui.dialogs.kind == "quit"
+    assert ui._shutdown_complete is False
+    ui.shutdown()
+
+
+def test_x_replaces_fail_pause_with_quit(tmp_path: Path):
+    ui = _ui(tmp_path)
+    ui.page = FakePage()
+    ui.dialogs.current = type("Dlg", (), {"open": True, "on_dismiss": lambda _e=None: None})()
+    ui.dialogs.kind = "fail_pause"
+    assert ui.handle_window_close() == "choice"
+    assert ui.dialogs.kind == "quit"
+    assert ui._shutdown_complete is False
+    ui.quit_dialog.data["on_cancel"]()
+    assert ui._shutdown_complete is False
+    ui.shutdown()
+
+
+def test_stage_busy_tracks_download_handler(tmp_path: Path):
+    repo = JobRepository(tmp_path / "busy.db")
+    seen: dict[str, bool] = {}
+
+    def handler(job, _repo):
+        seen["during"] = worker.stage_busy
+
+    worker = SequentialWorker(repo, download_handler=handler, poll_interval=0.05)
+    job = repo.enqueue("https://example.com/busy")
+    assert worker.stage_busy is False
+    worker._run_download(job)
+    assert seen["during"] is True
+    assert worker.stage_busy is False
+    repo.close()
 
 
 def test_cancel_resets_so_next_x_is_dialog(tmp_path: Path):
