@@ -22,6 +22,7 @@ from frameforge.errors import (
     JS_RUNTIME,
     NETWORK,
     NOT_AVAILABLE,
+    EMPTY_DOWNLOAD,
     OUTPUT_MISSING,
     RATE_LIMITED,
     UNKNOWN,
@@ -56,6 +57,7 @@ SKIP_GENERIC_CATEGORIES = frozenset(
         DB_ERROR,
         JS_RUNTIME,
         OUTPUT_MISSING,
+        EMPTY_DOWNLOAD,
     }
 )
 
@@ -70,6 +72,7 @@ SKIP_COOKIE_CATEGORIES = frozenset(
         JS_RUNTIME,
         UPSCALE_LIMIT,
         UPSCALE_CONFIG,
+        EMPTY_DOWNLOAD,
     }
 )
 

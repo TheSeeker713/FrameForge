@@ -6,6 +6,7 @@ from typing import Any
 
 from frameforge.download.recovery import format_tried
 from frameforge.errors import (
+    EMPTY_DOWNLOAD,
     OUTPUT_MISSING,
     DISK_SPACE,
     DRM_BLOCKED,
@@ -40,7 +41,7 @@ def modal_actions_for(category: str | None, *, archive_hit: bool = False) -> tup
     if category == OUTPUT_MISSING:
         retry = ("retry", "Force re-download" if archive_hit else "Retry this job")
         return (retry, *OUTPUT_MISSING_ACTIONS[1:])
-    if category in (DISK_SPACE, UPSCALE_LIMIT, UPSCALE_CONFIG, DRM_BLOCKED):
+    if category in (DISK_SPACE, UPSCALE_LIMIT, UPSCALE_CONFIG, DRM_BLOCKED, EMPTY_DOWNLOAD):
         return (
             ("retry", "Retry this job"),
             ("skip_resume", "Skip & resume queue"),

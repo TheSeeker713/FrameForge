@@ -356,6 +356,7 @@ class FrameForgeUi:
         upscale_limit = cat == "upscale_limit"
         upscale_config = cat == "upscale_config"
         drm_blocked = cat == "drm_blocked"
+        empty_download = cat == "empty_download"
         hide_auth = (
             js_runtime
             or output_missing
@@ -363,6 +364,7 @@ class FrameForgeUi:
             or upscale_limit
             or upscale_config
             or drm_blocked
+            or empty_download
         )
         browser_pick = ft.Dropdown(
             label="Browser (Firefox preferred — Chrome App-Bound Encryption often fails)",
@@ -446,8 +448,13 @@ class FrameForgeUi:
                                 else (
                                     "DRM / not supported by yt-dlp. FrameForge will not bypass DRM."
                                     if drm_blocked
-                                    else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
-                                    "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                                    else (
+                                        "The file came back empty. FrameForge retries once with the built-in downloader. "
+                                        "This is not a cookie or login problem."
+                                        if empty_download
+                                        else "Prefer Firefox import or a Netscape cookies.txt. Chrome App-Bound Encryption "
+                                        "cannot be fixed by FrameForge. Import cookies, then retry only after they validate."
+                                    )
                                 )
                             )
                             )

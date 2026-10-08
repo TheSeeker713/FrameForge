@@ -7,9 +7,11 @@ from pathlib import Path
 from frameforge.db.repository import JobRepository
 from frameforge.download.handler import make_download_handler
 from frameforge.download.ytdlp import DownloadResult, YtDlpDownloader
+from frameforge.download.recovery import next_recovery_step, should_try_silent_cookies
 from frameforge.errors import (
     ARIA2_FORBIDDEN,
     AUTH_REQUIRED,
+    EMPTY_DOWNLOAD,
     FFMPEG,
     NETWORK,
     classify_error,
@@ -205,3 +207,75 @@ def test_worker_fails_only_after_native_also_fails(tmp_path: Path, monkeypatch):
     assert classify_error(loaded.error) == NETWORK
     worker.stop(timeout=5)
     repo.close()
+
+
+EMPTY_FILE_STDERR = "yt-dlp exited with code 1\nERROR: The downloaded file is empty"
+
+
+def test_empty_file_is_not_unknown_and_does_not_fail_pause():
+    assert classify_error(EMPTY_FILE_STDERR) == EMPTY_DOWNLOAD
+    assert should_fail_pause(EMPTY_DOWNLOAD) is False
+    url = "https://example.com/watch?v=empty"
+    assert should_try_silent_cookies(EMPTY_DOWNLOAD, EMPTY_FILE_STDERR, url) is False
+    assert (
+        next_recovery_step(
+            ["impersonate"],
+            category=EMPTY_DOWNLOAD,
+            message=EMPTY_FILE_STDERR,
+            url=url,
+            impersonated=True,
+            has_impersonate_targets=True,
+            silent_cookies=True,
+        )
+        is None
+    )
+
+
+def test_empty_aria2_file_retries_native_once_and_drops_zero_byte(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("frameforge.download.invocation.aria2c_available", lambda: True)
+    empty = tmp_path / "clip.mp4"
+    empty.write_bytes(b"")
+    kept = tmp_path / "kept.mp4"
+    kept.write_bytes(b"media")
+    dl = YtDlpDownloader(output_dir=tmp_path, archive_file=tmp_path / "a.txt", use_aria2c=True)
+    n = {"i": 0}
+
+    def fake_inprocess(url: str, progress_cb=None):
+        n["i"] += 1
+        if n["i"] == 1:
+            assert "--downloader" in dl._build_cli_cmd(url)
+            raise RuntimeError(EMPTY_FILE_STDERR)
+        assert "--downloader" not in dl._build_cli_cmd(url)
+        path = tmp_path / "ok.mp4"
+        path.write_bytes(b"media")
+        return DownloadResult(path=path, title="ok", info={})
+
+    dl._download_inprocess = fake_inprocess  # type: ignore[method-assign]
+    result = dl.download("https://example.com/watch?v=empty")
+    assert n["i"] == 2
+    assert result.title == "ok"
+    assert dl.aria2_fallback_native is True
+    assert dl.download_method == "native"
+    assert not empty.exists()
+    assert kept.read_bytes() == b"media"
+
+
+def test_second_empty_file_does_not_loop_or_pause(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("frameforge.download.invocation.aria2c_available", lambda: True)
+    dl = YtDlpDownloader(output_dir=tmp_path, archive_file=tmp_path / "a.txt", use_aria2c=True)
+    n = {"i": 0}
+
+    def fake_inprocess(url: str, progress_cb=None):
+        n["i"] += 1
+        raise RuntimeError(EMPTY_FILE_STDERR)
+
+    dl._download_inprocess = fake_inprocess  # type: ignore[method-assign]
+    try:
+        dl.download("https://example.com/watch?v=empty")
+    except RuntimeError as exc:
+        assert "downloaded file is empty" in str(exc).lower()
+    else:
+        raise AssertionError("second empty download should fail")
+    assert n["i"] == 2
+    assert dl.aria2_fallback_native is True
+    assert should_fail_pause(classify_error(EMPTY_FILE_STDERR)) is False

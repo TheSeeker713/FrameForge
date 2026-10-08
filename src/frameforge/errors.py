@@ -28,6 +28,7 @@ DISK_SPACE = "disk_space"
 UPSCALE_LIMIT = "upscale_limit"
 UPSCALE_CONFIG = "upscale_config"
 DB_ERROR = "db_error"
+EMPTY_DOWNLOAD = "empty_download"
 UNKNOWN = "unknown"
 
 CATEGORIES = (
@@ -48,6 +49,7 @@ CATEGORIES = (
     UPSCALE_LIMIT,
     UPSCALE_CONFIG,
     DB_ERROR,
+    EMPTY_DOWNLOAD,
     UNKNOWN,
 )
 
@@ -174,6 +176,7 @@ _HTTP_403_RE = re.compile(
     r"|\b403 forbidden\b",
     re.IGNORECASE,
 )
+_EMPTY_FILE_RE = re.compile(r"downloaded file is empty", re.IGNORECASE)
 _DRM_RE = re.compile(
     r"\bdrm\b"
     r"|widevine"
@@ -196,6 +199,11 @@ _FINGERPRINT_RE = re.compile(
     r"|cloudflare.*(103|challenge|blocked the request)",
     re.IGNORECASE,
 )
+
+
+def is_empty_download(message: str | None) -> bool:
+    """True when yt-dlp finished a 0-byte file. Not a login or cookie failure."""
+    return bool(_EMPTY_FILE_RE.search(str(message or "")))
 
 
 def is_aria2_forbidden(message: str | None) -> bool:
@@ -241,6 +249,8 @@ def classify_error(message: str | None, *, status: str | None = None, url: str |
         if listed and used_impersonate and not used_cookies:
             return AUTH_REQUIRED
         return NOT_AVAILABLE
+    if is_empty_download(text):
+        return EMPTY_DOWNLOAD
     if is_aria2_forbidden(text):
         return ARIA2_FORBIDDEN
     if _HTTP_403_RE.search(text) and not _argv_has_flag(text, "--impersonate"):
@@ -348,6 +358,7 @@ def human_cause(category: str) -> str:
         UPSCALE_LIMIT: "This clip is longer than the optional duration warning (chunked upscale is the default).",
         UPSCALE_CONFIG: "No ONNX upscale model is installed (smoke Identity is not Real-ESRGAN).",
         DB_ERROR: "The local queue database hit a lock or transaction error (not a yt-dlp failure).",
+        EMPTY_DOWNLOAD: "The download came back as an empty file. This is not a cookie or login problem.",
         UNKNOWN: "The download failed for an unclassified reason.",
     }.get(category, "The download failed.")
 
@@ -421,6 +432,11 @@ def suggested_actions(category: str) -> list[str]:
         ]
     if category == DB_ERROR:
         return ["Retry this job", "Restart FrameForge if the queue stays stuck"]
+    if category == EMPTY_DOWNLOAD:
+        return [
+            "Retry this job with the built-in downloader",
+            "Skip & resume queue",
+        ]
     return ["Retry failed", "Inspect the error message"]
 
 

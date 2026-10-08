@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.19 (minimize hides to the tray)
+## Status: v0.6.20 (empty downloads retry without a cookie dialog)
 
-Package version is **0.6.19**. The caption minimize button hides the window to the system tray and the download keeps running. v0.6.18 keeps the app tree in the folder chosen at onboarding.
+Package version is **0.6.20**. An empty file from the fast downloader retries once with the built-in downloader and does not pause the queue for cookies. v0.6.19 hides the window to the tray from the minimize button.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

@@ -473,10 +473,10 @@ class YtDlpDownloader:
         killable subprocess (hard cancel via process-tree kill). Otherwise the
         in-process YoutubeDL API is used (direct/unit callers).
 
-        If aria2c hits googlevideo HTTP 403 / exit 22, retry once with the native
-        downloader. Cancel/pause still abort immediately.
+        If aria2c hits googlevideo HTTP 403 / exit 22, or writes an empty file,
+        retry once with the native downloader. Cancel/pause still abort immediately.
         """
-        from frameforge.errors import is_aria2_forbidden
+        from frameforge.errors import is_aria2_forbidden, is_empty_download
 
         original_aria2 = self.use_aria2c
         self.aria2_fallback_native = False
@@ -491,8 +491,12 @@ class YtDlpDownloader:
             except (DownloadCancelled, DownloadPaused):
                 raise
             except Exception as exc:
-                if not used_aria2 or not is_aria2_forbidden(str(exc)):
+                empty = is_empty_download(str(exc))
+                forbidden = is_aria2_forbidden(str(exc))
+                if not used_aria2 or not (empty or forbidden):
                     raise
+                if empty:
+                    self._drop_empty_artifacts()
                 self.use_aria2c = False
                 self.aria2_fallback_native = True
                 self.download_attempt = 2
@@ -503,7 +507,11 @@ class YtDlpDownloader:
                         {
                             "speed_bps": None,
                             "eta_seconds": None,
-                            "speed_str": "CDN blocked aria2 — retrying built-in…",
+                            "speed_str": (
+                                "Empty file from fast downloader — retrying built-in…"
+                                if empty
+                                else "CDN blocked aria2 — retrying built-in…"
+                            ),
                             "eta_str": None,
                         },
                     )
@@ -512,6 +520,28 @@ class YtDlpDownloader:
                 )
         finally:
             self.use_aria2c = original_aria2
+
+    def _drop_empty_artifacts(self) -> None:
+        """Remove 0-byte media left by a failed aria2 attempt. Never touches non-empty files."""
+        suffixes = {".mp4", ".mkv", ".webm", ".m4a", ".part", ".ytdl", ".aria2", ".temp"}
+        roots = [Path(self.output_dir)]
+        try:
+            roots.append(self._staging_dir())
+        except Exception:  # noqa: BLE001
+            pass
+        seen: set[Path] = set()
+        for root in roots:
+            if root in seen or not root.is_dir():
+                continue
+            seen.add(root)
+            for path in root.rglob("*"):
+                if not path.is_file() or path.suffix.lower() not in suffixes:
+                    continue
+                try:
+                    if path.stat().st_size == 0:
+                        path.unlink()
+                except OSError:
+                    continue
 
     def _download_once(
         self,

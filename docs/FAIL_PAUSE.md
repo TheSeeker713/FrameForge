@@ -48,6 +48,8 @@ Optional `fail_pause_on_any=1` pauses on every failure (not exposed as a checkbo
 
 `aria2_forbidden` is **not** a fail-pause category.
 
+`empty_download` (`The downloaded file is empty`) is **not** a fail-pause category and does **not** import cookies. If aria2 wrote the empty file, FrameForge deletes that 0-byte file and retries once with the built-in downloader. A second empty result fails that job and the queue continues.
+
 **User cancel vs yt-dlp “Cancelled”:** the worker never treats English in `str(exc)` as a cancel. Only an explicit user cancel/pause (status already `cancelled`/`paused`) or typed `DownloadCancelled` / `DownloadPaused` preserve those statuses. yt-dlp stderr such as “This live event was Cancelled by the uploader” is **`not_available`** (job **failed**, error text kept, Retry failed works). It is not user-cancelled and does not fail-pause the bulk queue. See [YTDLP_PARITY.md](YTDLP_PARITY.md).
 
 Turn the default policy off in Settings if you want the bulk run to keep going after auth/bot failures.

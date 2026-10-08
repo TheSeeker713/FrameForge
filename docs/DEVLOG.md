@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-07 — v0.6.20
+
+An empty file from the fast downloader was classified as unknown, so the queue paused and asked for cookies even when cookies and impersonation were already in use. That case now retries once with the built-in downloader and does not open the pause dialog.
+
 ## 2026-10-07 — Library studio
 
 A local WebGL studio at `design/library-studio` lets the Library look be chosen before any app code changes. Choices, kept looks, discarded looks, and notes write themselves to `docs/LIBRARY_DESIGN_FEEDBACK.md`. Reopening the page restores the in-progress answers. The room is a draped wall and walnut floor; cards use brushed metal, paper fiber, or glass edges around a composed still.

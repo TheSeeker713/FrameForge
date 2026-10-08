@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.20
+
+- An empty download is no longer treated as a login failure. When the fast downloader writes a 0-byte file, FrameForge deletes that file and retries once with the built-in downloader. The queue does not pause and does not ask for cookies.
+
 ## 0.6.19
 
 - The Settings “Close to system tray” switch is gone. The window minimize button hides FrameForge to the tray and leaves the download running. The tray menu can show the window, pause or resume, start pending downloads, import a URL list, and import completed downloads.

@@ -1146,9 +1146,14 @@ class FrameForgeApp(ctk.CTk):
             justify="left",
             text_color="#ffcc66",
         ).pack(anchor="w", padx=16)
+        tip = (
+            "The file came back empty. This is not a cookie or login problem."
+            if payload.get("category") == "empty_download"
+            else "Tip: after cookies work, Settings → Gentle rate mode can reduce bot checks. It is off by default."
+        )
         ctk.CTkLabel(
             win,
-            text="Tip: after cookies work, Settings → Gentle rate mode can reduce bot checks. It is off by default.",
+            text=tip,
             wraplength=480,
             justify="left",
             text_color="#a0a0a0",

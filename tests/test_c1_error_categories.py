@@ -10,6 +10,7 @@ from frameforge.errors import (
     BLOCKED_4K,
     BOT_CHECK,
     CANCELLED,
+    EMPTY_DOWNLOAD,
     FFMPEG,
     IMPERSONATION_MISSING,
     NETWORK,
@@ -41,6 +42,7 @@ def test_classify_error_known_messages():
     assert classify_error("Download cancelled by user") != CANCELLED
     assert classify_error("This live event was Cancelled by the uploader") == NOT_AVAILABLE
     assert classify_error("This live event was Cancelled by the uploader") != CANCELLED
+    assert classify_error("ERROR: The downloaded file is empty") == EMPTY_DOWNLOAD
     assert classify_error("yt-dlp exited with code 1") == UNKNOWN
     assert classify_error(None) == UNKNOWN
     bot_with_tail = format_ytdlp_exit_error(
