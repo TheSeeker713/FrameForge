@@ -29,6 +29,8 @@ from frameforge.errors import (
     UPSCALE_CONFIG,
     UPSCALE_LIMIT,
     classify_error,
+    is_unavailable_message,
+    named_extractor_answered,
 )
 
 SILENT_COOKIES_SETTING = "silent_browser_cookies"
@@ -184,7 +186,7 @@ def should_try_silent_cookies(
     Site-agnostic: any http(s) job URL. Host/extractor is not a gate.
     """
     cat = category or classify_error(message, url=url)
-    if cat in SKIP_COOKIE_CATEGORIES:
+    if is_unavailable_message(message) or cat in SKIP_COOKIE_CATEGORIES:
         return False
     if not is_http_url(url):
         return False
@@ -376,10 +378,13 @@ def next_recovery_step(
     without cookies if cookies were skipped → generic once.
     """
     done = {str(a).strip().lower() for a in (attempts or []) if str(a).strip()}
-    cat = category or classify_error(message, url=url)
     text = str(message or "")
+    if is_unavailable_message(text):
+        cat = NOT_AVAILABLE
+    else:
+        cat = category or classify_error(message, url=url)
 
-    if cat == CANCELLED:
+    if cat in {CANCELLED, NOT_AVAILABLE}:
         return None
 
     if (
@@ -412,6 +417,7 @@ def next_recovery_step(
         and cat not in SKIP_GENERIC_CATEGORIES
         and is_http_url(url)
         and looks_like_generic_mismatch(text)
+        and not named_extractor_answered(text)
     ):
         return "generic"
 

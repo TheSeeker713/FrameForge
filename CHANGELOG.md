@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.23
+
+- “Video is not available” is an unavailable video. The queue does not pause, does not ask for cookies, and does not switch to the generic extractor after a named site extractor has already answered.
+
 ## 0.6.22
 
 - A failed job card leads with the extractor sentence. A warning such as “only images are available” stays above “the downloaded file is empty,” and the full text is written to a log under the FrameForge temp folder. yt-dlp warnings are no longer discarded.

@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.23
+
+A site saying the video is not available was still treated as an unknown failure, so the generic extractor ran and the whole queue paused for cookies. That sentence now fails only that job and the next one starts.
+
 ## 2026-10-08 — v0.6.22
 
 Failed downloads were showing a rewritten sentence and dropping the warning yt-dlp had already printed. The card now leads with that extractor line, and the full text is saved under temp/logs.

@@ -103,6 +103,8 @@ _UNAVAIL_RE = re.compile(
     r"|has been (removed|deleted)"
     r"|copyright"
     r"|not (currently )?available"
+    r"|video is not available"
+    r"|said:\s*.{0,160}not available"
     r"|http error 404"
     r"|status code 404"
     r"|cancelled by the uploader"
@@ -365,6 +367,21 @@ def write_job_log(job_id: int, message: str) -> str | None:
         return str(path)
     except Exception:  # noqa: BLE001
         return None
+
+
+_NAMED_EXTRACTOR_RE = re.compile(
+    r"ERROR:\s*\[(?!generic\b)[A-Za-z][^\]]{0,40}\]",
+    re.IGNORECASE,
+)
+
+
+def is_unavailable_message(message: str | None) -> bool:
+    return bool(_UNAVAIL_RE.search(str(message or "")))
+
+
+def named_extractor_answered(message: str | None) -> bool:
+    """True when a site extractor, not the generic one, already reported the failure."""
+    return bool(_NAMED_EXTRACTOR_RE.search(str(message or "")))
 
 
 def stderr_tail(message: str | None, *, max_lines: int = STDERR_TAIL_LINES) -> str:
