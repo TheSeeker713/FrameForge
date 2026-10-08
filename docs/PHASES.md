@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.28 (Import every listing)
+## Status: v0.6.29 (Queue reset leaves the files)
 
-Package version is **0.6.28**. Document import queues every http(s) URL, including Word hyperlinks, in one transaction. v0.6.27 still opens the quit dialog without querying SQLite.
+Package version is **0.6.29**. The queue reset clears jobs and the download archive and leaves videos, cookies, and the app home. v0.6.28 still imports every http(s) listing.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

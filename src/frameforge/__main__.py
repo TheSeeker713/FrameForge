@@ -25,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Clear Library index and onboarding flags (does not delete media files)",
     )
+    parser.add_argument(
+        "--reset-queue",
+        action="store_true",
+        help="Clear queue jobs and the download archive (does not delete videos or cookies)",
+    )
     args = parser.parse_args(argv)
 
     if args.version:
@@ -36,6 +41,26 @@ def main(argv: list[str] | None = None) -> int:
         report = check_environment()
         print(json.dumps(report, indent=2))
         return 0 if report.get("ok") else 1
+
+    if args.reset_queue:
+        from frameforge.db.repository import JobRepository
+        from frameforge.paths import db_path
+        from frameforge.queue.reset import QueueResetRefused, reset_queue
+
+        path = db_path()
+        if not path.is_file():
+            print(f"No queue database at {path}")
+            return 1
+        repo = JobRepository(path)
+        try:
+            removed = reset_queue(repo)
+        except QueueResetRefused as exc:
+            print(str(exc))
+            return 1
+        finally:
+            repo.close()
+        print(f"Removed {removed} queue jobs. Videos, cookies, and the app home were left in place.")
+        return 0
 
     if args.reset_library:
         from frameforge.db.repository import JobRepository

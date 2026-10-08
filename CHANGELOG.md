@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.29
+
+- `scripts/reset_queue.ps1` clears the queue and the download archive in the onboarded database. Video files, cookies, the home pointer, and library rows stay. It refuses while a download is running.
+
 ## 0.6.28
 
 - A document import keeps every http(s) link, including ones that only exist as Word hyperlinks and ones whose path says search, tag, or category. A URL split across lines is one job. The confirm dialog shows listings seen, URLs found, duplicates skipped, and rows to add. Those rows are inserted in one database transaction off the window thread. The import does not start downloads.
