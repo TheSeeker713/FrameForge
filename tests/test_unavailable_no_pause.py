@@ -13,7 +13,10 @@ NAMED_MISMATCH = "ERROR: [Eporner] yzAUyuvBAJ1: Unable to extract video url"
 URL = "https://www.eporner.com/video-yzAUyuvBAJ1/the-greatest-act-of-love-and-charity/"
 
 
-def test_screenshot_sentence_is_unavailable_and_does_not_pause():
+def test_screenshot_sentence_retries_as_browser_before_giving_up():
+    from frameforge.download.impersonate import url_needs_impersonate
+
+    assert url_needs_impersonate(URL) is True
     assert classify_error(SCREENSHOT, url=URL) == NOT_AVAILABLE
     assert should_fail_pause(NOT_AVAILABLE) is False
     assert should_try_silent_cookies(None, SCREENSHOT, URL) is False
@@ -23,9 +26,35 @@ def test_screenshot_sentence_is_unavailable_and_does_not_pause():
             category=None,
             message=SCREENSHOT,
             url=URL,
+            has_impersonate_targets=True,
+            silent_cookies=True,
+        )
+        == "impersonate"
+    )
+    assert (
+        next_recovery_step(
+            ["impersonate"],
+            category=NOT_AVAILABLE,
+            message=SCREENSHOT,
+            url=URL,
+            impersonated=True,
+            has_impersonate_targets=True,
             silent_cookies=True,
         )
         is None
+    )
+
+
+def test_eporner_hash_failure_does_not_switch_to_generic():
+    assert (
+        next_recovery_step(
+            [],
+            category="unknown",
+            message="ERROR: [Eporner] abc: Unable to extract hash",
+            url=URL,
+            has_impersonate_targets=True,
+        )
+        == "impersonate"
     )
 
 

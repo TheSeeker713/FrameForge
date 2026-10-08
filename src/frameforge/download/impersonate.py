@@ -30,6 +30,7 @@ DEFAULT_AUTO_HOSTS = (
     "xnxx.com",
     "xhamster.com",
     "spankbang.com",
+    "eporner.com",
 )
 HOSTS_SETTING = "impersonate_auto_hosts"
 
@@ -44,6 +45,7 @@ _IMPERSONATE_EXTRACTOR_MARKERS = (
     "xnxx",
     "xhamster",
     "spankbang",
+    "eporner",
 )
 
 IMPERSONATION_FIX = (

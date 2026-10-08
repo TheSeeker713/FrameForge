@@ -128,6 +128,27 @@ def looks_like_generic_mismatch(message: str | None) -> bool:
     return bool(_GENERIC_MISMATCH_RE.search(str(message or "")))
 
 
+def url_has_dedicated_extractor(url: str | None) -> bool:
+    """True when yt-dlp has a site extractor for this URL. No network."""
+    text = str(url or "").strip()
+    if not text:
+        return False
+    try:
+        from yt_dlp.extractor import gen_extractor_classes
+        from yt_dlp.extractor.generic import GenericIE
+    except Exception:  # noqa: BLE001
+        return False
+    for ie in gen_extractor_classes():
+        if ie is GenericIE or getattr(ie, "IE_NAME", "") in {"generic", "genericweb"}:
+            continue
+        try:
+            if ie.suitable(text):
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
 def looks_like_auth_wall(message: str | None, *, url: str | None = None) -> bool:
     """True for login/age/bot/cookie walls in stderr (any host)."""
     text = str(message or "")
@@ -381,19 +402,30 @@ def next_recovery_step(
     else:
         cat = category or classify_error(message, url=url)
 
-    if cat in {CANCELLED, NOT_AVAILABLE}:
+    if cat == CANCELLED:
         return None
 
+    # Eporner answers "Video is not available" when the page hash came from a
+    # non-browser response. Retry as Chrome once before accepting that sentence.
+    from frameforge.download.impersonate import url_needs_impersonate
+
+    needs_browser = url_needs_impersonate(url or "") or "eporner" in text.lower()
     if (
         "impersonate" not in done
         and not impersonated
         and has_impersonate_targets
         and (
-            cat == IMPERSONATION_MISSING
+            cat == NOT_AVAILABLE
+            or cat == IMPERSONATION_MISSING
             or looks_like_fingerprint(text)
+            or "unable to extract hash" in text.lower()
+            or (needs_browser and looks_like_generic_mismatch(text))
         )
     ):
         return "impersonate"
+
+    if cat == NOT_AVAILABLE:
+        return None
 
     if (
         not (done & COOKIE_ATTEMPT_NAMES)
@@ -415,6 +447,7 @@ def next_recovery_step(
         and is_http_url(url)
         and looks_like_generic_mismatch(text)
         and not named_extractor_answered(text)
+        and not url_has_dedicated_extractor(url)
     ):
         return "generic"
 

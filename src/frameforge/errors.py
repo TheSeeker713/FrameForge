@@ -420,8 +420,8 @@ def human_cause(category: str) -> str:
         BOT_CHECK: "The site thinks this is automated traffic (bot check).",
         RATE_LIMITED: "The site is rate-limiting requests (HTTP 429 / slow down).",
         NOT_AVAILABLE: (
-            "The video is private, removed, or otherwise unavailable. "
-            "If a browser also shows HTTP 410 / gone, it is truly deleted."
+            "The site refused this request. That reply often means the page was not "
+            "fetched as a browser, not that the video is gone. This is not a cookie problem."
         ),
         NETWORK: "A network error interrupted the download.",
         FFMPEG: "FFmpeg/ffprobe failed while processing the file.",
@@ -487,8 +487,8 @@ def suggested_actions(category: str) -> list[str]:
         ]
     if category == NOT_AVAILABLE:
         return [
-            "Confirm the URL in a browser — truly deleted videos still return HTTP 410",
-            "Skip this job — it cannot be downloaded",
+            "Retry — this site says that when the page was not fetched as a browser",
+            "Open the URL in a browser if a browser retry still fails",
         ]
     if category == OUTPUT_MISSING:
         return [

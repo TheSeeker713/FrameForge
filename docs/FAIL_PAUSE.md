@@ -11,7 +11,7 @@ Stored on the job (`error_category`, `error_cause`, `error_actions`) and shown i
 | `auth_required` | login / cookies / sign in | Site wants you signed in. |
 | `bot_check` | “not a bot”, recaptcha, unusual traffic | Site thinks this is automated. |
 | `rate_limited` | HTTP 429, too many requests | Site is slowing you down. |
-| `not_available` | private, removed, 404 | Video cannot be downloaded. |
+| `not_available` | site API refused the page, private, removed, 404 | Often a non-browser fetch. Retried once as Chrome. Not a cookie problem. |
 | `network` | timeout, DNS, connection reset | Network interrupted the download. |
 | `ffmpeg` | ffmpeg/ffprobe errors (not `--ffmpeg-location` in argv) | Mux / probe failed. |
 | `aria2_forbidden` | aria2c exit 22 / googlevideo HTTP 403 | CDN blocked the fast downloader. |

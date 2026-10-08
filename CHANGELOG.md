@@ -1,8 +1,11 @@
 # Changelog
 
-## 0.6.25
+## 0.6.26
 
 - “Video is not available” from Eporner is the site API rejecting a page that was not fetched as a browser. Eporner is now fetched as Chrome, and that sentence retries once as a browser before the job fails. It does not ask for cookies and does not pause the queue.
+
+## 0.6.25
+
 - The queue pauses only for a real wall: login, age check, bot check, a missing JavaScript runtime, missing browser impersonation, a missing output file, or a full disk. An unclassified failure fails that job and continues. It does not ask for cookies. Copying the error report includes the per-job log.
 
 ## 0.6.24

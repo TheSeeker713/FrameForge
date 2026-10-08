@@ -25,7 +25,7 @@ Settings → **Browser impersonate**: Auto (default) / Always / Off.
 
 Auto uses a configurable host list (`impersonate_auto_hosts`), shipped as:
 
-`pornhub*`, `youporn`, `redtube`, `tube8`, plus fingerprint-sensitive hosts such as `xvideos.com`, `xnxx.com`, `xhamster.com`, `spankbang.com`.
+`pornhub*`, `youporn`, `redtube`, `tube8`, plus fingerprint-sensitive hosts such as `xvideos.com`, `xnxx.com`, `xhamster.com`, `spankbang.com`, `eporner.com`.
 
 Impersonate is also forced for one recovery retry after `impersonation_missing` / TLS-fingerprint-style failures. Auto does **not** put `--impersonate` on every URL (speed/stability).
 

@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.25 (Eporner “not available” retries as a browser)
+## Status: v0.6.26 (Eporner “not available” retries as a browser)
 
-Package version is **0.6.25**. “Video is not available” retries once with Chrome impersonation before that job fails. Fail-pause stays for login, bot-check, a missing runtime, a missing output, and a full disk. v0.6.24 still limits aria2 to plain HTTP.
+Package version is **0.6.26**. “Video is not available” retries once with Chrome impersonation before that job fails. v0.6.25 still pauses only for a real login, bot, runtime, or disk wall. v0.6.24 still limits aria2 to plain HTTP.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

@@ -1,8 +1,12 @@
 # Devlog
 
+## 2026-10-08 — v0.6.26
+
+Eporner’s extractor reads a hash from the page, then asks the site API. Without a browser fingerprint that page is the wrong page, so the API answers “Video is not available” for a video that still plays. Eporner was not impersonated, and the classifier treated that sentence as final. The first request now uses Chrome, and the same sentence retries once as a browser before that job is failed.
+
 ## 2026-10-08 — v0.6.25
 
-Eporner’s extractor reads a hash from the page, then asks the site API. Without a browser fingerprint that page is the wrong page, so the API answers “Video is not available” for a video that still plays. Eporner was not impersonated, and the classifier treated that sentence as final. The first request now uses Chrome, and the same sentence retries once as a browser before that job is failed. An unclassified failure also no longer pauses the queue.
+An unclassified yt-dlp exit was pausing the whole queue and offering cookies, even when the site had not asked anyone to sign in. Pause is now reserved for a login, bot, runtime, or disk wall. Copy report reads the job log written next to the temp folder.
 
 ## 2026-10-08 — v0.6.24
 
