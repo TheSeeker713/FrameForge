@@ -26,6 +26,7 @@ from frameforge.ui_flet.components.job_card import (
 from frameforge.ui_flet.components.library import (
     add_to_collection_dialog,
     build_library_toolbar,
+    cover_flow_card,
     confirm_remove_dialog,
     confirm_reset_library_dialog,
     repair_summary_dialog,
@@ -33,7 +34,6 @@ from frameforge.ui_flet.components.library import (
     duplicate_report_dialog,
     empty_library_state,
     junk_triage_dialog,
-    library_tile,
     new_downloads_dialog,
     onboarding_dialog,
     private_disposition_dialog,
@@ -230,6 +230,8 @@ class FrameForgeUi:
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
         self.library_sort: str = "date"
+        self.library_focus: int = 0
+        self.library_album_filter: int | None = None
         self.library_filter_source: str | None = None
         self.library_filter_collection_id: int | None = None
         self.library_filter_flag: str | None = None
@@ -548,11 +550,14 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.library_grid = ft.ListView(expand=True, spacing=8, padding=4)
+        self.library_grid = ft.ListView(expand=True, spacing=18, padding=28, horizontal=True)
         self.thumbs_grid = self.library_grid
+        self.library_albums = ft.Row(wrap=True, spacing=8, run_spacing=6)
         self.library_grid_host = ft.Container(
             expand=True,
-            bgcolor=COLORS["app_bg"],
+            bgcolor="#14110E",
+            border_radius=16,
+            padding=8,
             content=self.library_grid,
         )
         self.library_empty = ft.Container(
@@ -562,9 +567,9 @@ class FrameForgeUi:
             alignment=ft.Alignment.CENTER,
         )
         self.library_stack = ft.Column(
-            [self.library_grid_host, self.library_empty],
+            [self.library_albums, self.library_grid_host, self.library_empty],
             expand=True,
-            spacing=0,
+            spacing=8,
         )
         self.library_toolbar = ft.Container()
         self.library_body = ft.Column(
@@ -1483,6 +1488,19 @@ class FrameForgeUi:
                 self._library_thumb_miss.add(item.id)
             prepared.append(updated)
         items = prepared
+        from frameforge.library.taxonomy import KIND_ALBUM
+
+        albums = [col for col in self.library.list_collections() if col.kind == KIND_ALBUM]
+        album_ids = {col.id for col in albums}
+        if self.library_album_filter == -1:
+            items = [item for item in items if item.primary_collection_id not in album_ids]
+        elif self.library_album_filter is not None:
+            items = [item for item in items if item.primary_collection_id == self.library_album_filter]
+        if items:
+            self.library_focus = max(0, min(self.library_focus, len(items) - 1))
+        else:
+            self.library_focus = 0
+        self._paint_library_albums(albums)
         self._library_visible_ids = [item.id for item in items]
         try:
             alive = {row.id for row in self.library.list_items(include_private=True)}
@@ -1523,22 +1541,21 @@ class FrameForgeUi:
                 self.library_body.controls[0] = toolbar
             self.library_toolbar = toolbar
         cells: list[Any] = []
-        for item in items:
+        for index, item in enumerate(items):
             try:
                 cells.append(
-                    library_tile(
+                    cover_flow_card(
                         item,
-                        selected=item.id in self.library_selected_ids,
-                        on_play=self.play_library_item,
-                        on_reveal=self.reveal_library_item,
-                        on_upscale=self.upscale_library_item,
-                        on_toggle=self.toggle_library_selected,
-                        on_favorite=self.toggle_library_favorite,
-                        on_watch_later=self.toggle_library_watch_later,
+                        focused=index == self.library_focus,
+                        turn=-0.32 if index < self.library_focus else 0.32,
+                        on_open=self._open_cover_card,
+                        on_unlink=self.unlink_library_item,
+                        albums=albums,
+                        on_move=self.move_library_item_to_album,
                     )
                 )
             except Exception:
-                log.exception("Library tile failed for item %s (%s)", item.id, item.path)
+                log.exception("Library card failed for item %s (%s)", item.id, item.path)
         self.library_grid.controls = cells
         self.library_visible_count = len(cells)
         show_empty = len(cells) == 0
@@ -1875,7 +1892,88 @@ class FrameForgeUi:
 
     def set_library_sort(self, value: str) -> None:
         self.library_sort = value or "date"
+        self.library_focus = 0
         self.refresh_library()
+
+    def set_library_album(self, album_id: int | None) -> None:
+        self.library_album_filter = album_id
+        self.library_focus = 0
+        self.refresh_library()
+
+    def _paint_library_albums(self, albums: list[Any]) -> None:
+        if self.library_albums is None:
+            return
+        chips = [
+            ft.Text("Shelf", size=13, weight=ft.FontWeight.W_600, color=COLORS["text_primary"]),
+            ft.OutlinedButton(
+                content="All",
+                on_click=lambda _e: self.set_library_album(None),
+                style=ft.ButtonStyle(bgcolor="#E7C27A" if self.library_album_filter is None else None),
+            ),
+            ft.OutlinedButton(
+                content="Unfiled",
+                on_click=lambda _e: self.set_library_album(-1),
+                style=ft.ButtonStyle(bgcolor="#E7C27A" if self.library_album_filter == -1 else None),
+            ),
+        ]
+        for col in albums:
+            chips.append(
+                ft.OutlinedButton(
+                    content=col.name,
+                    on_click=lambda _e, cid=col.id: self.set_library_album(cid),
+                    style=ft.ButtonStyle(bgcolor="#E7C27A" if self.library_album_filter == col.id else None),
+                )
+            )
+        chips.append(ft.TextButton(content="New album", on_click=self.open_new_album))
+        self.library_albums.controls = chips
+
+    def _open_cover_card(self, item_id: int, focused: bool) -> None:
+        if not focused:
+            try:
+                self.library_focus = self._library_visible_ids.index(item_id)
+            except ValueError:
+                self.library_focus = 0
+            self.refresh_library()
+            return
+        self.play_library_item(item_id)
+
+    def unlink_library_item(self, item_id: int) -> None:
+        """Drop the library link. The video file stays on disk."""
+        self.library_selected_ids = {int(item_id)}
+        self.confirm_library_remove(delete_files=False)
+
+    def move_library_item_to_album(self, item_id: int, album_value: str | None) -> None:
+        raw = (album_value or "").strip()
+        album_id = int(raw) if raw.isdigit() else None
+        item = self.library.get(item_id)
+        from frameforge.library.taxonomy import KIND_ALBUM
+
+        album_ids = {col.id for col in self.library.list_collections() if col.kind == KIND_ALBUM}
+        current = item.primary_collection_id if item.primary_collection_id in album_ids else None
+        if current == album_id:
+            return
+        before = str(item.path)
+        self.library.place_in_album(item_id, album_id)
+        after = str(self.library.get(item_id).path)
+        if before != after:
+            log.error("Album change moved a file from %s to %s", before, after)
+        self.refresh_library()
+
+    def open_new_album(self, _e: Any = None) -> ft.AlertDialog:
+        from frameforge.ui_flet.components.library import create_collection_dialog
+
+        dlg = create_collection_dialog(on_create=self.create_library_album, on_close=self.close_dialog)
+        return self.dialogs.open("library_album", dlg)
+
+    def create_library_album(self, name: str) -> Any:
+        label = (name or "").strip()
+        if not label:
+            return None
+        col = self.library.create_album(label)
+        self.library_album_filter = col.id
+        self.close_dialog()
+        self.refresh_library()
+        return col
 
     def set_library_source(self, value: str | None) -> None:
         self.library_filter_source = value

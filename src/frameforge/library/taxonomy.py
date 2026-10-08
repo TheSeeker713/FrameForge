@@ -71,6 +71,7 @@ KIND_SOURCE = "source"
 KIND_TYPE = "type"
 KIND_SUBJECT = "subject"
 KIND_CUSTOM = "custom"
+KIND_ALBUM = "album"
 
 INGEST_TYPE_NAME = "Uncategorized"
 INGEST_FOLDER = "Uncategorized"

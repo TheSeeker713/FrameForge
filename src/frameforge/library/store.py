@@ -25,7 +25,7 @@ from frameforge.library.taxonomy import (
 
 SETTING_ROOT = "library_root"
 SETTING_ONBOARDED = "library_onboarded"
-SORTS = ("date", "title", "resolution", "source")
+SORTS = ("date", "title", "resolution", "source", "duration")
 
 
 class LibraryStore:
@@ -200,6 +200,35 @@ class LibraryStore:
         if created.uses_folder and self.root() is not None:
             self.collection_folder(created)
         return created
+
+    def create_album(self, name: str) -> LibraryCollection:
+        """Named shelf. Membership is a database link. The video file is not moved."""
+        from frameforge.library.taxonomy import KIND_ALBUM
+
+        return self.create_collection(name, kind=KIND_ALBUM)
+
+    def place_in_album(self, item_id: int, album_id: int | None) -> LibraryItem:
+        """Move a clip into one album, or back to Unfiled. The file stays at its path."""
+        from frameforge.library.taxonomy import KIND_ALBUM
+
+        self.get(item_id)
+        for cid in self.item_collection_ids(item_id):
+            col = self.get_collection(cid)
+            if col.kind != KIND_ALBUM:
+                continue
+            self.conn.execute(
+                "DELETE FROM library_item_collections WHERE item_id = ? AND collection_id = ?",
+                (item_id, cid),
+            )
+        if album_id is None:
+            target = self.uncategorized().id
+        else:
+            album = self.get_collection(album_id)
+            if album.kind != KIND_ALBUM:
+                raise ValueError("Not an album")
+            target = album.id
+        self.conn.commit()
+        return self.set_primary_collection(item_id, target)
 
     def rename_collection(self, collection_id: int, name: str) -> LibraryCollection:
         col = self.get_collection(collection_id)
@@ -448,6 +477,7 @@ class LibraryStore:
             "title": "IFNULL(title,'') COLLATE NOCASE ASC, id DESC",
             "resolution": "IFNULL(height,0) DESC, id DESC",
             "source": "IFNULL(source,'') COLLATE NOCASE ASC, id DESC",
+            "duration": "IFNULL(duration,0) DESC, id DESC",
         }[key]
         sql += f" ORDER BY {order}"
         rows = self.conn.execute(sql, params).fetchall()

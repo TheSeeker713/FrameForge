@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.21
+
+- The Library tab is a cover-flow shelf of the indexed clips. Click a side card to bring it forward, and click the front card to play it in FrameForge. Albums are links in the database: a clip is in one album at a time, and removing it from the library leaves the file where it is. Sort includes duration.
+
 ## 0.6.20
 
 - An empty download is no longer treated as a login failure. When the fast downloader writes a 0-byte file, FrameForge deletes that file and retries once with the built-in downloader. The queue does not pause and does not ask for cookies.

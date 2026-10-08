@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-07 — v0.6.21
+
+The Library tab was still the old list, so the cover-flow shelf from the design session never appeared in the app. Library now shows that shelf, and albums only change the index. Files stay at their source path.
+
 ## 2026-10-07 — v0.6.20
 
 An empty file from the fast downloader was classified as unknown, so the queue paused and asked for cookies even when cookies and impersonation were already in use. That case now retries once with the built-in downloader and does not open the pause dialog.

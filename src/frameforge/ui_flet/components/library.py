@@ -222,6 +222,114 @@ def library_tile(
     )
 
 
+def cover_flow_card(
+    item: LibraryItem,
+    *,
+    focused: bool,
+    turn: float = 0.0,
+    on_open: Any | None = None,
+    on_unlink: Any | None = None,
+    albums: list[Any] | None = None,
+    on_move: Any | None = None,
+) -> ft.Container:
+    """One shelf card. The focused card opens in the app. Side cards only change focus."""
+    thumb = _thumb_src(item.thumb_path)
+    width = 360 if focused else 240
+    height = 202 if focused else 135
+    if thumb:
+        picture: ft.Control = ft.Image(
+            src=thumb,
+            width=width,
+            height=height,
+            fit=ft.BoxFit.COVER,
+            error_content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color="#F4EFE6", size=36),
+        )
+        thumb_kind = "image"
+    else:
+        picture = ft.Container(
+            width=width,
+            height=height,
+            bgcolor="#1C1814",
+            alignment=ft.Alignment.CENTER,
+            content=ft.Icon(ft.Icons.MOVIE_OUTLINED, color="#F4EFE6", size=36),
+        )
+        thumb_kind = "placeholder"
+    angle = 0.0 if focused else turn
+    album_names = albums or []
+    album_ids = {col.id for col in album_names}
+    current_album = str(item.primary_collection_id) if item.primary_collection_id in album_ids else ""
+    move = ft.Dropdown(
+        label="Album",
+        value=current_album,
+        width=width - 16,
+        visible=focused and bool(album_names),
+        options=[ft.dropdown.Option("", text="Unfiled")]
+        + [ft.dropdown.Option(str(col.id), text=col.name) for col in album_names],
+        on_select=lambda e, i=item.id: on_move and on_move(i, e.control.value or None),
+    )
+    unlink = ft.TextButton(
+        content="Remove from library",
+        visible=focused,
+        tooltip="Unlink only. The file stays where it is.",
+        on_click=lambda _e, i=item.id: on_unlink and on_unlink(i),
+    )
+    body = ft.Container(
+        width=width,
+        bgcolor="#F4EFE6" if focused else "#D7DEE8",
+        border_radius=16,
+        padding=8,
+        border=ft.Border.all(1, "#E7C27A" if focused else "#FFFFFF55"),
+        content=ft.Column(
+            [
+                ft.Container(
+                    width=width - 16,
+                    height=height,
+                    border_radius=10,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                    bgcolor="#0C0B0A",
+                    content=ft.Stack(
+                        [
+                            picture,
+                            ft.Container(
+                                alignment=ft.Alignment.CENTER,
+                                content=ft.Icon(ft.Icons.PLAY_CIRCLE_FILLED, color="#F4EFE6", size=48 if focused else 32),
+                            ),
+                        ],
+                        width=width - 16,
+                        height=height,
+                    ),
+                ),
+                ft.Text(
+                    item.title or Path_name(item.path),
+                    size=16 if focused else 13,
+                    weight=ft.FontWeight.W_600,
+                    color="#1A140C",
+                    max_lines=2,
+                ),
+                move,
+                unlink,
+            ],
+            spacing=6,
+            tight=True,
+        ),
+    )
+    return ft.Container(
+        rotate=ft.Rotate(angle=angle, alignment=ft.Alignment.CENTER),
+        animate_rotation=ft.Animation(240, ft.AnimationCurve.EASE_OUT),
+        content=body,
+        data={
+            "item_id": item.id,
+            "path": item.path,
+            "thumb_kind": thumb_kind,
+            "player": "library",
+            "focused": focused,
+            "shelf": "coverflow",
+        },
+        on_click=lambda _e, i=item.id: on_open and on_open(i, focused),
+        tooltip="Play" if focused else "Bring forward",
+    )
+
+
 def Path_name(path: str) -> str:
     from pathlib import Path
 
@@ -685,6 +793,7 @@ def build_library_toolbar(
             ft.PopupMenuItem(content="Title", on_click=lambda _e: on_sort("title")),
             ft.PopupMenuItem(content="Resolution", on_click=lambda _e: on_sort("resolution")),
             ft.PopupMenuItem(content="Source", on_click=lambda _e: on_sort("source")),
+            ft.PopupMenuItem(content="Duration", on_click=lambda _e: on_sort("duration")),
         ],
         tooltip=f"Sort: {sort}",
     )

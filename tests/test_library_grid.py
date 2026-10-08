@@ -168,3 +168,22 @@ def test_ui_scan_fills_blank_library(tmp_path: Path):
     assert ui.library_visible_count == 1
     assert len(ui.library_grid.controls) == 1
     ui.shutdown()
+
+
+def test_cover_flow_shelf_and_album_keeps_the_file(tmp_path: Path):
+    ui = _ui(tmp_path)
+    root = ui.library.complete_onboarding(tmp_path / "Lib")
+    src = _clip(root / "Uncategorized" / "stay.mp4")
+    item = ui.library.add_item(path=src, title="Stay")
+    album = ui.library.create_album("Evening")
+    moved = ui.library.place_in_album(item.id, album.id)
+    assert Path(moved.path) == src
+    assert src.is_file()
+    assert moved.primary_collection_id == album.id
+    back = ui.library.place_in_album(item.id, None)
+    assert Path(back.path) == src
+    ui.refresh_library()
+    assert ui.library_grid.controls[0].data["shelf"] == "coverflow"
+    assert ui.library_grid.controls[0].data["path"] == str(src)
+    assert ui.library_grid.controls[0].data["focused"] is True
+    ui.shutdown()
