@@ -52,7 +52,7 @@ def test_classify_error_known_messages():
     assert "not a bot" in bot_with_tail
     assert should_fail_pause(BOT_CHECK) is True
     assert should_fail_pause(AUTH_REQUIRED) is True
-    assert should_fail_pause(UNKNOWN) is True
+    assert should_fail_pause(UNKNOWN) is False
     assert should_fail_pause(IMPERSONATION_MISSING) is True
     assert should_fail_pause(NETWORK) is False
     assert should_fail_pause("aria2_forbidden") is False

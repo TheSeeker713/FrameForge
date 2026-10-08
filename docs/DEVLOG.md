@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.25
+
+Eporner’s extractor reads a hash from the page, then asks the site API. Without a browser fingerprint that page is the wrong page, so the API answers “Video is not available” for a video that still plays. Eporner was not impersonated, and the classifier treated that sentence as final. The first request now uses Chrome, and the same sentence retries once as a browser before that job is failed. An unclassified failure also no longer pauses the queue.
+
 ## 2026-10-08 — v0.6.24
 
 Aria2 was attached to every download, including fragmented video and sites that need a browser fingerprint. Those now use the built-in downloader. A blocked aria2 attempt retries once with fewer connections, then once without aria2.

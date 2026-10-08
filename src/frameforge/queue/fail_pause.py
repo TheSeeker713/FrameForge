@@ -41,7 +41,7 @@ def modal_actions_for(category: str | None, *, archive_hit: bool = False) -> tup
     if category == OUTPUT_MISSING:
         retry = ("retry", "Force re-download" if archive_hit else "Retry this job")
         return (retry, *OUTPUT_MISSING_ACTIONS[1:])
-    if category in (DISK_SPACE, UPSCALE_LIMIT, UPSCALE_CONFIG, DRM_BLOCKED, EMPTY_DOWNLOAD):
+    if category in (DISK_SPACE, UPSCALE_LIMIT, UPSCALE_CONFIG, DRM_BLOCKED, EMPTY_DOWNLOAD, "unknown"):
         return (
             ("retry", "Retry this job"),
             ("skip_resume", "Skip & resume queue"),

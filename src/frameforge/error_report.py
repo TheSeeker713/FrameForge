@@ -54,6 +54,15 @@ def format_full_error_report(
         str(stderr).strip() or "(empty)",
         f"argv: {argv_summary(list(argv)) if argv else '(none)'}",
     ]
+    log_path = opts.get("error_log")
+    if log_path:
+        try:
+            from pathlib import Path
+
+            log_text = Path(str(log_path)).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            log_text = ""
+        lines.extend(["job_log:", log_text.strip() or "(empty)"])
     if inv:
         lines.append(f"cwd: {inv.get('cwd') or ''}")
         lines.append(f"cookies: {inv.get('cookies') or '(none)'}")

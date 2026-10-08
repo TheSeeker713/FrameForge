@@ -25,7 +25,6 @@ from frameforge.errors import (
     EMPTY_DOWNLOAD,
     OUTPUT_MISSING,
     RATE_LIMITED,
-    UNKNOWN,
     UPSCALE_CONFIG,
     UPSCALE_LIMIT,
     classify_error,
@@ -195,8 +194,6 @@ def should_try_silent_cookies(
     if cat in COOKIE_ELIGIBLE_CATEGORIES:
         return True
     if looks_like_auth_wall(message, url=url):
-        return True
-    if cat == UNKNOWN and cookie_domain_eligible(url, message, attempts):
         return True
     return False
 

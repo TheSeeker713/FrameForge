@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.25
+
+- “Video is not available” from Eporner is the site API rejecting a page that was not fetched as a browser. Eporner is now fetched as Chrome, and that sentence retries once as a browser before the job fails. It does not ask for cookies and does not pause the queue.
+- The queue pauses only for a real wall: login, age check, bot check, a missing JavaScript runtime, missing browser impersonation, a missing output file, or a full disk. An unclassified failure fails that job and continues. It does not ask for cookies. Copying the error report includes the per-job log.
+
 ## 0.6.24
 
 - Aria2 is used for plain HTTP files only, at 8 connections. HLS and DASH stay on the built-in downloader, and so does any host that needs browser impersonation. A CDN 403 retries once at 4 connections, then once with the built-in downloader.

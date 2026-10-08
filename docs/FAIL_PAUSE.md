@@ -29,7 +29,9 @@ Suggested next steps are listed on the error panel (cookies / retry / wait / ski
 
 Setting **Pause queue on bot-check / login failures** (`fail_pause_on_auth`, default **ON**).
 
-When a job fails with `auth_required`, `bot_check`, `js_runtime`, `impersonation_missing`, `output_missing`, or hard `unknown`:
+When a job fails with `auth_required`, `bot_check`, `js_runtime`, `impersonation_missing`, `output_missing`, `disk_space`, `upscale_limit`, or `upscale_config`:
+
+An unclassified failure does not pause the queue and does not offer a cookie import unless the text is a login or bot wall. `not_available`, `empty_download`, `network`, and `drm_blocked` fail that job and the next one starts.
 
 1. The worker **halts** (`halt_after_fail`): disarms **and** latches so a stale
    `_armed` flag cannot claim the next pending.

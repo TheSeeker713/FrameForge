@@ -64,7 +64,6 @@ FAIL_PAUSE_CATEGORIES = frozenset(
         DISK_SPACE,
         UPSCALE_LIMIT,
         UPSCALE_CONFIG,
-        UNKNOWN,
     }
 )
 STDERR_TAIL_LINES = 12

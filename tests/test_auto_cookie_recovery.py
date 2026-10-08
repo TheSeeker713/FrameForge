@@ -56,7 +56,7 @@ def test_ph_age_and_unknown_classify():
     assert should_try_silent_cookies(AUTH_REQUIRED, AUTH_MSG, PH_URL) is True
     assert should_try_silent_cookies(RATE_LIMITED, "HTTP Error 429: Too Many Requests", YT_URL) is True
     assert should_try_silent_cookies(UNKNOWN, "please sign in to continue", YT_URL) is True
-    assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, PH_URL) is True
+    assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, PH_URL) is False
     assert should_try_silent_cookies(
         UNKNOWN, BARE_UNKNOWN, "https://ff-no-cookies-test.invalid/watch"
     ) is False
@@ -69,7 +69,7 @@ def test_ph_age_and_unknown_classify():
             impersonated=True,
             silent_cookies=True,
         )
-        == SILENT_FIREFOX_COOKIES
+        is None
     )
     assert (
         next_recovery_step(
@@ -80,7 +80,7 @@ def test_ph_age_and_unknown_classify():
             impersonated=True,
             silent_cookies=True,
         )
-        == SILENT_FIREFOX_COOKIES
+        is None
     )
     assert should_try_silent_cookies(UNKNOWN, BARE_UNKNOWN, YT_URL) is False
     assert (
@@ -215,8 +215,8 @@ def test_ph_auth_enters_silent_cookie_path(tmp_path: Path, monkeypatch):
     repo.close()
 
 
-def test_unknown_after_impersonate_runs_firefox_then_retry_no_fail_pause(tmp_path: Path, monkeypatch):
-    """Field regression: category unknown + tried impersonate must not open the modal."""
+def test_unknown_after_impersonate_does_not_import_cookies_or_pause(tmp_path: Path, monkeypatch):
+    """An unclassified line is not a login wall, even after impersonate."""
     monkeypatch.setattr("frameforge.download.impersonate.list_impersonate_targets", lambda: ["chrome"])
     monkeypatch.setattr(
         "frameforge.download.impersonate.require_impersonate_for_url",
@@ -257,15 +257,11 @@ def test_unknown_after_impersonate_runs_firefox_then_retry_no_fail_pause(tmp_pat
     while time.time() < deadline and repo.get(job.id).status in ("pending", "downloading"):
         time.sleep(0.03)
     loaded = repo.get(job.id)
-    assert loaded.status == "completed"
-    assert n["i"] == 2
+    assert loaded.status == "failed"
+    assert n["i"] == 1
     assert paused == []
     attempts = loaded.options().get("recovery_attempts") or []
-    assert "impersonate" in attempts
-    assert SILENT_FIREFOX_COOKIES in attempts
-    assert RETRY in attempts
-    assert attempts.index("impersonate") < attempts.index(SILENT_FIREFOX_COOKIES)
-    assert attempts.index(SILENT_FIREFOX_COOKIES) < attempts.index(RETRY)
+    assert SILENT_FIREFOX_COOKIES not in attempts
     worker.stop(timeout=2)
     repo.close()
 

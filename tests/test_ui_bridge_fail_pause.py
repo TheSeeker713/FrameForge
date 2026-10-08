@@ -74,7 +74,7 @@ def test_retry_fail_again_uses_same_fail_pause_handler(tmp_path: Path):
     repo.close()
 
 
-def test_unknown_exit_code_fail_pauses(tmp_path: Path):
+def test_unknown_exit_code_does_not_fail_pause(tmp_path: Path):
     repo = JobRepository(tmp_path / "u.db")
     job = repo.enqueue("https://example.com/u")
     msg = format_ytdlp_exit_error(1, ["[debug] ...", "ERROR: unexplained extractor crash"])
@@ -84,8 +84,7 @@ def test_unknown_exit_code_fail_pauses(tmp_path: Path):
     assert loaded.options().get("error_cause")
     assert "extractor crash" in (loaded.options().get("error_stderr_tail") or "")
     worker = SequentialWorker(repo, download_handler=lambda j, r: None)
-    assert maybe_fail_pause(worker, repo, loaded) is True
-    assert worker.is_armed is False
+    assert maybe_fail_pause(worker, repo, loaded) is False
     repo.close()
 
 

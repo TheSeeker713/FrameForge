@@ -305,11 +305,10 @@ class FrameForgeUi:
             BOT_CHECK,
             IMPERSONATION_MISSING,
             RATE_LIMITED,
-            UNKNOWN,
         )
 
         cat = str(payload.get("category") or "")
-        if cat not in {AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, RATE_LIMITED, UNKNOWN}:
+        if cat not in {AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, RATE_LIMITED}:
             return False
         url = str(payload.get("url") or "")
         if not url or not cookies_validated_in_session(url):
