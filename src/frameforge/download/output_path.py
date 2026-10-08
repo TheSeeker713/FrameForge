@@ -24,6 +24,9 @@ _ARCHIVE_SKIP_RE = re.compile(
     r"has already been recorded in (the )?archive|already in archive",
     re.IGNORECASE,
 )
+# Stay under the classic Windows 260-character path limit, including ".info.json".
+_WIN_PATH_BUDGET = 240
+_INFOJSON_TAIL = len(" [") + 20 + len("].info.json")
 _FRAGMENT_RE = re.compile(r"\.f\d{2,4}\.[A-Za-z0-9]+$", re.IGNORECASE)
 _YT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
@@ -149,6 +152,28 @@ def _prefer_merged(paths: list[Path]) -> Path | None:
     merged = [p for p in paths if not _FRAGMENT_RE.search(p.name)]
     pool = merged or paths
     return sorted(pool, key=lambda p: p.stat().st_mtime)[-1]
+
+
+def title_trim_bytes(output_dir: Path) -> int:
+    """How many title bytes fit beside this folder without breaking the info.json path."""
+    parent = str(Path(output_dir))
+    room = _WIN_PATH_BUDGET - len(parent) - 1 - _INFOJSON_TAIL
+    if room < 16:
+        return 0
+    return min(80, room)
+
+
+def media_outtmpl(output_dir: Path) -> str:
+    """Filename template whose info.json sibling stays inside the Windows path budget."""
+    budget = title_trim_bytes(output_dir)
+    if budget <= 0:
+        return "%(id)s.%(ext)s"
+    return f"%(title).{budget}B [%(id)s].%(ext)s"
+
+
+def metadata_json_failed(message: str | None) -> bool:
+    text = str(message or "").lower()
+    return "cannot write" in text and "json file" in text
 
 
 def glob_by_video_id(output_dir: Path, video_id: str | None) -> Path | None:

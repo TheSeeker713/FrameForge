@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.32
+
+The clip downloaded, then yt-dlp tried to write a `.info.json` whose full path was 264 characters. Windows stops at 260, so the job was marked failed and the card called it unclassified. The filename template now leaves room for that JSON sibling, and the JSON itself is stored under metadata/ using the video id.
+
 ## 2026-10-08 — v0.6.31
 
 Eporner downloads were all dying on “Authorization failed. Try to reload page,” and the card called that unclassified. yt-dlp issue 17713: the page contains two hashes, and the extractor’s regex takes the first one, which is the session hash. The video API wants player.hash. A commenter posted that one-line regex change and another confirmed it on 2026-09-25. FrameForge now loads that override as a yt-dlp plugin, retries the embed page once, and only then tries cookies.

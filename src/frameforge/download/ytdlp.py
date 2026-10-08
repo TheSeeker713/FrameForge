@@ -280,8 +280,21 @@ class YtDlpDownloader:
         return download_staging_dir(Path(self.output_dir))
 
     def _yt_paths(self) -> dict[str, str]:
+        from frameforge.paths import metadata_dir
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        return {"home": str(self.output_dir), "temp": str(self._staging_dir())}
+        meta = metadata_dir()
+        meta.mkdir(parents=True, exist_ok=True)
+        return {
+            "home": str(self.output_dir),
+            "temp": str(self._staging_dir()),
+            "infojson": str(meta),
+        }
+
+    def _outtmpl(self) -> str:
+        from frameforge.download.output_path import media_outtmpl
+
+        return media_outtmpl(Path(self.output_dir))
 
     def _relocate_sidecars(self, media: Path) -> None:
         """Move .info.json beside the finished file into FrameForge/metadata/."""
@@ -400,7 +413,7 @@ class YtDlpDownloader:
         return info
 
     def build_opts(self, progress_cb: ProgressCb | None = None, *, url: str | None = None) -> dict[str, Any]:
-        outtmpl = self.OUTTMPL_REL
+        outtmpl = self._outtmpl()
 
         def _hook(d: dict[str, Any]) -> None:
             if not progress_cb:
@@ -443,7 +456,10 @@ class YtDlpDownloader:
         self._ytdlp_log = YtDlpMessageLog()
         opts: dict[str, Any] = {
             "logger": self._ytdlp_log,
-            "outtmpl": outtmpl,
+            "outtmpl": {
+                "default": outtmpl,
+                "infojson": "%(id)s.%(ext)s",
+            },
             "paths": self._yt_paths(),
             "format": self._format_selector(),
             "merge_output_format": "mp4",
@@ -695,7 +711,7 @@ class YtDlpDownloader:
 
     def _build_cli_cmd(self, url: str) -> list[str]:
         paths = self._yt_paths()
-        outtmpl = self.OUTTMPL_REL
+        outtmpl = self._outtmpl()
         cmd: list[str] = [
             sys.executable,
             "-m",
@@ -713,8 +729,12 @@ class YtDlpDownloader:
             f"home:{paths['home']}",
             "-P",
             f"temp:{paths['temp']}",
+            "-P",
+            f"infojson:{paths['infojson']}",
             "-o",
             outtmpl,
+            "-o",
+            "infojson:%(id)s.%(ext)s",
             "--write-info-json",
             "--write-thumbnail",
             "--retries",
@@ -812,7 +832,7 @@ class YtDlpDownloader:
         snap = snapshot_invocation(
             argv=cmd,
             cwd=str(self.output_dir),
-            output_template=self.OUTTMPL_REL,
+            output_template=self._outtmpl(),
             cookies=str(cookie) if cookie is not None else None,
             aria2c=aria2_on,
             format_selector=self._format_selector(),
@@ -956,6 +976,11 @@ class YtDlpDownloader:
             if process_registry.was_killed(job_id):
                 raise DownloadCancelled("cancelled")
             if rc != 0:
+                from frameforge.download.output_path import (
+                    OutputMissingError,
+                    metadata_json_failed,
+                    require_download_artifact,
+                )
                 from frameforge.errors import format_ytdlp_exit_error
 
                 important = [
@@ -967,9 +992,19 @@ class YtDlpDownloader:
                 for ln in important + list(output_tail or printed):
                     if ln and ln not in combined:
                         combined.append(ln)
-                raise RuntimeError(
-                    format_ytdlp_exit_error(rc, combined, argv=cmd)
-                )
+                err = format_ytdlp_exit_error(rc, combined, argv=cmd)
+                if not metadata_json_failed(err):
+                    raise RuntimeError(err)
+                try:
+                    require_download_artifact(
+                        url=url,
+                        output_dir=self.output_dir,
+                        printed=printed,
+                        output_tail=output_tail + stderr_chunks,
+                        archive_file=None if self.ignore_download_archive else self.archive_file,
+                    )
+                except OutputMissingError:
+                    raise RuntimeError(err) from None
         except (DownloadCancelled, DownloadPaused):
             if proc.poll() is None:
                 process_registry.kill(job_id)

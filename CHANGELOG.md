@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.32
+
+- A finished Eporner download was failed because Windows rejected the metadata JSON path. The title made that path 264 characters, past the 260-character limit. The video filename is now kept inside that limit, and the JSON file is written by video id under metadata/.
+
 ## 0.6.31
 
 - Eporner’s “Authorization failed. Try to reload page” was the site API rejecting the wrong hash. The page has a user hash and a player hash, and yt-dlp was sending the user hash. FrameForge now sends player.hash, retries the embed page once if the API still refuses, then tries browser cookies once.
