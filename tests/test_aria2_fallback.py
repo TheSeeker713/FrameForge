@@ -77,7 +77,14 @@ def test_native_retry_argv_omits_aria2_and_restores_default(tmp_path: Path, monk
     def fake_inprocess(url: str, progress_cb=None):
         n["i"] += 1
         if n["i"] == 1:
-            assert "--downloader" in dl._build_cli_cmd(url)
+            cmd = dl._build_cli_cmd(url)
+            assert "--downloader" in cmd
+            assert "-x 8" in " ".join(cmd)
+            raise RuntimeError(ARIA2_403_STDERR)
+        if n["i"] == 2:
+            cmd = dl._build_cli_cmd(url)
+            assert "--downloader" in cmd
+            assert "-x 4" in " ".join(cmd)
             raise RuntimeError(ARIA2_403_STDERR)
         cmd = dl._build_cli_cmd(url)
         assert "--downloader" not in cmd
@@ -91,10 +98,10 @@ def test_native_retry_argv_omits_aria2_and_restores_default(tmp_path: Path, monk
 
     dl._download_inprocess = fake_inprocess  # type: ignore[method-assign]
     result = dl.download("https://www.youtube.com/watch?v=x", progress_cb=progress_cb)
-    assert n["i"] == 2
+    assert n["i"] == 3
     assert result.title == "ok"
     assert dl.aria2_fallback_native is True
-    assert dl.download_attempt == 2
+    assert dl.download_attempt == 3
     assert dl.download_method == "native"
     assert dl.use_aria2c is True
     assert dl._aria2c_enabled() is True
@@ -128,7 +135,7 @@ def test_worker_does_not_fail_or_fail_pause_after_aria2_attempt_one(
 
     def fake_inprocess(url: str, progress_cb=None):
         n["i"] += 1
-        if n["i"] == 1:
+        if n["i"] < 3:
             raise RuntimeError(ARIA2_403_STDERR)
         path = out / "ok.mp4"
         path.write_bytes(b"media")
@@ -148,11 +155,11 @@ def test_worker_does_not_fail_or_fail_pause_after_aria2_attempt_one(
         time.sleep(0.02)
     loaded = repo.get(job.id)
     assert loaded.status == "completed"
-    assert n["i"] == 2
+    assert n["i"] == 3
     assert paused == []
     opts = loaded.options()
     assert opts.get("aria2_fallback_native") is True
-    assert opts.get("download_attempt") == 2
+    assert opts.get("download_attempt") == 3
     assert opts.get("download_method") == "native"
     cmd = opts["ytdlp_invocation"]["argv"]
     assert "--downloader" not in cmd
@@ -184,7 +191,7 @@ def test_worker_fails_only_after_native_also_fails(tmp_path: Path, monkeypatch):
 
     def fake_inprocess(url: str, progress_cb=None):
         n["i"] += 1
-        if n["i"] == 1:
+        if n["i"] < 3:
             raise RuntimeError(ARIA2_403_STDERR)
         raise RuntimeError("native downloader also failed: Connection reset by peer")
 
@@ -200,10 +207,10 @@ def test_worker_fails_only_after_native_also_fails(tmp_path: Path, monkeypatch):
     while time.time() < deadline and repo.get(job.id).status in ("pending", "downloading"):
         time.sleep(0.02)
     loaded = repo.get(job.id)
-    assert n["i"] == 2
+    assert n["i"] == 3
     assert loaded.status == "failed"
     assert loaded.options().get("aria2_fallback_native") is True
-    assert loaded.options().get("download_attempt") == 2
+    assert loaded.options().get("download_attempt") == 3
     assert classify_error(loaded.error) == NETWORK
     worker.stop(timeout=5)
     repo.close()

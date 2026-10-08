@@ -328,6 +328,28 @@ class YtDlpDownloader:
 
         return bool(self.use_aria2c) and aria2c_available()
 
+    def _aria2_for_url(self, url: str | None) -> bool:
+        """Aria2 only for a plain file. Impersonated hosts stay on the native downloader."""
+        if not self._aria2c_enabled():
+            return False
+        if self.force_impersonate:
+            return False
+        if url:
+            from frameforge.download.impersonate import url_needs_impersonate
+
+            if url_needs_impersonate(url, repo=getattr(self, "_settings_repo", None)):
+                return False
+        return True
+
+    def _external_downloader_map(self, url: str | None) -> dict[str, str] | None:
+        """aria2c for http(s). HLS and DASH stay native (yt-dlp 2026.06.09)."""
+        if not self._aria2_for_url(url):
+            return None
+        mapping = {"default": "aria2c", "http": "aria2c", "https": "aria2c"}
+        for proto in ("m3u8", "m3u8_native", "dash", "http_dash_segments"):
+            mapping[proto] = "native"
+        return mapping
+
     def _valid_cookiefile(self) -> Path | None:
         from frameforge.download.cookies import is_netscape_cookie_text
 
@@ -452,8 +474,9 @@ class YtDlpDownloader:
         opts["concurrent_fragment_downloads"] = self._concurrent_fragments()
         opts["throttledratelimit"] = throttled_rate_bps()
         opts["http_chunk_size"] = http_chunk_size_bytes()
-        if self._aria2c_enabled():
-            opts["external_downloader"] = {"default": "aria2c"}
+        downloader_map = self._external_downloader_map(url)
+        if downloader_map is not None:
+            opts["external_downloader"] = downloader_map
             opts["external_downloader_args"] = {
                 "aria2c": aria2c_opt_args(self._aria2_connections())
             }
@@ -500,16 +523,49 @@ class YtDlpDownloader:
         killable subprocess (hard cancel via process-tree kill). Otherwise the
         in-process YoutubeDL API is used (direct/unit callers).
 
-        If aria2c hits googlevideo HTTP 403 / exit 22, or writes an empty file,
-        retry once with the native downloader. Cancel/pause still abort immediately.
+        If aria2c hits HTTP 403, retry once at 4 connections, then once with the
+        native downloader. An empty file skips the connection retry and goes
+        straight to native. Cancel/pause still abort immediately.
         """
         from frameforge.errors import is_aria2_forbidden, is_empty_download
 
         original_aria2 = self.use_aria2c
+        original_connections = self.aria2_connections
         self.aria2_fallback_native = False
+        self._aria2_reduced = False
         self.download_attempt = 1
-        used_aria2 = self._aria2c_enabled()
+        used_aria2 = self._aria2_for_url(url)
         self.download_method = "aria2c" if used_aria2 else "native"
+
+        def _note(text: str) -> None:
+            if progress_cb:
+                progress_cb(
+                    0.0,
+                    {
+                        "speed_bps": None,
+                        "eta_seconds": None,
+                        "speed_str": text,
+                        "eta_str": None,
+                    },
+                )
+
+        def _native_retry(exc: BaseException) -> DownloadResult:
+            empty = is_empty_download(str(exc))
+            if empty:
+                self._drop_empty_artifacts()
+            self.use_aria2c = False
+            self.aria2_fallback_native = True
+            self.download_attempt = int(self.download_attempt) + 1
+            self.download_method = "native"
+            _note(
+                "Empty file from fast downloader — retrying built-in…"
+                if empty
+                else "CDN blocked aria2 — retrying built-in…"
+            )
+            return self._download_once(
+                url, progress_cb, job_id=job_id, process_registry=process_registry
+            )
+
         try:
             try:
                 return self._download_once(
@@ -522,31 +578,33 @@ class YtDlpDownloader:
                 forbidden = is_aria2_forbidden(str(exc))
                 if not used_aria2 or not (empty or forbidden):
                     raise
-                if empty:
-                    self._drop_empty_artifacts()
-                self.use_aria2c = False
-                self.aria2_fallback_native = True
-                self.download_attempt = 2
-                self.download_method = "native"
-                if progress_cb:
-                    progress_cb(
-                        0.0,
-                        {
-                            "speed_bps": None,
-                            "eta_seconds": None,
-                            "speed_str": (
-                                "Empty file from fast downloader — retrying built-in…"
-                                if empty
-                                else "CDN blocked aria2 — retrying built-in…"
-                            ),
-                            "eta_str": None,
-                        },
-                    )
-                return self._download_once(
-                    url, progress_cb, job_id=job_id, process_registry=process_registry
-                )
+                if (
+                    forbidden
+                    and not self._aria2_reduced
+                    and self._aria2_connections() > 4
+                ):
+                    self._aria2_reduced = True
+                    self.aria2_connections = 4
+                    self.download_attempt = 2
+                    self.download_method = "aria2c"
+                    _note("CDN blocked aria2 — retrying with fewer connections…")
+                    try:
+                        return self._download_once(
+                            url, progress_cb, job_id=job_id, process_registry=process_registry
+                        )
+                    except (DownloadCancelled, DownloadPaused):
+                        raise
+                    except Exception as exc2:
+                        exc = exc2
+                        empty = is_empty_download(str(exc))
+                        forbidden = is_aria2_forbidden(str(exc))
+                        if not (empty or forbidden):
+                            raise
+                return _native_retry(exc)
         finally:
             self.use_aria2c = original_aria2
+            self.aria2_connections = original_connections
+            self._aria2_reduced = False
 
     def _drop_empty_artifacts(self) -> None:
         """Remove 0-byte media left by a failed aria2 attempt. Never touches non-empty files."""
@@ -689,11 +747,12 @@ class YtDlpDownloader:
         cmd.extend(["--concurrent-fragments", str(self._concurrent_fragments())])
         cmd.extend(["--throttled-rate", DEFAULT_THROTTLED_RATE])
         cmd.extend(["--http-chunk-size", DEFAULT_HTTP_CHUNK_SIZE])
-        if self._aria2c_enabled():
+        if self._external_downloader_map(url) is not None:
+            cmd.extend(["--downloader", "aria2c"])
+            for proto in ("m3u8", "m3u8_native", "dash", "http_dash_segments"):
+                cmd.extend(["--downloader", f"{proto}:native"])
             cmd.extend(
                 [
-                    "--downloader",
-                    "aria2c",
                     "--downloader-args",
                     f"aria2c:{aria2c_cli_args(self._aria2_connections())}",
                 ]
@@ -743,7 +802,7 @@ class YtDlpDownloader:
         )
 
         extractor = self._extractor_args_cli(url)
-        aria2_on = self._aria2c_enabled()
+        aria2_on = self._external_downloader_map(url) is not None
         snap = snapshot_invocation(
             argv=cmd,
             cwd=str(self.output_dir),

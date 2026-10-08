@@ -15,7 +15,10 @@ def test_aria2c_opts_include_speed_flags():
     assert opts["external_downloader"]["default"] == "aria2c"
     args = opts["external_downloader_args"]["aria2c"]
     joined = " ".join(args)
-    assert "-x" in args and "16" in args
+    assert "-x" in args and "8" in args
+    assert opts["external_downloader"]["m3u8"] == "native"
+    assert opts["external_downloader"]["dash"] == "native"
+    assert opts["external_downloader"]["http_dash_segments"] == "native"
     assert "-s" in args
     assert "-k" in args
     assert "-c" in args
@@ -24,11 +27,22 @@ def test_aria2c_opts_include_speed_flags():
     cli = " ".join(cmd)
     assert "--downloader" in cmd
     assert "aria2c" in cli
-    assert "-x 16" in cli
+    assert "-x 8" in cli
+    assert "m3u8:native" in cli
+    assert "dash:native" in cli
     assert "--concurrent-fragments" in cmd
     assert int(cmd[cmd.index("--concurrent-fragments") + 1]) >= 4
     assert "-f" in cmd
     assert "bv*+ba/b" in cmd
+
+
+def test_impersonated_host_and_fragments_do_not_use_aria2():
+    dl = YtDlpDownloader(output_dir=Path("."), use_aria2c=True)
+    cmd = dl._build_cli_cmd("https://www.pornhub.com/view_video.php?viewkey=abc")
+    assert "--downloader" not in cmd
+    plain = " ".join(dl._build_cli_cmd("https://example.com/file.mp4"))
+    assert "m3u8:native" in plain
+    assert "http_dash_segments:native" in plain
 
 
 def test_native_path_uses_concurrent_fragments():

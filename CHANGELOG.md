@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.24
+
+- Aria2 is used for plain HTTP files only, at 8 connections. HLS and DASH stay on the built-in downloader, and so does any host that needs browser impersonation. A CDN 403 retries once at 4 connections, then once with the built-in downloader.
+
 ## 0.6.23
 
 - “Video is not available” is an unavailable video. The queue does not pause, does not ask for cookies, and does not switch to the generic extractor after a named site extractor has already answered.
