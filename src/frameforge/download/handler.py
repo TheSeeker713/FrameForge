@@ -168,6 +168,7 @@ def make_download_handler(
         attempts: list[str] = list(job.options().get("recovery_attempts") or [])
         last_exc: BaseException | None = None
         result = None
+        attempt_url = job.url
 
         def _raise_if_backoff_aborted() -> None:
             reason = recovery_should_abort(job.id, repo, process_registry)
@@ -177,7 +178,7 @@ def make_download_handler(
         while True:
             try:
                 result = dl.download(
-                    job.url,
+                    attempt_url,
                     progress_cb=progress_cb,
                     job_id=job.id,
                     process_registry=process_registry,
@@ -206,6 +207,24 @@ def make_download_handler(
                 )
                 if step is None:
                     break
+                if step == "eporner_embed":
+                    from frameforge.download.eporner import eporner_embed_url
+
+                    embed = eporner_embed_url(job.url)
+                    attempts.append("eporner_embed")
+                    if embed:
+                        attempt_url = embed
+                    if progress_cb:
+                        progress_cb(
+                            0.0,
+                            {
+                                "speed_bps": None,
+                                "eta_seconds": None,
+                                "speed_str": "Retrying the embed page…",
+                                "eta_str": None,
+                            },
+                        )
+                    continue
                 if step == "impersonate":
                     dl.force_impersonate = True
                     attempts.append("impersonate")

@@ -651,6 +651,9 @@ class YtDlpDownloader:
     ) -> DownloadResult:
         from yt_dlp import YoutubeDL
 
+        from frameforge.download.eporner import ensure_plugin_loaded
+
+        ensure_plugin_loaded()
         opts = self.build_opts(progress_cb, url=url)
         try:
             with YoutubeDL(opts) as ydl:
@@ -781,6 +784,9 @@ class YtDlpDownloader:
             from frameforge.download.recovery import GENERIC_EXTRACTORS_CLI
 
             cmd.extend(["--use-extractors", GENERIC_EXTRACTORS_CLI])
+        from frameforge.download.eporner import plugin_root
+
+        cmd.extend(["--plugin-dirs", plugin_root()])
         cmd.append(url)
         return cmd
 

@@ -420,12 +420,22 @@ def next_recovery_step(
             or looks_like_fingerprint(text)
             or "unable to extract hash" in text.lower()
             or (needs_browser and looks_like_generic_mismatch(text))
+            or (needs_browser and "authorization failed" in text.lower())
         )
     ):
         return "impersonate"
 
     if cat == NOT_AVAILABLE:
         return None
+
+    # Eporner puts a user hash and a player hash on the same page. The API
+    # answers "Authorization failed" when the user hash is sent. After the
+    # player-hash plugin, one embed-page retry still covers a stale page.
+    if "eporner_embed" not in done and "authorization failed" in text.lower():
+        from frameforge.download.eporner import eporner_embed_url
+
+        if eporner_embed_url(url):
+            return "eporner_embed"
 
     if (
         not (done & COOKIE_ATTEMPT_NAMES)

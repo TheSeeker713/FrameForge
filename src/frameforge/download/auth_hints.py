@@ -30,6 +30,7 @@ _AUTH_RE = re.compile(
     r"|registered users"
     r"|only available (to|for)"
     r"|premium (members|only)"
+    r"|authorization failed"
     r"|http error 401"
     r"|status code 401"
     r"|401 unauthorized"

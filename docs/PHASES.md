@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.30 (Library files stay put)
+## Status: v0.6.31 (Eporner uses the player hash)
 
-Package version is **0.6.30**. Albums are database links. Indexing a completed download does not move the file. v0.6.29 still resets the queue without deleting videos.
+Package version is **0.6.31**. Eporner’s authorization failure was the wrong page hash. The download sends player.hash, then retries the embed page, then cookies. v0.6.30 still keeps library files in place.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.31
+
+Eporner downloads were all dying on “Authorization failed. Try to reload page,” and the card called that unclassified. yt-dlp issue 17713: the page contains two hashes, and the extractor’s regex takes the first one, which is the session hash. The video API wants player.hash. A commenter posted that one-line regex change and another confirmed it on 2026-09-25. FrameForge now loads that override as a yt-dlp plugin, retries the embed page once, and only then tries cookies.
+
 ## 2026-10-08 — v0.6.30
 
 The library docs still described albums as folders that move videos. The contract is now written down and tested: album membership, unlink, and indexing a finished download leave the file path unchanged.

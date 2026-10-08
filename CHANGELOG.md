@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.31
+
+- Eporner’s “Authorization failed. Try to reload page” was the site API rejecting the wrong hash. The page has a user hash and a player hash, and yt-dlp was sending the user hash. FrameForge now sends player.hash, retries the embed page once if the API still refuses, then tries browser cookies once.
+
 ## 0.6.30
 
 - An album is a link in the database. Placing a clip in an album, or removing it from the library, leaves the file where it is. Indexing a completed download does not move that file.
