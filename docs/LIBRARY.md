@@ -1,70 +1,31 @@
 # Library
 
-Local media catalog. **No cloud, no accounts, no telemetry sync.** Metadata lives in the same SQLite file as the download queue (`database/frameforge.db` under the download FrameForge root). Library **files** live under `<picked>/FrameForge/Library/` — see [FOLDER_LAYOUT.md](FOLDER_LAYOUT.md).
+The library is an index of videos that are already on disk. An album is a link in SQLite. Putting a clip in an album, taking it out, or removing it from the library does not move or delete the file.
 
-Queue and History are unchanged: completed downloads stay playable from the Queue thumbnail/row even after they are moved into Library.
+Completed downloads are indexed at the path the download already used. The file stays in that folder.
 
-The **Library** tab replaced **Thumbnails**. Preview images still cache under `%USERPROFILE%\Downloads\FrameForge\thumbnails\` for Queue cards.
+## What an album is
 
-## Onboarding
+- Create an album: a row in `library_collections` with kind `album`.
+- One clip is in one album at a time. Placing it in a second album replaces the first link.
+- `place_in_album` updates `library_item_collections` and `primary_collection_id`. The `path` column and the file on disk stay the same.
+- Remove from library deletes the index row and the collection link. The file stays.
+- Delete file is a separate confirm and sends the file to the Recycle Bin. That is not what remove-from-library does.
 
-Onboarding is two steps. **`library_root` and `library_onboarded` are separate.** Choosing a folder does **not** finish setup.
+## What indexing does
 
-1. First Library open if `library_onboarded` is not set → step A: pick a library root (any drive). FrameForge creates `<picked>/FrameForge/Library/` and stores that as `library_root` (never the bare picked folder).
-2. Step B (same session, wizard stays open / resumes here if you reopen Library): scan **completed jobs with a file on disk** and **video files under the download tree** (`Downloads/FrameForge/…`) that are not in `library_items`. Show the combined count plus a short sample list.
-   - **Move to Library** — files move on a **background worker thread** (never the Flet UI thread). Destination is `library_root/Uncategorized/` (filenames kept; job paths update only after the destination exists). Same-drive uses rename; **cross-drive** is a **chunked copy** (cancel is checked every chunk) → size verify → unlink source. Large files log `COPY #n bytes=a/b` and the UI can show percent / “4.2 GB”. Duplicate job rows that share one source path are moved **once**. Before the batch, jobs whose `download_path` points at a **missing** Uncategorized/library file are healed to the matching `*[id].mp4` under the download tree (youtube/…) when that file still exists. Only finished videos (not `.part` / `.aria2` / json). Stale `library_items` whose path is missing are dropped (after heal) so the same job can move again. The wizard shows a determinate progress bar, “Moving N of M…”, the current filename, and **Cancel**. Cancel during a copy does **not** write a finished dest (dest-side `.ffpartial` is removed; source stays). The bar stays up until a **summary** (moved / failed / skipped / disk files, plus log path). Every file is appended to `Downloads\FrameForge\temp\library_move_<timestamp>.log` (src, dst, ok/fail, `ABORT in-copy`, traceback). Per-file errors **and** progress-callback errors are logged and counted; the rest of the batch continues. After the batch, Uncategorized is scanned for orphans (not the entire drive). On a clean finish with nothing left to move, set `library_onboarded`. Already-moved files stay in Library (no rollback).
-   - **Skip for now** — keep `library_root`, set `library_onboarded`, leave files in the download folders. Import later from the empty-state **Import completed downloads** button.
-3. If a move fails or is cancelled with files still outside Library, `library_onboarded` stays false and the transfer step stays up with the summary so you can retry or skip. Success also keeps the summary until you click **Done** (not toast-only).
-4. **Quit during a move:** X / Quit signals cancel (chunked copy aborts at the next chunk), waits up to ~15s for the worker, then continues normal shutdown. `prevent_close` is released immediately so the window is never stuck behind a freeze.
-5. Later opens (already onboarded): if new completed downloads are not in the index, a modal offers “N new downloads — Move to Library?” **Yes** / **Not now**.
+`publish_completed_downloads` adds a `library_items` row whose `path` is the finished download. It does not copy or rename that video into `Library/Uncategorized`.
 
-Re-opening Library with a root but `library_onboarded=false` resumes at step B.
+Scan and “add completed downloads” follow the same rule: index in place.
 
-**Reset (dev / retest):** Settings → Advanced → **Reset Library onboarding**, or `.\scripts\reset_library.ps1` / `.\scripts\reset_library_state.ps1` / `python -m frameforge --reset-library`. Clears the index, collections, watch folders, `library_root`, and `library_onboarded`. **Does not delete media files.** Completed jobs that still point at **missing Uncategorized** paths are restored to the matching file under the download folders when one exists. After reset, onboarding is pick folder → `<pick>/FrameForge/Library/Uncategorized` → scan **all** download-tree videos (every site folder) → Move with progress → summary → playable grid. The reset confirm stays until you choose Reset or Cancel (Settings dismiss must not close it).
+## What is not the album model
 
-### Field gate (v0.6.7)
+An older onboarding wizard can still copy or rename videos into `Library/Uncategorized`. That wizard is not how albums work. Albums never use it. The v0.6.7 move-field gate stays closed until a real-tree log shows `OK #2+`.
 
-The 2026-08-16 audit of this machine’s youtube tree (`library_move_20260816_102055.log`, stuck in a 4.48 GB `copy2` of job 2) is **not claimed fixed** until a **new** log from that same tree shows `OK` for file 2 or later (`OK #2+`). Tiny pytest files and the 3-file K: probe do not count. See [AUDIT_FULL_v0.6.3_FIELD.md](AUDIT_FULL_v0.6.3_FIELD.md).
+Queue and History are unchanged. They are not the library shelf.
 
-## Layout
+## Storage
 
-- List: one row per **playable** indexed file (thumbnail, title, resolution). Count in the toolbar equals visible rows. The list is a `ListView`, the same scrollable control as Queue, so a populated library is not a blank gray panel.
-- Missing `library_items.path` is re-found under `library_root` by filename before the grid loads.
-- **Select all** selects every clip in the current filtered grid; **Clear selection** clears it. With a selection, toolbar bulk actions work: Add to collection, Upscale eligible, Remove from library, Delete files… (Recycle Bin), Send to Private.
-- Completed downloads under `downloads/…` are indexed into Library in place (no forced move) when the Library tab refreshes.
-- Click the thumbnail or **Play** → play inside FrameForge (`flet-video` / mpv). Queue and History thumbnails still open the Windows default player. Reveal uses `explorer /select,path` only (no shell theme changes). Upscale when height is known and **&lt; 2160**.
-- A missing thumbnail is filled from the job's saved image, or from one ffmpeg frame of the video file.
-- If videos exist on disk under the library folder but are not indexed, **Scan library folder** imports those orphans.
-- Empty state with a setup / import / scan CTA.
+Metadata lives in `database/frameforge.db` under the FrameForge home, the same file as the queue. Thumbnails may be cached beside the app. The video file stays where the download wrote it.
 
-**Duplicates:** toolbar **Duplicates…** groups files by normalized title (bracket `[id]` segments ignored) + file size + duration (ffprobe, cached on the row). Keep higher resolution / newer mtime; extras go to Recycle Bin.
-
-**Junk:** toolbar **Junk files…** lists `.part` / `.ytdl` / `.temp` / zero-byte / orphan sidecars. **Delete** uses Recycle Bin only; **Keep** leaves them; **Move…** relocates to a folder you pick.
-
-## Collections (primary folder + extra tags)
-
-Seeded **Types** (folders): Music Videos, Tutorials, Documentaries, Shorts & Clips, Movies, Series, Live & Streams, Podcasts & Talk, Uncategorized.
-
-Seeded **Subjects** (tags, multi-assign): Comedy, Horror, Sci-Fi, Action, Drama, Animation & Cartoons, Gaming, Tech, Education, News, Sports, Fitness, Food & Cooking, Travel, DIY & Crafts, ASMR, Nature, Art & Design, Fashion, Finance, Other.
-
-Seeded **Sources** (filters, auto from extractor/host): YouTube, TikTok, X (Twitter), Reddit, Facebook, Instagram, Vimeo, Twitch, Other.
-
-**One primary folder path, many tags.** Adding a Type or custom collection **moves** the file to `library_root/<CollectionName>/` and updates SQLite paths. Extra collections are tags only.
-
-Custom names are allowed (brand-specific, personal, etc.).
-
-## System flags (chips, not folders)
-
-Favorites, Watch Later, Recently Added (7 days), Upscale candidate (≤720p), 1080p, 4K+ (upscale blocked).
-
-## Extra folders
-
-Settings can add watch folders: **index** (catalog in place) or **import** (same move policy as completed downloads). Changing the library root does not auto-move existing files; re-index after you confirm.
-
-## Private
-
-See [LIBRARY_PRIVATE.md](LIBRARY_PRIVATE.md). Copies into a password zip; originals stay until you Keep / Recycle Bin / Move.
-
-## Schema
-
-Migration 4: `library_items`, `library_collections`, `library_item_collections`, `library_watch_folders`. Settings keys: `library_root` (folder pick), `library_onboarded` (set only after Move succeeds or Skip).
+Settings keys `library_root` and `library_onboarded` still exist for the older wizard. Resetting library onboarding (`scripts/reset_library.ps1`) clears the index and those flags. It does not delete media files.

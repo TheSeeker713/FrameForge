@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.30
+
+The library docs still described albums as folders that move videos. The contract is now written down and tested: album membership, unlink, and indexing a finished download leave the file path unchanged.
+
 ## 2026-10-08 — v0.6.29
 
 The queue needed a first-run reset that would not touch videos or cookies. The new command deletes job and archive rows only, and it stops if a download is still running.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.30
+
+- An album is a link in the database. Placing a clip in an album, or removing it from the library, leaves the file where it is. Indexing a completed download does not move that file.
+
 ## 0.6.29
 
 - `scripts/reset_queue.ps1` clears the queue and the download archive in the onboarded database. Video files, cookies, the home pointer, and library rows stay. It refuses while a download is running.
