@@ -107,6 +107,31 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+class YtDlpMessageLog:
+    """Collect WARNING and ERROR lines yt-dlp would otherwise drop."""
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def debug(self, msg: str) -> None:
+        return
+
+    def info(self, msg: str) -> None:
+        text = str(msg).strip()
+        if text.startswith(("WARNING:", "ERROR:")):
+            self.lines.append(text)
+
+    def warning(self, msg: str) -> None:
+        text = str(msg).strip()
+        if text:
+            self.lines.append(text if text.startswith("WARNING:") else f"WARNING: {text}")
+
+    def error(self, msg: str) -> None:
+        text = str(msg).strip()
+        if text:
+            self.lines.append(text if text.startswith("ERROR:") else f"ERROR: {text}")
+
+
 def iter_progress_lines(text: str) -> list[str]:
     """Split mixed CR/LF process output into individual progress-capable lines."""
     return [p for p in re.split(r"[\r\n]+", text) if p.strip()]
@@ -393,7 +418,9 @@ class YtDlpDownloader:
                     },
                 )
 
+        self._ytdlp_log = YtDlpMessageLog()
         opts: dict[str, Any] = {
+            "logger": self._ytdlp_log,
             "outtmpl": outtmpl,
             "paths": self._yt_paths(),
             "format": self._format_selector(),
@@ -401,7 +428,7 @@ class YtDlpDownloader:
             "continuedl": True,
             "noprogress": True,
             "quiet": True,
-            "no_warnings": True,
+            "no_warnings": False,
             "writethumbnail": True,
             "writedescription": False,
             "writeinfojson": True,
@@ -567,35 +594,43 @@ class YtDlpDownloader:
         from yt_dlp import YoutubeDL
 
         opts = self.build_opts(progress_cb, url=url)
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if info is None:
-                raise RuntimeError("Download skipped or failed (no info returned)")
-            path = Path(ydl.prepare_filename(info))
-            if not path.exists():
-                for ext in (".mp4", ".mkv", ".webm", ".m4a"):
-                    candidate = path.with_suffix(ext)
-                    if candidate.exists():
-                        path = candidate
-                        break
-            if not path.exists():
-                requested = info.get("requested_downloads") or []
-                if requested and requested[0].get("filepath"):
-                    path = Path(requested[0]["filepath"])
-            if not path.exists():
-                from frameforge.download.output_path import require_download_artifact
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if info is None:
+                    extra = "\n".join(getattr(self, "_ytdlp_log", YtDlpMessageLog()).lines)
+                    detail = f"\n{extra}" if extra else ""
+                    raise RuntimeError(f"Download skipped or failed (no info returned){detail}")
+                path = Path(ydl.prepare_filename(info))
+                if not path.exists():
+                    for ext in (".mp4", ".mkv", ".webm", ".m4a"):
+                        candidate = path.with_suffix(ext)
+                        if candidate.exists():
+                            path = candidate
+                            break
+                if not path.exists():
+                    requested = info.get("requested_downloads") or []
+                    if requested and requested[0].get("filepath"):
+                        path = Path(requested[0]["filepath"])
+                if not path.exists():
+                    from frameforge.download.output_path import require_download_artifact
 
-                resolved = require_download_artifact(
-                    url=url,
-                    output_dir=self.output_dir,
-                    printed=[str(path)] if path else [],
-                    archive_file=None if self.ignore_download_archive else self.archive_file,
-                )
-                path = resolved.path  # type: ignore[assignment]
-                self._record_path_recovery(resolved)
-            title = str(info.get("title") or path.stem)
-            self._relocate_sidecars(path)
-            return DownloadResult(path=path, title=title, info=info)
+                    resolved = require_download_artifact(
+                        url=url,
+                        output_dir=self.output_dir,
+                        printed=[str(path)] if path else [],
+                        archive_file=None if self.ignore_download_archive else self.archive_file,
+                    )
+                    path = resolved.path  # type: ignore[assignment]
+                    self._record_path_recovery(resolved)
+                title = str(info.get("title") or path.stem)
+                self._relocate_sidecars(path)
+                return DownloadResult(path=path, title=title, info=info)
+        except Exception as exc:
+            extra = "\n".join(getattr(self, "_ytdlp_log", YtDlpMessageLog()).lines)
+            if extra and extra not in str(exc):
+                raise RuntimeError(f"{exc}\n{extra}") from exc
+            raise
 
     def _build_cli_cmd(self, url: str) -> list[str]:
         paths = self._yt_paths()
@@ -858,8 +893,17 @@ class YtDlpDownloader:
             if rc != 0:
                 from frameforge.errors import format_ytdlp_exit_error
 
+                important = [
+                    ln.strip()
+                    for ln in stderr_text.splitlines()
+                    if ln.strip().lower().startswith(("warning:", "error:"))
+                ]
+                combined: list[str] = []
+                for ln in important + list(output_tail or printed):
+                    if ln and ln not in combined:
+                        combined.append(ln)
                 raise RuntimeError(
-                    format_ytdlp_exit_error(rc, output_tail or printed, argv=cmd)
+                    format_ytdlp_exit_error(rc, combined, argv=cmd)
                 )
         except (DownloadCancelled, DownloadPaused):
             if proc.poll() is None:

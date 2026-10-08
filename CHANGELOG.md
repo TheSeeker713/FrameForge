@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.22
+
+- A failed job card leads with the extractor sentence. A warning such as “only images are available” stays above “the downloaded file is empty,” and the full text is written to a log under the FrameForge temp folder. yt-dlp warnings are no longer discarded.
+
 ## 0.6.21
 
 - The Library tab is a cover-flow shelf of the indexed clips. Click a side card to bring it forward, and click the front card to play it in FrameForge. Albums are links in the database: a clip is in one album at a time, and removing it from the library leaves the file where it is. Sort includes duration.

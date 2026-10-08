@@ -300,6 +300,73 @@ def classify_error(message: str | None, *, status: str | None = None, url: str |
     return UNKNOWN
 
 
+_ERROR_OR_WARN_RE = re.compile(r"^(?:ERROR|WARNING):\s*(.+)$", re.IGNORECASE)
+_EMPTY_LINE_RE = re.compile(r"downloaded file is empty", re.IGNORECASE)
+_SKIP_SENTENCE_RE = re.compile(
+    r"^(?:yt-dlp exited with code|argv:|no stderr)",
+    re.IGNORECASE,
+)
+
+
+def extractor_lines(message: str | None) -> list[str]:
+    """WARNING and ERROR bodies, in order, without the exit-code wrapper."""
+    found: list[str] = []
+    for raw in str(message or "").splitlines():
+        line = raw.strip()
+        if not line or _SKIP_SENTENCE_RE.search(line):
+            continue
+        match = _ERROR_OR_WARN_RE.match(line)
+        if match:
+            found.append(match.group(1).strip())
+    return found
+
+
+def extractor_sentence(message: str | None) -> str:
+    """The line a person should read first.
+
+    An empty-file sentence is never returned alone when a warning or another
+    extractor line is in the same output.
+    """
+    lines = extractor_lines(message)
+    specific = [line for line in lines if not _EMPTY_LINE_RE.search(line)]
+    if specific:
+        sentence = specific[-1]
+        empty = next((line for line in reversed(lines) if _EMPTY_LINE_RE.search(line)), "")
+        if empty and empty.lower() not in sentence.lower():
+            return f"{sentence}\n{empty}"
+        return sentence
+    if lines:
+        return lines[-1]
+    return ""
+
+
+def card_cause(sentence: str | None, human: str | None) -> str:
+    """Extractor sentence first, short human line second."""
+    lead = (sentence or "").strip()
+    follow = (human or "").strip()
+    if not lead:
+        return follow
+    if not follow or follow.lower() in lead.lower():
+        return lead
+    if lead.lower() in follow.lower():
+        return follow
+    return f"{lead}\n{follow}"
+
+
+def write_job_log(job_id: int, message: str) -> str | None:
+    """Write the full failure text under the FrameForge temp folder."""
+    try:
+        from frameforge.paths import temp_dir
+
+        folder = temp_dir() / "logs"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"job_{int(job_id)}.log"
+        path.write_text(str(message or ""), encoding="utf-8")
+        return str(path)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def stderr_tail(message: str | None, *, max_lines: int = STDERR_TAIL_LINES) -> str:
     """Last non-empty lines of yt-dlp/ffmpeg output for the error panel."""
     lines = [ln.strip() for ln in str(message or "").splitlines() if ln.strip()]
@@ -501,12 +568,17 @@ def annotate_job_error(
     job = repo.get(job_id)
     url = url or job.url
     cat = classify_error(message, status=status, url=url)
+    sentence = extractor_sentence(message)
+    log_path = write_job_log(job_id, message)
     patch: dict[str, Any] = {
         "error_category": cat,
         "error_cause": human_cause(cat) or "The download failed.",
+        "error_sentence": sentence,
         "error_actions": suggested_actions(cat),
         "error_stderr_tail": stderr_tail(message),
     }
+    if log_path:
+        patch["error_log"] = log_path
     if extra:
         patch.update(extra)
     if cat in (AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING):

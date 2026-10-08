@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.21 (Library cover-flow shelf)
+## Status: v0.6.22 (Extractor sentence on the job card)
 
-Package version is **0.6.21**. The Library tab is a cover-flow shelf. Albums are database links and do not move files. v0.6.20 retries an empty download once with the built-in downloader.
+Package version is **0.6.22**. A failed job shows the extractor sentence first and keeps a temp log of the yt-dlp output. v0.6.21 Library cover-flow remains. Albums are database links and do not move files. v0.6.20 retries an empty download once with the built-in downloader.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

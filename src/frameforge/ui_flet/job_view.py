@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from frameforge.errors import human_cause
+from frameforge.errors import card_cause, extractor_sentence, human_cause
 from frameforge.errors import AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING
 from frameforge.gui.actions import can_convert, can_download, can_retry_download, can_upscale
 
@@ -101,9 +101,11 @@ def card_view(
     show_progress: bool = False,
 ) -> dict[str, Any]:
     opts = job.options() if hasattr(job, "options") else {}
-    cause = opts.get("error_cause") or (
+    human = opts.get("error_cause") or (
         human_cause(opts["error_category"]) if opts.get("error_category") else None
     )
+    sentence = opts.get("error_sentence") or extractor_sentence(getattr(job, "error", None))
+    cause = card_cause(sentence, human) if (sentence or human) else None
     active = job.status in ACTIVE_CARD_STATUSES
     show_bar = bool(show_progress or active)
     progress_val = float(getattr(job, "progress", 0) or 0) if show_bar else None
