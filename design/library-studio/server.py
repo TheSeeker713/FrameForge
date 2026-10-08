@@ -111,6 +111,21 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path.split("?", 1)[0] == "/api/feedback":
+            if not DATA.exists():
+                self.send_response(204)
+                self.end_headers()
+                return
+            body = DATA.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
     def do_POST(self) -> None:  # noqa: N802
         if self.path.split("?", 1)[0] != "/api/feedback":
             self.send_error(404)
