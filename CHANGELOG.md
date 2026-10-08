@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.28
+
+- A document import keeps every http(s) link, including ones that only exist as Word hyperlinks and ones whose path says search, tag, or category. A URL split across lines is one job. The confirm dialog shows listings seen, URLs found, duplicates skipped, and rows to add. Those rows are inserted in one database transaction off the window thread. The import does not start downloads.
+
 ## 0.6.27
 
 - The window X opens “Quit FrameForge?” immediately. It does not query the database, and a second X does not quit. Quit runs only from the Quit button. If a download is in progress, the dialog says so from the worker’s in-memory flag. Minimize still hides to the tray.

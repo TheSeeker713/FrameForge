@@ -671,8 +671,10 @@ class FrameForgeApp(ctk.CTk):
             return
         preview = preview_import(path, self.repo)
         msg = (
-            f"New URLs: {preview.new_count}\n"
-            f"Duplicates skipped: {preview.skipped_dupe_count}\n\n"
+            f"Listings seen: {preview.listings_seen}\n"
+            f"URLs found: {preview.urls_found}\n"
+            f"Duplicates skipped: {preview.skipped_dupe_count}\n"
+            f"Rows to add: {preview.new_count}\n\n"
             "Add to queue only? (downloads will not start until you press Download)"
         )
         if not messagebox.askyesno("Bulk import", msg):

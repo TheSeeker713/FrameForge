@@ -225,6 +225,68 @@ class JobRepository:
         self.conn.commit()
         return self.get(int(cur.lastrowid))
 
+    def enqueue_many(self, rows: list[dict[str, Any]]) -> list[int]:
+        """Insert pending jobs in one transaction. Skips URLs already queued or archived."""
+        if not rows:
+            return []
+
+        def _insert() -> list[int]:
+            conn = self.conn
+            ids: list[int] = []
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                now = utc_now()
+                for row in rows:
+                    url = str(row["url"])
+                    queued = conn.execute(
+                        f"""
+                        SELECT 1 FROM jobs
+                        WHERE url = ? AND status NOT IN ('cancelled')
+                          AND {QUEUE_VISIBLE_SQL}
+                        LIMIT 1
+                        """,
+                        (url,),
+                    ).fetchone()
+                    if queued is not None:
+                        continue
+                    archived = conn.execute(
+                        "SELECT 1 FROM download_archive WHERE url = ? LIMIT 1",
+                        (url,),
+                    ).fetchone()
+                    if archived is not None:
+                        continue
+                    options = row.get("options")
+                    cur = conn.execute(
+                        """
+                        INSERT INTO jobs(
+                            url, title, status, priority, progress, format_preference, upscale,
+                            created_at, updated_at, options_json, extractor
+                        ) VALUES (?, ?, 'pending', ?, 0, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            url,
+                            row.get("title"),
+                            int(row.get("priority") or 0),
+                            str(row.get("format_preference") or "best"),
+                            1 if row.get("upscale") else 0,
+                            now,
+                            now,
+                            json.dumps(options) if options else None,
+                            row.get("extractor"),
+                        ),
+                    )
+                    ids.append(int(cur.lastrowid))
+                conn.execute("COMMIT")
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+            return ids
+
+        return retry_sqlite(_insert)
+
     def get(self, job_id: int) -> Job:
         def _read() -> Job:
             row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

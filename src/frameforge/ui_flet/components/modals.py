@@ -201,19 +201,32 @@ def download_location_dialog(
     return dlg
 
 
-def bulk_import_dialog(new_count: int, dup_count: int, *, on_add: Any, on_cancel: Any) -> ft.AlertDialog:
+def bulk_import_dialog(
+    new_count: int,
+    dup_count: int,
+    *,
+    on_add: Any,
+    on_cancel: Any,
+    listings_seen: int | None = None,
+    urls_found: int | None = None,
+) -> ft.AlertDialog:
+    lines: list[ft.Control] = []
+    if listings_seen is not None:
+        lines.append(ft.Text(f"Listings seen: {listings_seen}", color=COLORS["text_secondary"]))
+    if urls_found is not None:
+        lines.append(ft.Text(f"URLs found: {urls_found}", color=COLORS["text_secondary"]))
+    lines.extend(
+        [
+            ft.Text(f"New URLs: {new_count}", color=COLORS["accent"], size=22, weight=ft.FontWeight.BOLD),
+            ft.Text(f"Duplicates skipped: {dup_count}", color=COLORS["text_secondary"]),
+            ft.Text(f"Rows to add: {new_count}", color=COLORS["text_secondary"]),
+            ft.Text("Add to queue only — downloads will not start until you press Download."),
+        ]
+    )
     dlg = ft.AlertDialog(
         modal=False,
         title=ft.Text("Bulk import"),
-        content=ft.Column(
-            [
-                ft.Text(f"New URLs: {new_count}", color=COLORS["accent"], size=22, weight=ft.FontWeight.BOLD),
-                ft.Text(f"Duplicates skipped: {dup_count}", color=COLORS["text_secondary"]),
-                ft.Text("Add to queue only — downloads will not start until you press Download."),
-            ],
-            width=400,
-            spacing=8,
-        ),
+        content=ft.Column(lines, width=400, spacing=8),
         actions=[
             ft.FilledButton(content="Add to queue", bgcolor=COLORS["accent"], on_click=on_add),
             ft.OutlinedButton(content="Cancel", on_click=on_cancel),

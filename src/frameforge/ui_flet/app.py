@@ -2450,6 +2450,8 @@ class FrameForgeUi:
         new_count: int,
         dup_count: int,
         preview: Any | None = None,
+        listings_seen: int | None = None,
+        urls_found: int | None = None,
     ) -> ft.AlertDialog:
         from frameforge.download.bulk_import import confirm_add
         from frameforge.ui_flet.components.modals import bulk_import_dialog
@@ -2457,24 +2459,41 @@ class FrameForgeUi:
         self._import_preview = preview
 
         def on_add(_e=None) -> None:
-            if self._import_preview is not None:
+            preview_now = self._import_preview
+            self._import_preview = None
+            if preview_now is None:
+                self.close_dialog()
+                return
+
+            def work() -> None:
                 confirm_add(
-                    self._import_preview,
+                    preview_now,
                     self.repo,
                     format_preference=self._default_format(),
                     upscale=self._default_upscale(),
                 )
-                self._import_preview = None
-            self.close_dialog()
-            self.refresh_queue(force=True)
+                self._marshal_tray(self._finish_bulk_import)
+
+            self._import_thread = threading.Thread(
+                target=work, name="frameforge-bulk-import", daemon=True
+            )
+            self._import_thread.start()
+            if not self.exit_process_on_quit:
+                self._import_thread.join(timeout=120)
 
         self.bulk_dialog = bulk_import_dialog(
             new_count,
             dup_count,
             on_add=on_add,
             on_cancel=self.close_dialog,
+            listings_seen=listings_seen,
+            urls_found=urls_found,
         )
         return self.dialogs.open("bulk", self.bulk_dialog)
+
+    def _finish_bulk_import(self) -> None:
+        self.close_dialog()
+        self.refresh_queue(force=True)
 
     def open_playlist_modal(self, title: str, entries: list[Any]) -> ft.AlertDialog:
         from frameforge.ui_flet.components.modals import playlist_dialog
@@ -2639,7 +2658,13 @@ class FrameForgeUi:
         from frameforge.download.bulk_import import preview_import
 
         preview = preview_import(path, self.repo)
-        return self.open_bulk_confirm(preview.new_count, preview.skipped_dupe_count, preview=preview)
+        return self.open_bulk_confirm(
+            preview.new_count,
+            preview.skipped_dupe_count,
+            preview=preview,
+            listings_seen=preview.listings_seen,
+            urls_found=preview.urls_found,
+        )
 
     def confirm_bulk_import(self) -> None:
         data = getattr(getattr(self, "bulk_dialog", None), "data", None) or {}

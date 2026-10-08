@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.28
+
+Import was reading only the visible Word text, dropping listing-page URLs, and committing one queue row at a time on the window thread. Hyperlink targets are read from the document relationships, wrapped URLs stay one job, and the queue insert is a single transaction. The dialog counts listings, URLs, duplicates, and rows to add.
+
 ## 2026-10-08 — v0.6.27
 
 The close button was waiting on SQLite, then sometimes quitting with no confirm when that wait or the dialog failed. The first X now only opens the existing quit dialog. Busy wording comes from the worker thread flag, and Quit is the only control that exits.

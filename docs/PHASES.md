@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.27 (Quit confirm without a database wait)
+## Status: v0.6.28 (Import every listing)
 
-Package version is **0.6.27**. The window X opens “Quit FrameForge?” without querying SQLite. Quit runs only from the Quit button. v0.6.26 still retries an Eporner “not available” reply once as a browser. v0.6.25 still pauses only for a real login, bot, runtime, or disk wall.
+Package version is **0.6.28**. Document import queues every http(s) URL, including Word hyperlinks, in one transaction. v0.6.27 still opens the quit dialog without querying SQLite.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

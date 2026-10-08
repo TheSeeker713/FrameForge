@@ -167,7 +167,9 @@ def test_mixed_hosts_two_word_category_and_subject(tmp_path: Path, monkeypatch):
     bbc = "https://www.bbc.com/news/city-council-vote"
     weather = "https://www.bbc.com/news/london-weather-update"
     adult = "https://www.pornhub.com/view_video.php?viewkey=aaa111"
-    assert set(by_url) == {watch, desk, bbc, weather, adult}
+    yt_search = "https://www.youtube.com/results?search_query=weather"
+    bbc_search = "https://www.bbc.com/news/search?q=weather"
+    assert set(by_url) == {watch, desk, bbc, weather, adult, yt_search, bbc_search}
     assert by_url[watch].category == "City council"
     assert by_url[desk].category == "City council"
     assert by_url[bbc].category == "City council"
@@ -183,7 +185,7 @@ def test_mixed_hosts_two_word_category_and_subject(tmp_path: Path, monkeypatch):
     assert "https://" not in (by_url[adult].title or "")
     repo = JobRepository(tmp_path / "mix.db")
     ids = confirm_add(ImportPreview(items=items), repo)
-    assert len(ids) == 5
+    assert len(ids) == 7
     assert all(repo.get(i).status == "pending" for i in ids)
     yt = next(repo.get(i) for i in ids if repo.get(i).url == watch)
     assert Path(yt.options()["download_output_dir"]) == download_dir_for_site("youtube", "City council")

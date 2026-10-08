@@ -21,7 +21,7 @@ def test_modals_have_locked_actions(tmp_path: Path):
     fmt = ui.open_format_modal([])
     assert "Set format" in str(fmt.title.value)
     bulk = ui.open_bulk_confirm(18, 3)
-    blob = str(bulk.content.controls[2].value)
+    blob = " ".join(str(getattr(c, "value", c)) for c in bulk.content.controls)
     assert "will not start" in blob.lower() or "press Download" in blob
     pl = ui.open_playlist_modal("Summer Reel", list(range(8)))
     assert "Playlist" in str(pl.title.value)
