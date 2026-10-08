@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FrameForge Library studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=Outfit:wght@380;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f4efe6;
+      --muted: #b3a894;
+      --line: rgba(231, 194, 122, 0.28);
+      --gold: #e7c27a;
+      --panel: rgba(14, 12, 10, 0.72);
+      --danger: #e0a090;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0c0b0a; color: var(--ink); font-family: Outfit, sans-serif; }
+    #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+      display: flex; justify-content: space-between; align-items: flex-end;
+      padding: 22px 28px 0; pointer-events: none;
+    }
+    header h1 {
+      margin: 0; font-family: Fraunces, serif; font-weight: 520; font-size: 40px; letter-spacing: -0.03em;
+    }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 460px; }
+    #meta { text-align: right; font-size: 12px; color: var(--muted); pointer-events: auto; }
+    #meta strong { color: var(--ink); font-weight: 500; }
+    #player {
+      position: fixed; z-index: 3; left: 50%; top: 18%; transform: translateX(-50%);
+      width: min(720px, calc(100% - 48px)); display: none;
+    }
+    #player.open { display: block; }
+    #player.theater {
+      top: 12%; width: min(880px, calc(100% - 48px));
+      background: rgba(8, 7, 6, 0.78); border: 1px solid var(--line); border-radius: 18px; padding: 14px;
+      backdrop-filter: blur(16px);
+    }
+    #player.caption { pointer-events: none; }
+    #player.caption .still { display: none; }
+    #player .still {
+      width: 100%; aspect-ratio: 16/9; border-radius: 12px; object-fit: cover; background: #16130f; display: block;
+    }
+    #player .row { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-top: 10px; }
+    #player h2 { margin: 0; font-family: Fraunces, serif; font-weight: 520; font-size: 28px; }
+    #player .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    button, textarea { font: inherit; color: inherit; }
+    button {
+      border: 1px solid transparent; background: transparent; border-radius: 999px;
+      padding: 6px 11px; cursor: pointer; color: var(--muted);
+    }
+    button:hover { color: var(--ink); }
+    button[aria-pressed="true"] { color: #1a140c; background: var(--gold); border-color: var(--gold); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #closePlayer { pointer-events: auto; border-color: var(--line); color: var(--ink); }
+    #dock {
+      position: fixed; z-index: 4; left: 16px; right: 16px; bottom: 14px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+      backdrop-filter: blur(18px); padding: 12px 14px 10px;
+      max-height: 42vh; overflow: auto;
+    }
+    .groups { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+    .group { min-width: 180px; }
+    .group span, .notes span { display: block; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+    .actions button { border-color: var(--line); color: var(--ink); }
+    textarea {
+      width: min(420px, 100%); min-height: 52px; resize: vertical; border-radius: 10px;
+      border: 1px solid var(--line); background: rgba(0,0,0,0.28); padding: 8px 10px;
+    }
+    #banner {
+      position: fixed; z-index: 5; top: 92px; left: 28px; right: 28px; display: none;
+      color: var(--danger); font-size: 13px;
+    }
+    #basis { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <header>
+    <div>
+      <h1>Library</h1>
+      <p>Files stay where they are. This shelf only links them. Pick the layers, then keep or discard the look.</p>
+    </div>
+    <div id="meta">
+      <div id="save">Waiting to record</div>
+      <div id="fps">WebGL2</div>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <section id="player" aria-live="polite">
+    <img class="still" alt="" />
+    <div class="row">
+      <div>
+        <h2 id="playerTitle"></h2>
+        <p class="sub" id="playerSub">In-app player. The file is not moved.</p>
+      </div>
+      <button id="closePlayer" type="button">Close</button>
+    </div>
+  </section>
+  <footer id="dock">
+    <div class="groups" id="groups"></div>
+    <div class="actions">
+      <label class="notes"><span>Notes</span><textarea id="notes" placeholder="Say what should change before this is built"></textarea></label>
+      <button id="keep" type="button">Keep this look</button>
+      <button id="discard" type="button">Discard this look</button>
+      <button id="done" type="button">Mark feedback complete</button>
+    </div>
+    <p id="basis">Drag a card when the shelf is Manual. Scroll or drag to move through Cover flow. Click the front card to open it.</p>
+  </footer>
+  <script type="module" src="./studio.js"></script>
+</body>
+</html>

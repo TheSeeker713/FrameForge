@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-07 — Library studio
+
+A local WebGL studio at `design/library-studio` lets the Library look be chosen before any app code changes. Choices, kept looks, discarded looks, and notes write themselves to `docs/LIBRARY_DESIGN_FEEDBACK.md`.
+
 ## 2026-10-07 — v0.6.19
 
 The Close to system tray switch did not hide the window. The minimize button now does that, and the download keeps running. The tray icon can reopen the window, pause or resume, start pending downloads, and import a URL list or completed downloads.
