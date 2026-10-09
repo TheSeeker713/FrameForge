@@ -17,34 +17,53 @@ from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
 log = logging.getLogger(__name__)
 
 
+def _stored_dir_is_misplaced(dest: Path, expected: Path) -> bool:
+    """True for a legacy root folder or a downloads/ bucket that does not match."""
+    from frameforge.paths import is_legacy_root_media_dir, same_download_bucket
+
+    if is_legacy_root_media_dir(dest):
+        return True
+    try:
+        rel = dest.resolve().relative_to(downloads_dir().resolve())
+    except (OSError, ValueError):
+        return False
+    if not rel.parts:
+        return True
+    if rel.parts[0].lower() in {"converted", "upscaled", "videos"}:
+        return False
+    return not same_download_bucket(dest, expected)
+
+
 def resolve_download_output_dir(job: Job, *, fallback: Path | None = None) -> Path:
-    """``downloads/<bucket>/<category>/`` for new jobs; keep in-progress resume paths."""
-    from frameforge.paths import is_legacy_root_media_dir
+    """Choose ``downloads/porn`` or ``downloads/social/<platform>`` for this job.
+
+    A stored folder from an adult site (``eporner.com``) or a root-level
+    ``youtube`` / ``x.com`` folder is remapped. The previous job's folder is
+    not reused for a different site. In-progress downloads keep their folder.
+    """
+    from frameforge.paths import is_legacy_root_media_dir, same_download_bucket
     from frameforge.paths_site import category_from_job
 
+    expected = download_dir_for_site(site_key_from_job(job), category_from_job(job))
     opts = job.options()
     existing = opts.get("download_output_dir")
     status = getattr(job, "status", None)
     if existing:
         dest = Path(existing)
-        # Pending jobs stamped with the old root site folders get remapped.
-        if is_legacy_root_media_dir(dest) and status in {None, "pending", "failed", "cancelled"}:
-            dest = download_dir_for_site(site_key_from_job(job), category_from_job(job))
+        wrong = _stored_dir_is_misplaced(dest, expected)
+        if wrong and status in {None, "pending", "failed", "cancelled"}:
+            dest = expected
         dest.mkdir(parents=True, exist_ok=True)
         return dest
-    if fallback is not None:
+    if fallback is not None and same_download_bucket(fallback, expected):
         try:
-            if (
-                fallback.resolve() != downloads_dir().resolve()
-                and not is_legacy_root_media_dir(fallback)
-            ):
+            if fallback.resolve() != downloads_dir().resolve() and not is_legacy_root_media_dir(fallback):
                 fallback.mkdir(parents=True, exist_ok=True)
                 return fallback
         except OSError:
             pass
-    dest = download_dir_for_site(site_key_from_job(job), category_from_job(job))
-    dest.mkdir(parents=True, exist_ok=True)
-    return dest
+    expected.mkdir(parents=True, exist_ok=True)
+    return expected
 
 
 def _cookiefile_for_url(url: str) -> Path | None:
@@ -410,10 +429,36 @@ def make_download_handler(
             raise DownloadPaused("paused")
         repo.set_title(job.id, result.title)
         from frameforge.download.metadata import display_extractor
+        from frameforge.paths import place_finished_download
+        from frameforge.paths_site import (
+            SOCIAL_PLATFORM_KEYS,
+            category_from_metadata,
+            site_key_from_info,
+            user_category,
+        )
 
         ext_key = result.info.get("extractor_key") or result.info.get("extractor")
         if ext_key:
             repo.set_extractor(job.id, display_extractor(str(ext_key), job.url))
+        site = site_key_from_job(job)
+        info_site = site_key_from_info(result.info)
+        if info_site in SOCIAL_PLATFORM_KEYS:
+            site = info_site
+        locked = user_category(job)
+        category = locked or category_from_metadata(result.info, title=result.title)
+        result = type(result)(
+            path=place_finished_download(result.path, site_key=site, category=category),
+            title=result.title,
+            info=result.info,
+        )
+        repo.merge_options(
+            job.id,
+            {
+                "download_output_dir": str(result.path.parent),
+                "download_category": category,
+                "site_key": site,
+            },
+        )
         repo.set_paths(job.id, download_path=str(result.path), output_path=str(result.path))
         repo.add_archive(
             job.url,

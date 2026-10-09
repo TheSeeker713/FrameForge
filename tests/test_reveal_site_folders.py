@@ -39,6 +39,7 @@ def test_reveal_resolves_file_under_youtube_site_folder(tmp_path: Path):
 
 def test_download_dir_for_site_youtube_is_under_media_root():
     dest = download_dir_for_site("youtube")
-    assert dest == media_root() / "downloads" / "youtube" / "uncategorized"
+    assert dest == media_root() / "downloads" / "social" / "youtube" / "uncategorized"
     assert dest.parent.name == "youtube"
+    assert dest.parent.parent.name == "social"
     assert "downloads" in dest.parts

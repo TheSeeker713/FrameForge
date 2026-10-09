@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.34
+
+- Eporner, Pornhub, and other adult hosts save under `downloads/porn/<category>/`. A retry no longer recreates `downloads/eporner.com`.
+- YouTube, X, and Facebook save under `downloads/social/<platform>/<category>/`.
+- When an import heading or page category is known, that category is used instead of `uncategorized`. Adult files stay inside `downloads/porn/`.
+
 ## 0.6.33
 
 - A filename longer than 77 characters is renamed to the first two words of the title before it is written.

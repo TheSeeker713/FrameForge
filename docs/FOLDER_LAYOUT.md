@@ -11,10 +11,12 @@ The first launch asks where FrameForge should live. Choosing a folder stores the
 | Path | Role |
 |------|------|
 | `downloads/<bucket>/<category>/` | All new video downloads |
-| `downloads/porn/<category>/` | Adult / pornographic hosts |
-| `downloads/youtube/<category>/` | YouTube (and aliases) |
+| `downloads/porn/<category>/` | Adult hosts, including Eporner and Pornhub |
+| `downloads/social/youtube/<category>/` | YouTube |
+| `downloads/social/x.com/<category>/` | X / Twitter |
+| `downloads/social/facebook/<category>/` | Facebook / fb.watch |
 | `downloads/upscaled/`, `downloads/converted/` | Post-process output |
-| `downloads/videos/` | Loose videos found at the FrameForge root (repair) |
+| `downloads/videos/` | Loose videos found at the FrameForge root (created only when one is moved) |
 | `thumbnails/` | Queue/Library preview images |
 | `metadata/` | yt-dlp `.info.json` after a successful download (and repair leftovers) |
 | `database/frameforge.db` | SQLite WAL database (`-wal` / `-shm` sit beside it) |

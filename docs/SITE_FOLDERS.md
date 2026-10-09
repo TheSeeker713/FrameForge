@@ -8,7 +8,7 @@ New FrameForge jobs write media under **`downloads/<bucket>/<category>/`**. The 
 |--------|------|
 | Downloads (new jobs) | `<root>\downloads\<bucket>\<category>\` |
 | Adult / pornographic | `<root>\downloads\porn\<category>\` |
-| Streaming (YouTube, X, …) | `<root>\downloads\youtube\<category>\`, `…\x.com\…`, … |
+| YouTube, X, Facebook | `<root>\downloads\social\youtube\<category>\`, `…\social\x.com\…`, `…\social\facebook\…` |
 | Upscaled | `<root>\downloads\upscaled\<bucket>\` |
 | Converted MP3 | `<root>\downloads\converted\<bucket>\` |
 | Thumbnails | `<root>\thumbnails\` (global) |
@@ -16,25 +16,29 @@ New FrameForge jobs write media under **`downloads/<bucket>/<category>/`**. The 
 | SQLite DB | `<root>\database\frameforge.db` (global) |
 | Temp / models / archive | unchanged global folders |
 
-Default category when none is set: `uncategorized`.
+Default category when nothing else is known: `uncategorized`.
+
+A category is chosen in this order: the import heading, then page metadata (`playlist_title`, `categories`, `genre`), then the first two words of a non-explicit title. An explicit sexual title does not become a folder name. Adult files stay under `downloads\porn\` either way.
 
 Bulk import (`.txt`, `.md`, `.rtf`, `.doc`, `.docx`): a heading, a bold line, a `Category:` / `Subject:` label, or a plain line without a URL becomes the category for the links that follow. The folder name is the first two words. The host picks the bucket. A YouTube link and a news link under the same heading land in different site folders with the same category name.
 
 Examples:
 
-- `<root>\downloads\youtube\City council\`
+- `<root>\downloads\social\youtube\City council\`
 - `<root>\downloads\bbc.com\City council\`
 - `<root>\downloads\porn\Weather report\`
+- `<root>\downloads\social\facebook\Market notes\`
 
 ## `site_key` and bucket rules
 
 1. Prefer the job’s extractor label when it is not generic; otherwise parse the URL host.
 2. Lowercase; strip leading `www.`.
 3. Alias map (extensible in `frameforge.paths_site.SITE_ALIASES`):
-   - `youtube.com`, `m.youtube.com`, `youtu.be`, `music.youtube.com`, extractor `Youtube` → `youtube`
-   - `twitter.com`, `mobile.twitter.com`, `x.com` → `x.com`
+   - `youtube.com`, `m.youtube.com`, `youtu.be`, `music.youtube.com`, extractor `Youtube` → `social/youtube`
+   - `twitter.com`, `mobile.twitter.com`, `x.com` → `social/x.com`
+   - `facebook.com`, `fb.watch`, `fb.com` → `social/facebook`
    - `reddit.com` / `old.reddit.com` → `reddit.com`
-4. Adult hosts (`pornhub.com`, `xvideos.com`, …) keep a site_key for badges, but the **download bucket** is always `porn`.
+4. Adult hosts (`pornhub.com`, `eporner.com`, `xvideos.com`, …) keep a site_key for badges, but the **download bucket** is always `porn`. `downloads\eporner.com` is not a folder. A saved output dir under that name, or any other adult site folder, is remapped to `downloads\porn\<category>\` on retry.
 5. Sanitize for Windows folders: strip `<>:"/\|?*` and control characters; trim spaces and trailing dots. Empty or reserved names → `other` (site) or `uncategorized` (category).
 6. Directories are created on demand when a download, upscale, or convert actually writes.
 

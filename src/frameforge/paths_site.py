@@ -29,6 +29,14 @@ SITE_ALIASES: dict[str, str] = {
     "vm.tiktok.com": "tiktok.com",
     "vxtwitter.com": "x.com",
     "fxtwitter.com": "x.com",
+    "facebook.com": "facebook",
+    "m.facebook.com": "facebook",
+    "mbasic.facebook.com": "facebook",
+    "fb.watch": "facebook",
+    "fb.com": "facebook",
+    "facebook": "facebook",
+    "facebookredirect": "facebook",
+    "facebookpluginsvideo": "facebook",
     "pornhub.com": "pornhub.com",
     "www.pornhub.com": "pornhub.com",
     "pornhub": "pornhub.com",
@@ -55,11 +63,25 @@ PORN_SITE_KEYS: frozenset[str] = frozenset(
         "spankbang.com",
         "chaturbate.com",
         "onlyfans.com",
+        "eporner.com",
+        "eporner",
+        "pornhub.org",
     }
 )
 
+# Streaming hosts live under downloads/social/<platform>/<category>/.
+SOCIAL_PLATFORM_KEYS: frozenset[str] = frozenset({"youtube", "x.com", "facebook"})
+
 DEFAULT_CATEGORY = "uncategorized"
 PORN_BUCKET = "porn"
+_EXPLICIT_TITLE = re.compile(
+    r"\b(sex|porn|xxx|anal|orgy|fivesome|threesome|blowjob|cumshot|milf|nude|naked|nsfw|anilingus|erotic)\b",
+    re.IGNORECASE,
+)
+_GENERIC_META = frozenset(
+    {"", "uncategorized", "other", "video", "videos", "default", "none", "general", "adult"}
+)
+_FACEBOOK_ID = re.compile(r"\[(\d{12,})\]")
 
 _ILLEGAL_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _GENERIC_EXTRACTORS = frozenset({"", "generic", "unknown", "html5", "genericweb"})
@@ -77,6 +99,7 @@ _RESERVED = frozenset(
         "thumbnails",
         "database",
         "videos",
+        "social",
         "metadata",
         "library",
         "frameforge.db",
@@ -133,13 +156,39 @@ def _apply_alias(host_or_label: str) -> str:
     return key
 
 
+def is_porn_site_key(site_key: str | None) -> bool:
+    """True for adult hosts, including eporner.com and subdomains."""
+    raw = str(site_key or "").strip().lower()
+    if raw == PORN_BUCKET:
+        return True
+    key = sanitize_site_key(site_key)
+    aliased = _apply_alias(key)
+    if key in PORN_SITE_KEYS or aliased in PORN_SITE_KEYS:
+        return True
+    return any(
+        key == host or key.endswith("." + host) or aliased == host or aliased.endswith("." + host)
+        for host in PORN_SITE_KEYS
+    )
+
+
+def is_social_platform(site_key: str | None) -> bool:
+    key = _apply_alias(sanitize_site_key(site_key))
+    return key in SOCIAL_PLATFORM_KEYS
+
+
 def download_bucket_for_site_key(site_key: str | None) -> str:
-    """Top-level folder under downloads/: porn, youtube, x.com, …"""
+    """Leaf bucket: ``porn``, ``youtube``, ``x.com``, ``facebook``, or the host.
+
+    Social platforms are still these leaf names. ``download_dir_for_site``
+    nests them under ``downloads/social/``.
+    """
     raw = str(site_key or "").strip().lower()
     if raw == PORN_BUCKET:
         return PORN_BUCKET
-    key = sanitize_site_key(site_key)
-    if key in PORN_SITE_KEYS:
+    key = _apply_alias(sanitize_site_key(site_key))
+    if key in SOCIAL_PLATFORM_KEYS:
+        return key
+    if is_porn_site_key(key):
         return PORN_BUCKET
     return key
 
@@ -170,19 +219,28 @@ def site_key_from_extractor(extractor: str | None) -> str | None:
 
 
 def site_key_from_job(job: Any) -> str:
-    """Prefer extractor, then URL host, then existing path parent, else other."""
+    """Prefer a social URL, then extractor, then URL host, else other.
+
+    A saved ``site_key`` must not keep a Facebook link inside an adult folder.
+    """
+    from_url = site_key_from_url(getattr(job, "url", None))
+    from_ext = site_key_from_extractor(getattr(job, "extractor", None))
+    if is_social_platform(from_url):
+        return download_bucket_for_site_key(from_url)
+    if is_social_platform(from_ext) and from_url == "other":
+        return download_bucket_for_site_key(from_ext)
+
     opts = job.options() if hasattr(job, "options") else {}
     cached = opts.get("site_key") if isinstance(opts, dict) else None
     if cached:
         key = sanitize_site_key(str(cached))
-        if key != PORN_BUCKET:
+        stale_adult = is_porn_site_key(key) and from_url != "other" and not is_porn_site_key(from_url)
+        if key != PORN_BUCKET and not stale_adult:
             return key
 
-    from_ext = site_key_from_extractor(getattr(job, "extractor", None))
     if from_ext:
         return from_ext
 
-    from_url = site_key_from_url(getattr(job, "url", None))
     if from_url != "other":
         return from_url
 
@@ -197,11 +255,102 @@ def site_key_from_job(job: Any) -> str:
 
 
 def category_from_job(job: Any) -> str:
+    locked = user_category(job)
+    return locked if locked else DEFAULT_CATEGORY
+
+
+def user_category(job: Any) -> str | None:
+    """Import heading or other chosen category. ``uncategorized`` is not a choice."""
     opts = job.options() if hasattr(job, "options") else {}
     if not isinstance(opts, dict):
-        return DEFAULT_CATEGORY
+        return None
     for key in ("download_category", "project_category", "category"):
         raw = opts.get(key)
-        if raw:
-            return sanitize_category(str(raw))
+        if not raw:
+            continue
+        chosen = sanitize_category(str(raw))
+        if chosen != DEFAULT_CATEGORY:
+            return chosen
+    return None
+
+
+def facebook_id_in_name(name: str | None) -> bool:
+    """Facebook video ids are long digit strings. Eporner ids are not."""
+    return _FACEBOOK_ID.search(str(name or "")) is not None
+
+
+def title_from_media_name(name: str | None) -> str:
+    stem = Path(str(name or "")).stem
+    stem = re.sub(r"\s*\[[^\]]*\]\s*", " ", stem)
+    return re.sub(r"\s+", " ", stem).strip()
+
+
+def _meta_label(raw: object) -> str | None:
+    text = _ILLEGAL_RE.sub("", str(raw or "")).strip(" .")
+    if not text or text.lower() in _GENERIC_META:
+        return None
+    if _EXPLICIT_TITLE.search(text):
+        return None
+    if len(text) <= 40 and len(text.split()) <= 4:
+        return text
+    chosen = sanitize_category(text)
+    if chosen == DEFAULT_CATEGORY or _EXPLICIT_TITLE.search(chosen):
+        return None
+    return chosen
+
+
+def category_from_metadata(
+    info: dict[str, Any] | None,
+    *,
+    title: str | None = None,
+    user_category_name: str | None = None,
+) -> str:
+    """Category from an import heading, then page metadata, then a plain title.
+
+    An explicit sexual title is not turned into a folder name. Adult files
+    still stay in the porn bucket; this only chooses the category under it.
+    """
+    if user_category_name:
+        chosen = sanitize_category(user_category_name)
+        if chosen != DEFAULT_CATEGORY:
+            return chosen
+    data = info or {}
+    for key in ("playlist_title", "album", "series"):
+        label = _meta_label(data.get(key))
+        if label:
+            return label
+    categories = data.get("categories") or []
+    if isinstance(categories, str):
+        categories = [categories]
+    if isinstance(categories, (list, tuple)):
+        for raw in categories:
+            label = _meta_label(raw)
+            if label:
+                return label
+    for key in ("genre", "album"):
+        label = _meta_label(data.get(key))
+        if label:
+            return label
+    title_text = str(title or data.get("title") or "")
+    if title_text and not _EXPLICIT_TITLE.search(title_text):
+        chosen = sanitize_category(title_text)
+        if chosen != DEFAULT_CATEGORY:
+            return chosen
     return DEFAULT_CATEGORY
+
+
+def site_key_from_info(info: dict[str, Any] | None) -> str | None:
+    """Host or extractor from a finished yt-dlp info dict."""
+    if not isinstance(info, dict):
+        return None
+    for key in ("webpage_url", "original_url", "url"):
+        host_key = site_key_from_url(str(info.get(key) or ""))
+        if is_social_platform(host_key) or is_porn_site_key(host_key):
+            return download_bucket_for_site_key(host_key)
+    extracted = site_key_from_extractor(str(info.get("extractor_key") or info.get("extractor") or ""))
+    if extracted and (is_social_platform(extracted) or is_porn_site_key(extracted)):
+        return download_bucket_for_site_key(extracted)
+    video_id = str(info.get("id") or "")
+    if video_id.isdigit() and len(video_id) >= 12:
+        return "facebook"
+    return None

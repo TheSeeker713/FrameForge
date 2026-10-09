@@ -17,7 +17,8 @@ def test_youtube_job_dir_and_opts_contain_youtube(tmp_path: Path):
     assert dest == download_dir_for_site("youtube")
     assert dest.name == "uncategorized"
     assert dest.parent.name == "youtube"
-    assert dest.parent.parent == downloads_dir()
+    assert dest.parent.parent.name == "social"
+    assert dest.parent.parent.parent == downloads_dir()
     assert downloads_dir() in dest.parents
     assert dest.is_dir()
     dl = YtDlpDownloader(output_dir=dest)
@@ -45,6 +46,7 @@ def test_x_com_job_dir_contains_x_com(tmp_path: Path):
     job = repo.enqueue("https://x.com/user/status/99")
     dest = resolve_download_output_dir(job)
     assert dest.parent.name == "x.com"
+    assert dest.parent.parent.name == "social"
     assert "downloads" in dest.parts
     dl = YtDlpDownloader(output_dir=dest)
     assert "x.com" in str(dl.build_opts()["paths"]["home"]).replace("\\", "/")

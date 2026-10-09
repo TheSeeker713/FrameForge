@@ -23,7 +23,7 @@ def test_redirected_userprofile_keeps_media_on_temp_tree(monkeypatch, tmp_path: 
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.delenv("FRAMEFORGE_ROOT", raising=False)
     dest = download_dir_for_site("youtube")
-    assert dest == tmp_path / "Downloads" / "FrameForge" / "downloads" / "youtube" / "uncategorized"
+    assert dest == tmp_path / "Downloads" / "FrameForge" / "downloads" / "social" / "youtube" / "uncategorized"
     assert media_root() == frameforge_root()
     assert download_scan_roots() == [media_root()]
     staging = download_staging_dir(dest)
@@ -37,7 +37,7 @@ def test_frameforge_root_env_pins_media_root(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("frameforge.paths._read_download_choice", lambda: None)
     assert frameforge_root() == pinned
     assert media_root() == pinned
-    assert download_dir_for_site("youtube") == pinned / "downloads" / "youtube" / "uncategorized"
+    assert download_dir_for_site("youtube") == pinned / "downloads" / "social" / "youtube" / "uncategorized"
     assert downloads_dir() == pinned / "downloads"
 
 
@@ -71,7 +71,7 @@ def test_root_file_pins_media_root(monkeypatch, tmp_path: Path):
     dest = download_dir_for_site("youtube")
     assert frameforge_root() == pinned
     assert media_root() == pinned
-    assert dest == pinned / "downloads" / "youtube" / "uncategorized"
+    assert dest == pinned / "downloads" / "social" / "youtube" / "uncategorized"
     assert download_scan_roots() == [pinned]
     staging = download_staging_dir(dest)
     assert staging == pinned / "temp" / "dl"
@@ -90,7 +90,7 @@ def test_skip_download_location_uses_windows_folder(monkeypatch, tmp_path: Path)
     assert dest == tmp_path / "Downloads" / "FrameForge" / "downloads"
     assert downloads_dir() == dest
     assert download_location_chosen()
-    assert download_dir_for_site("youtube") == dest / "youtube" / "uncategorized"
+    assert download_dir_for_site("youtube") == dest / "social" / "youtube" / "uncategorized"
 
 
 def test_choose_download_location_nests_under_pick(monkeypatch, tmp_path: Path):

@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.34
+
+Adult downloads were getting their own site folder, and YouTube, X, and Facebook were landing at the downloads root. The app now picks `downloads/porn/<category>/` for adult hosts and `downloads/social/<platform>/<category>/` for those three. A stored `eporner.com` path is remapped on retry. A heading or page category replaces `uncategorized` when one exists. On launch, leftover adult site folders and root-level social folders are folded into that layout. A file the open download is still writing is left alone.
+
 ## 2026-10-08 — v0.6.33
 
 Long titles were still being used as filenames. When a name would be longer than 77 characters, the file is now saved as the first two words of the title.

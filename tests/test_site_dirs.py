@@ -16,10 +16,10 @@ from frameforge.paths import (
 def test_download_dir_for_site_under_downloads():
     root = media_root()
     yt = download_dir_for_site("youtube")
-    assert yt == root / "downloads" / "youtube" / "uncategorized"
+    assert yt == root / "downloads" / "social" / "youtube" / "uncategorized"
     assert downloads_dir() in yt.parents
     xc = download_dir_for_site("x.com", "clips")
-    assert xc == root / "downloads" / "x.com" / "clips"
+    assert xc == root / "downloads" / "social" / "x.com" / "clips"
     porn = download_dir_for_site("pornhub.com", "Squirting women.")
     assert porn == root / "downloads" / "porn" / "Squirting women"
     other = download_dir_for_site("other")

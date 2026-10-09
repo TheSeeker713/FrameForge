@@ -11,13 +11,19 @@ explicitly uses that Windows default (Skip).
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 APP_DIR_NAME = "FrameForge"
+log = logging.getLogger(__name__)
+_LIVE_FILE_SECONDS = 15 * 60
 _ENV_MEDIA_ROOT = "FRAMEFORGE_ROOT"
 # Captured at import, before a test redirects USERPROFILE.
 _LAUNCH_USERPROFILE = os.environ.get("USERPROFILE")
@@ -344,20 +350,36 @@ def converted_dir() -> Path:
 
 
 def download_dir_for_site(site_key: str, category: str | None = None) -> Path:
-    """New-job path: ``downloads/<bucket>/<category>/``.
+    """New-job path.
 
-    Adult sites use the ``porn`` bucket. Streaming sites use their site key
-    (``youtube``, ``x.com``, …). ``category`` is the project heading folder.
+    Adult hosts use ``downloads/porn/<category>/``. YouTube, X, and Facebook
+    use ``downloads/social/<platform>/<category>/``. Other hosts stay
+    ``downloads/<host>/<category>/``.
     """
     from frameforge.paths_site import (
         DEFAULT_CATEGORY,
+        SOCIAL_PLATFORM_KEYS,
         download_bucket_for_site_key,
         sanitize_category,
     )
 
     bucket = download_bucket_for_site_key(site_key)
     cat = sanitize_category(category) if category else DEFAULT_CATEGORY
+    if bucket in SOCIAL_PLATFORM_KEYS:
+        return downloads_dir() / "social" / bucket / cat
     return downloads_dir() / bucket / cat
+
+
+def same_download_bucket(path: Path | None, expected: Path) -> bool:
+    """True when ``path`` already sits in the same platform folder as ``expected``."""
+    if path is None:
+        return False
+    try:
+        resolved = Path(path).resolve()
+        bucket = expected.resolve().parent
+    except OSError:
+        return False
+    return resolved == bucket or resolved.parent == bucket or bucket in resolved.parents
 
 
 def upscaled_dir_for_site(site_key: str) -> Path:
@@ -423,7 +445,7 @@ def _merge_dir_into(src: Path, dest: Path) -> list[tuple[Path, Path]]:
 
 def migrate_root_site_folders() -> list[tuple[Path, Path]]:
     """Move leftover root media folders into ``downloads/``."""
-    from frameforge.paths_site import DEFAULT_CATEGORY, download_bucket_for_site_key
+    from frameforge.paths_site import DEFAULT_CATEGORY
 
     root = media_root()
     if not root.is_dir():
@@ -447,8 +469,7 @@ def migrate_root_site_folders() -> list[tuple[Path, Path]]:
             continue
         if _folder_has_inflight_parts(child):
             continue
-        bucket = download_bucket_for_site_key(child.name)
-        dest = downloads_dir() / bucket / DEFAULT_CATEGORY
+        dest = download_dir_for_site(child.name, DEFAULT_CATEGORY)
         moved.extend(_merge_dir_into(child, dest))
     return moved
 
@@ -515,6 +536,278 @@ def restrict_dir_to_current_user(folder: Path) -> None:
     )
 
 
+def _file_is_live(path: Path) -> bool:
+    """True for an in-flight part or a file the open download may still be writing."""
+    name = path.name.lower()
+    if path.suffix.lower() in {".part", ".ytdl", ".aria2"} or ".part." in name or name.endswith(".aria2"):
+        return True
+    try:
+        return (time.time() - path.stat().st_mtime) < _LIVE_FILE_SECONDS
+    except OSError:
+        return True
+
+
+def _prune_empty_dirs(folder: Path) -> None:
+    if not folder.is_dir():
+        return
+    for child in sorted(folder.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if child.is_dir():
+            try:
+                child.rmdir()
+            except OSError:
+                continue
+    try:
+        folder.rmdir()
+    except OSError:
+        return
+
+
+def _move_file_unique(src: Path, dest_dir: Path, *, respect_live: bool = True) -> Path | None:
+    if not src.is_file() or (respect_live and _file_is_live(src)):
+        return None
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target = dest_dir / src.name
+    try:
+        if target.exists() and target.resolve() == src.resolve():
+            return target
+    except OSError:
+        return None
+    if target.exists():
+        from frameforge.library.paths import unique_dest
+
+        target = unique_dest(dest_dir, src.name)
+    try:
+        shutil.move(str(src), str(target))
+    except OSError:
+        log.exception("Could not move %s", src)
+        return None
+    return target
+
+
+def place_finished_download(path: Path, *, site_key: str, category: str | None) -> Path:
+    """Move a finished file into the bucket/category the app chose."""
+    dest_dir = download_dir_for_site(site_key, category)
+    try:
+        if path.parent.resolve() == dest_dir.resolve():
+            return path
+    except OSError:
+        pass
+    moved = _move_file_unique(path, dest_dir, respect_live=False)
+    return moved if moved is not None else path
+
+
+def _routed_file_destination(downloads: Path, path: Path) -> Path | None:
+    """Where a misplaced download file belongs. None when it is already right."""
+    from frameforge.paths_site import (
+        DEFAULT_CATEGORY,
+        PORN_BUCKET,
+        SOCIAL_PLATFORM_KEYS,
+        category_from_metadata,
+        download_bucket_for_site_key,
+        facebook_id_in_name,
+        title_from_media_name,
+    )
+
+    try:
+        rel = path.resolve().relative_to(downloads.resolve())
+    except (OSError, ValueError):
+        return None
+    if len(rel.parts) < 2:
+        return None
+    head = rel.parts[0].lower()
+    if head in {"social", "converted", "upscaled", "videos"}:
+        return None
+    if facebook_id_in_name(path.name):
+        cat = category_from_metadata(None, title=title_from_media_name(path.name))
+        return downloads / "social" / "facebook" / cat / path.name
+    if head == PORN_BUCKET:
+        return None
+    bucket = download_bucket_for_site_key(rel.parts[0])
+    if bucket == PORN_BUCKET:
+        rest = rel.parts[1:-1] or (DEFAULT_CATEGORY,)
+        return downloads / PORN_BUCKET / Path(*rest) / path.name
+    if bucket in SOCIAL_PLATFORM_KEYS or head in SOCIAL_PLATFORM_KEYS:
+        platform = bucket if bucket in SOCIAL_PLATFORM_KEYS else head
+        rest = rel.parts[1:-1] or (DEFAULT_CATEGORY,)
+        return downloads / "social" / platform / Path(*rest) / path.name
+    return None
+
+
+def relocate_download_buckets() -> list[tuple[Path, Path]]:
+    """Fold adult site folders into porn and social hosts under downloads/social.
+
+    Skips a file the running download may still be writing. Does not delete media.
+    """
+    downloads = downloads_dir()
+    if not downloads.is_dir():
+        return []
+    moved: list[tuple[Path, Path]] = []
+    for child in list(downloads.iterdir()):
+        if not child.is_dir():
+            continue
+        if child.name.lower() in {"social", "converted", "upscaled"}:
+            continue
+        if _folder_has_inflight_parts(child):
+            continue
+        for path in list(child.rglob("*")):
+            if not path.is_file():
+                continue
+            dest = _routed_file_destination(downloads, path)
+            if dest is None:
+                continue
+            try:
+                if dest.resolve() == path.resolve():
+                    continue
+            except OSError:
+                continue
+            new_path = _move_file_unique(path, dest.parent)
+            if new_path is not None and new_path.resolve() != path.resolve():
+                moved.append((path, new_path))
+        if child.name.lower() != "videos":
+            _prune_empty_dirs(child)
+    videos = downloads / "videos"
+    if videos.is_dir() and not _folder_has_inflight_parts(videos):
+        try:
+            next(videos.rglob("*"))
+        except StopIteration:
+            try:
+                videos.rmdir()
+            except OSError:
+                pass
+        else:
+            if not any(p.is_file() for p in videos.rglob("*")):
+                _prune_empty_dirs(videos)
+    _sync_download_paths(moved)
+    return moved
+
+
+def _existing_named_file(downloads: Path, name: str) -> Path | None:
+    matches: list[Path] = []
+    for bucket in (downloads / "social", downloads / "porn"):
+        if not bucket.is_dir():
+            continue
+        matches.extend(p for p in bucket.rglob("*") if p.is_file() and p.name == name)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _remap_dir_text(text: str) -> str:
+    path = Path(text)
+    parts = list(path.parts)
+    try:
+        idx = next(i for i, part in enumerate(parts) if part.lower() == "downloads")
+    except StopIteration:
+        return text
+    if idx + 1 >= len(parts):
+        return text
+    head = parts[idx + 1]
+    from frameforge.paths_site import (
+        PORN_BUCKET,
+        SOCIAL_PLATFORM_KEYS,
+        category_from_metadata,
+        download_bucket_for_site_key,
+        facebook_id_in_name,
+        title_from_media_name,
+    )
+
+    if facebook_id_in_name(path.name) and head.lower() != "social":
+        found = _existing_named_file(Path(*parts[: idx + 1]), path.name)
+        if found is not None:
+            return str(found)
+        cat = category_from_metadata(None, title=title_from_media_name(path.name))
+        return str(Path(*parts[: idx + 1], "social", "facebook", cat, path.name))
+    if head.lower() in {"social", "converted", "upscaled", "videos", "porn"}:
+        return text
+    bucket = download_bucket_for_site_key(head)
+    rest = parts[idx + 2 :]
+    if bucket == PORN_BUCKET or head.lower() == "eporner.com":
+        parts = parts[: idx + 1] + [PORN_BUCKET, *rest]
+    elif bucket in SOCIAL_PLATFORM_KEYS or head.lower() in SOCIAL_PLATFORM_KEYS:
+        platform = bucket if bucket in SOCIAL_PLATFORM_KEYS else head.lower()
+        parts = parts[: idx + 1] + ["social", platform, *rest]
+    else:
+        return text
+    return str(Path(*parts))
+
+
+def _sync_download_paths(moved: list[tuple[Path, Path]]) -> None:
+    exact = {str(old): str(new) for old, new in moved}
+    db = db_path()
+    if not db.is_file() or not exact and not moved:
+        if not db.is_file():
+            return
+    try:
+        conn = sqlite3.connect(str(db), timeout=2)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        log.warning("Stored download paths were not rewritten; the database is locked")
+        return
+
+    def map_text(value: str | None) -> str | None:
+        if not value:
+            return value
+        if value in exact:
+            return exact[value]
+        remapped = _remap_dir_text(value)
+        return remapped if remapped != value else value
+
+    try:
+        rows = conn.execute("SELECT id, download_path, output_path, options_json FROM jobs").fetchall()
+        for row in rows:
+            download_path = map_text(row["download_path"])
+            output_path = map_text(row["output_path"])
+            raw = row["options_json"]
+            new_raw = raw
+            if raw:
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    data = None
+                if isinstance(data, dict):
+                    changed = False
+                    for key in ("download_output_dir",):
+                        current = data.get(key)
+                        if isinstance(current, str):
+                            updated = map_text(current)
+                            if updated and updated != current:
+                                data[key] = updated
+                                changed = True
+                    if changed:
+                        new_raw = json.dumps(data)
+            if download_path != row["download_path"] or output_path != row["output_path"] or new_raw != raw:
+                conn.execute(
+                    "UPDATE jobs SET download_path = ?, output_path = ?, options_json = ? WHERE id = ?",
+                    (download_path, output_path, new_raw, row["id"]),
+                )
+        try:
+            lib_rows = conn.execute("SELECT id, path FROM library_items").fetchall()
+        except sqlite3.Error:
+            lib_rows = []
+        for row in lib_rows:
+            updated = map_text(row["path"])
+            if updated and updated != row["path"]:
+                conn.execute("UPDATE library_items SET path = ? WHERE id = ?", (updated, row["id"]))
+        try:
+            archive_rows = conn.execute(
+                "SELECT rowid AS archive_row, output_path FROM download_archive"
+            ).fetchall()
+        except sqlite3.Error:
+            archive_rows = []
+        for row in archive_rows:
+            updated = map_text(row["output_path"])
+            if updated and updated != row["output_path"]:
+                conn.execute(
+                    "UPDATE download_archive SET output_path = ? WHERE rowid = ?",
+                    (updated, row["archive_row"]),
+                )
+        conn.commit()
+    except (sqlite3.Error, KeyError, TypeError):
+        log.warning("Stored download paths were not rewritten")
+    finally:
+        conn.close()
+
+
 def ensure_output_tree() -> Path:
     from frameforge.layout import repair_frameforge_tree
 
@@ -541,5 +834,6 @@ def ensure_output_tree() -> Path:
         (media / "downloads").mkdir(parents=True, exist_ok=True)
         (media / "temp" / "dl").mkdir(parents=True, exist_ok=True)
     migrate_root_site_folders()
+    relocate_download_buckets()
     repair_frameforge_tree(root, site_folders=False)
     return root

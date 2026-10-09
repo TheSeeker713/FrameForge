@@ -204,7 +204,6 @@ def repair_frameforge_tree(
         thumbs.mkdir(parents=True, exist_ok=True)
         database.mkdir(parents=True, exist_ok=True)
         (root / "downloads").mkdir(parents=True, exist_ok=True)
-        videos.mkdir(parents=True, exist_ok=True)
         metadata.mkdir(parents=True, exist_ok=True)
         junk.mkdir(parents=True, exist_ok=True)
     moved = {
@@ -304,4 +303,15 @@ def repair_frameforge_tree(
         f"Done: {moved['thumbs']} thumbs, {moved['junk_relocated']} junk, "
         f"{moved['json_moved']} info.json, {moved.get('orphan_frames', 0)} orphan frame dirs"
     )
+    if videos.is_dir() and not any(path.is_file() for path in videos.rglob("*")):
+        for child in sorted(videos.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+            if child.is_dir():
+                try:
+                    child.rmdir()
+                except OSError:
+                    pass
+        try:
+            videos.rmdir()
+        except OSError:
+            pass
     return moved
