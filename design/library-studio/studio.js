@@ -123,6 +123,23 @@ const choice = {
   vignette: true,
 };
 
+const EMBED = new URLSearchParams(location.search).get("embed") === "1";
+const LOCKED = {
+  shelf: "coverflow",
+  material: "glass",
+  pointer: "magnetic",
+  player: "expand",
+  anamorphic: true,
+  reflection: true,
+  grain: false,
+  vignette: true,
+};
+if (EMBED) {
+  Object.assign(choice, LOCKED);
+  document.documentElement.classList.add("embed");
+  document.body.classList.add("embed");
+}
+
 const canvas = document.getElementById("stage");
 const groupsEl = document.getElementById("groups");
 const notesEl = document.getElementById("notes");
@@ -514,10 +531,23 @@ function makeStill(clip) {
   const tex = new THREE.CanvasTexture(board);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
+  if (clip.thumb) {
+    const img = new Image();
+    img.onload = () => {
+      g.drawImage(img, 0, 0, w, h);
+      g.fillStyle = "rgba(8, 6, 4, 0.62)";
+      g.fillRect(0, h - 96, w, 96);
+      g.fillStyle = "#f4efe6";
+      g.font = "560 40px Fraunces, serif";
+      g.fillText(clip.title || "", 36, h - 32);
+      tex.needsUpdate = true;
+    };
+    img.src = clip.thumb;
+  }
   return tex;
 }
 
-const cards = CLIPS.map((clip, index) => {
+function buildCard(clip, index) {
   const tex = makeStill(clip);
   const bodyMat = new THREE.MeshPhysicalMaterial({
     color: "#1c1916",
@@ -549,7 +579,34 @@ const cards = CLIPS.map((clip, index) => {
   group.userData.id = clip.id;
   rig.add(group);
   return { clip, group, body, bodyMat, screenMat, tex };
-});
+}
+
+let cards = [];
+
+function mountCards(list) {
+  for (const card of cards) {
+    rig.remove(card.group);
+    card.tex.dispose();
+    card.bodyMat.dispose();
+    card.screenMat.dispose();
+    const back = card.group.children.find((child) => child.userData.role === "back");
+    if (back && back.material) {
+      if (back.material.map) back.material.map.dispose();
+      back.material.dispose();
+    }
+  }
+  cards = list.map((clip, index) => buildCard(clip, index));
+  state.order = list.map((clip) => clip.id);
+  focus = 0;
+  focusTo = 0;
+  open = false;
+  applyBodyMaterial();
+  const empty = document.getElementById("emptyShelf");
+  const none = list.length === 0;
+  document.body.classList.toggle("empty", none);
+  document.documentElement.classList.toggle("empty", none);
+  if (empty) empty.hidden = !none;
+}
 
 function applyBodyMaterial() {
   for (const card of cards) {
@@ -647,7 +704,7 @@ const ndc = new THREE.Vector2();
 
 function orderedCards() {
   const rank = new Map(state.order.map((id, index) => [id, index]));
-  return [...cards].sort((a, b) => rank.get(a.clip.id) - rank.get(b.clip.id));
+  return [...cards].sort((a, b) => (rank.get(a.clip.id) ?? 0) - (rank.get(b.clip.id) ?? 0));
 }
 
 function layout(dtFocus) {
@@ -712,6 +769,7 @@ function hitCard(event) {
 
 function focusedClip() {
   const list = orderedCards();
+  if (!list.length) return null;
   const index = THREE.MathUtils.clamp(Math.round(focus), 0, list.length - 1);
   return list[index];
 }
@@ -720,12 +778,24 @@ function showPlayer(card) {
   open = true;
   sweep = 0;
   playerTitle.textContent = card.clip.title;
-  playerSub.textContent = `${card.clip.meta} · path stays on disk · sample still, not your file`;
-  playerStill.src = card.tex.image.toDataURL("image/jpeg", 0.86);
+  playerSub.textContent = EMBED
+    ? `${card.clip.meta} · The file stays where it is.`
+    : `${card.clip.meta} · path stays on disk · sample still, not your file`;
+  if (!EMBED && card.tex && card.tex.image) {
+    playerStill.src = card.tex.image.toDataURL("image/jpeg", 0.86);
+  }
   playerStill.alt = card.clip.title;
   playerEl.classList.add("open");
   playerEl.classList.toggle("theater", choice.player === "theater");
   playerEl.classList.toggle("caption", choice.player === "expand");
+  if (EMBED) {
+    fetch("/api/shelf/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "open", id: card.clip.id }),
+    }).catch(() => {});
+    return;
+  }
   record("player-open", `Opened ${card.clip.title} with ${labelOf("player", choice.player)}`);
 }
 
@@ -772,7 +842,7 @@ canvas.addEventListener("pointermove", (event) => {
   if (!scrubbing || choice.shelf === "manual") return;
   const dx = event.clientX - scrubLast;
   if (Math.abs(dx) > 36) {
-    focusTo = THREE.MathUtils.clamp(focusTo + (dx > 0 ? -1 : 1), 0, CLIPS.length - 1);
+    focusTo = THREE.MathUtils.clamp(focusTo + (dx > 0 ? -1 : 1), 0, Math.max(orderedCards().length - 1, 0));
     scrubLast = event.clientX;
     if (open) hidePlayer();
   }
@@ -806,7 +876,7 @@ canvas.addEventListener(
   "wheel",
   (event) => {
     event.preventDefault();
-    focusTo = THREE.MathUtils.clamp(focusTo + Math.sign(event.deltaY), 0, CLIPS.length - 1);
+    focusTo = THREE.MathUtils.clamp(focusTo + Math.sign(event.deltaY), 0, Math.max(orderedCards().length - 1, 0));
     if (open) hidePlayer();
   },
   { passive: false },
@@ -843,6 +913,7 @@ function record(key, label) {
 }
 
 function scheduleSave() {
+  if (EMBED) return;
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(save, 200);
 }
@@ -1034,7 +1105,7 @@ async function resumeSession() {
   record("open", "Studio reopened");
 }
 
-document.fonts.ready.then(() => {
+function repaintStills() {
   for (const card of cards) {
     const next = makeStill(card.clip);
     card.screenMat.map = next;
@@ -1049,6 +1120,28 @@ document.fonts.ready.then(() => {
       back.material.needsUpdate = true;
     }
   }
-});
-resumeSession();
+}
+
+async function loadShelf() {
+  try {
+    const response = await fetch("/api/shelf", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    if (data.look) Object.assign(choice, LOCKED, data.look);
+    mountCards(Array.isArray(data.clips) ? data.clips : []);
+    document.fonts.ready.then(repaintStills);
+  } catch {
+    banner.style.display = "block";
+    banner.textContent = "Library shelf could not load.";
+    mountCards([]);
+  }
+}
+
+document.fonts.ready.then(repaintStills);
+if (EMBED) {
+  loadShelf();
+} else {
+  mountCards(CLIPS);
+  resumeSession();
+}
 requestAnimationFrame(animate);

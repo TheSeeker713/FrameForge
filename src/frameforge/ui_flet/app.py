@@ -219,6 +219,9 @@ class FrameForgeUi:
         self.library_empty: ft.Container | None = None
         self.library_toolbar: ft.Control | None = None
         self.library_body: ft.Column | None = None
+        self.library_studio_host: ft.Container | None = None
+        self._library_shelf: Any | None = None
+        self._library_surface: Any | None = None
         self.thumbs_grid: ft.ListView | None = None
         self._library_thumb_miss: set[int] = set()
         self._library_video: Any | None = None
@@ -559,13 +562,19 @@ class FrameForgeUi:
         self.library_grid = ft.ListView(expand=True, spacing=18, padding=28, horizontal=True)
         self.thumbs_grid = self.library_grid
         self.library_albums = ft.Row(wrap=True, spacing=8, run_spacing=6)
-        self.library_grid_host = ft.Container(
+        from frameforge.ui_flet.library_studio import LOCKED_LOOK, SHELF_MARKER
+
+        self.library_studio_host = ft.Container(
             expand=True,
-            bgcolor="#14110E",
+            bgcolor=SHELF_MARKER,
             border_radius=16,
-            padding=8,
-            content=self.library_grid,
+            on_size_change=self._on_library_shelf_resized,
+            data={"kind": "library_studio", "embed": True, "look": dict(LOCKED_LOOK), "rows": [], "url": ""},
         )
+        # The horizontal list painted a flat gray pane and never mounted the studio.
+        # Row data still lands on library_grid for the existing card contract.
+        # The tab shows library_studio_host.
+        self.library_grid_host = self.library_studio_host
         self.library_empty = ft.Container(
             visible=False,
             expand=False,
@@ -1050,6 +1059,7 @@ class FrameForgeUi:
             return
         if getattr(self.dialogs, "kind", None) == "quit":
             return
+        self.drain_library_studio_actions()
         active = next(
             (j for j in self.queue_jobs() if j.status in {"downloading", "upscaling", "converting"}),
             None,
@@ -1796,11 +1806,84 @@ class FrameForgeUi:
             self.library_grid.visible = not show_empty
         if self.library_empty is not None:
             self.library_empty.expand = show_empty
+        self._publish_library_shelf(items, albums)
         if self.page is not None:
             try:
                 self.page.update()
             except Exception:
                 log.exception("page.update failed after library refresh")
+        self._sync_library_surface()
+
+    def _on_library_shelf_resized(self, _e: Any = None) -> None:
+        self._sync_library_surface()
+
+    def _library_tab_selected(self) -> bool:
+        if self.tabs is None:
+            return False
+        return getattr(self.tabs, "selected_index", None) == 2
+
+    def _ensure_library_shelf(self) -> Any:
+        if self._library_shelf is None:
+            from frameforge.ui_flet.library_studio import LibraryShelfServer
+
+            self._library_shelf = LibraryShelfServer()
+            self._library_shelf.start()
+        return self._library_shelf
+
+    def _publish_library_shelf(self, items: list[Any], albums: list[Any]) -> None:
+        from frameforge.ui_flet.library_studio import shelf_document
+
+        document, thumbs = shelf_document(items, albums)
+        shelf = self._ensure_library_shelf()
+        shelf.update(document, thumbs)
+        if self.library_studio_host is None:
+            return
+        self.library_studio_host.data = {
+            "kind": "library_studio",
+            "embed": True,
+            "look": document["look"],
+            "rows": document["clips"],
+            "url": shelf.page_url(),
+        }
+
+    def _sync_library_surface(self) -> None:
+        host = self.library_studio_host
+        if host is None:
+            return
+        page = self.page
+        real_page = page is not None and page.__class__.__name__ != "FakePage"
+        show = bool(getattr(host, "visible", False)) and self._library_tab_selected() and real_page
+        url = str((host.data or {}).get("url") or "")
+        if not show:
+            if self._library_surface is not None:
+                self._library_surface.sync(url="", visible=False)
+            return
+        if self._library_surface is None:
+            from frameforge.ui_flet.library_surface import LibrarySurface
+
+            self._library_surface = LibrarySurface()
+        self._library_surface.sync(url=url, visible=True)
+
+    def drain_library_studio_actions(self) -> int:
+        shelf = self._library_shelf
+        if shelf is None:
+            return 0
+        done = 0
+        for msg in shelf.take_actions():
+            done += 1
+            action = msg.get("action")
+            try:
+                item_id = int(msg.get("id"))
+            except (TypeError, ValueError):
+                continue
+            if action == "open":
+                self.play_library_item(item_id)
+            elif action == "unlink":
+                self.unlink_library_item(item_id)
+            elif action == "delete":
+                self.library_selected_ids = {item_id}
+                self.confirm_library_remove(delete_files=True)
+        return done
 
     def _on_tabs_change(self, e: Any = None) -> None:
         idx = getattr(self.tabs, "selected_index", None) if self.tabs is not None else None
@@ -1809,6 +1892,8 @@ class FrameForgeUi:
             idx = getattr(ctrl, "selected_index", idx)
         if idx == 2:
             self.on_library_opened()
+        else:
+            self._sync_library_surface()
 
     def on_library_opened(self, _e: Any = None) -> ft.AlertDialog | None:
         self.refresh_library(publish=True)
@@ -3317,6 +3402,20 @@ class FrameForgeUi:
         self._offer_download_location()
 
     def shutdown(self) -> None:
+        surface = self._library_surface
+        self._library_surface = None
+        if surface is not None:
+            try:
+                surface.close()
+            except Exception:  # noqa: BLE001
+                log.exception("Library shelf surface did not close")
+        shelf = self._library_shelf
+        self._library_shelf = None
+        if shelf is not None:
+            try:
+                shelf.close()
+            except Exception:  # noqa: BLE001
+                log.exception("Library shelf server did not close")
         try:
             self.wait_queue_persist(5)
         except Exception:  # noqa: BLE001

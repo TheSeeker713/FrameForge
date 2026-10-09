@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — Library shelf
+
+The Library tab's gray pane was the horizontal list. The WebGL studio was never mounted there. The Library tab now hosts that studio (Cover flow, optical glass, magnetic pull, card comes forward, anamorphic and floor mirror on, film grain off, vignette on) and passes the real library rows. Files stay at their source path. Remove-from-library unlinks. Delete-file is a separate Recycle Bin confirm.
+
 ## 2026-10-08 — v0.6.35
 
 Clear from queue sat on the window thread until SQLite accepted the hide. A download writing progress holds that write lock, and the click waited through the busy timeout more than once, so the row stayed for minutes. The row and the Undo banner now update from the queue already on screen. The hide is written on a background thread. Clearing a queued row does not stop the download.

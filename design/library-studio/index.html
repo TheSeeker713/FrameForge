@@ -78,7 +78,18 @@
       color: var(--danger); font-size: 13px;
     }
     #basis { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+    #emptyShelf { display: none; }
+    html.embed header, html.embed #dock, html.embed #banner { display: none !important; }
+    html.embed.empty #emptyShelf {
+      position: fixed; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
+      color: var(--muted); pointer-events: none;
+    }
   </style>
+  <script>
+    if (new URLSearchParams(location.search).get("embed") === "1") {
+      document.documentElement.classList.add("embed");
+    }
+  </script>
   <script type="importmap">
   {
     "imports": {
@@ -90,6 +101,7 @@
 </head>
 <body>
   <canvas id="stage"></canvas>
+  <p id="emptyShelf" hidden>No clips in Library yet</p>
   <header>
     <div>
       <h1>Library</h1>
