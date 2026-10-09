@@ -765,6 +765,8 @@ def build_library_toolbar(
     on_new_collection: Any,
     on_add_collection: Any,
     on_move_new: Any | None,
+    on_add_videos: Any | None = None,
+    on_add_folder: Any | None = None,
     pending_new: int,
     has_selection: bool,
     selected_count: int = 0,
@@ -811,7 +813,15 @@ def build_library_toolbar(
         f"Move {pending_new} new",
         on_click=lambda _e: on_move_new and on_move_new(),
     )
-    move_btn.visible = pending_new > 0
+    move_btn.visible = False
+    add_videos_btn = elevated_outlined_button(
+        "Add videos",
+        on_click=lambda _e: on_add_videos and on_add_videos(),
+    )
+    add_folder_btn = elevated_outlined_button(
+        "Add folder",
+        on_click=lambda _e: on_add_folder and on_add_folder(),
+    )
     scan_btn = elevated_outlined_button(
         f"Scan library folder ({orphan_count})",
         on_click=lambda _e: on_scan and on_scan(),
@@ -867,6 +877,8 @@ def build_library_toolbar(
             source_menu,
             flag_menu,
             ft.Container(expand=True),
+            add_videos_btn,
+            add_folder_btn,
             move_btn,
             scan_btn,
             elevated_outlined_button("Duplicates…", on_click=lambda _e: on_dedupe and on_dedupe()),

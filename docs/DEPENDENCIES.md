@@ -20,7 +20,8 @@ py -3.12 -m venv .venv
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
 # curl_cffi==0.13.0 is required for yt-dlp --impersonate (PornHub). Do not
-# upgrade curl_cffi alone to 0.16.x while yt-dlp is 2026.07.04.
+# upgrade curl_cffi alone to 0.16.x. yt-dlp 2026.8.19 accepts curl_cffi<0.17,
+# and this app stays on 0.13.0.
 # GUI (v0.5): flet==0.86.5 is a project dependency
 pip install onnx   # used to generate local smoke ONNX if Real-ESRGAN download unavailable
 python .\scripts\create_smoke_onnx.py
@@ -33,7 +34,7 @@ python .\scripts\create_smoke_onnx.py
 
 | Package | Version |
 |---------|---------|
-| yt-dlp | 2026.7.4 |
+| yt-dlp | 2026.8.19 or newer |
 | curl_cffi | 0.13.0 | Required for `--impersonate chrome`. 0.16.x is unsupported with this yt-dlp |
 | onnxruntime-directml | 1.24.4 |
 | customtkinter | 6.0.0 |

@@ -14,6 +14,13 @@ _PATH_YTDLP_CACHE: str | None = None
 _PATH_YTDLP_PROBED = False
 
 
+def clear_yt_dlp_version_cache() -> None:
+    global _VERSION_CACHE, _PATH_YTDLP_CACHE, _PATH_YTDLP_PROBED
+    _VERSION_CACHE = None
+    _PATH_YTDLP_CACHE = None
+    _PATH_YTDLP_PROBED = False
+
+
 def bundled_yt_dlp_version() -> str:
     global _VERSION_CACHE
     if _VERSION_CACHE is not None:
@@ -59,8 +66,18 @@ def path_yt_dlp_version() -> str | None:
     return _PATH_YTDLP_CACHE
 
 
+def aria2c_path() -> str | None:
+    from frameforge.setup.toolchain import bundled_exe
+
+    bundled = bundled_exe("aria2c")
+    if bundled is not None:
+        return str(bundled)
+    found = shutil.which("aria2c")
+    return str(Path(found).resolve()) if found else None
+
+
 def aria2c_available() -> bool:
-    return shutil.which("aria2c") is not None
+    return aria2c_path() is not None
 
 
 def _winget_gyan_ffmpeg() -> Path | None:
@@ -98,7 +115,12 @@ def _common_ffmpeg_candidates() -> list[Path]:
 
 
 def ffmpeg_location() -> str | None:
-    """PATH first, then WinGet Gyan.FFmpeg and other common Windows locations."""
+    """App tools folder first, then PATH, then WinGet Gyan.FFmpeg."""
+    from frameforge.setup.toolchain import bundled_exe
+
+    bundled = bundled_exe("ffmpeg")
+    if bundled is not None:
+        return str(bundled)
     exe = shutil.which("ffmpeg")
     if exe:
         return str(Path(exe).resolve())
@@ -142,7 +164,10 @@ def download_subprocess_env() -> tuple[dict[str, str], dict[str, str]]:
     if probe:
         extra.append(str(Path(probe).resolve().parent))
     for tool in ("aria2c", "deno", "node"):
-        loc = which_on_augmented_path(tool) if tool in {"deno", "node"} else shutil.which(tool)
+        if tool == "aria2c":
+            loc = aria2c_path()
+        else:
+            loc = which_on_augmented_path(tool)
         if loc:
             extra.append(str(Path(loc).resolve().parent))
     for folder in extra_tool_dirs():

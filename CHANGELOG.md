@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.36
+
+- yt-dlp is updated to 2026.8.19 or newer. First launch with an empty queue installs yt-dlp, aria2, FFmpeg, and Deno, each from more than one source. A database that already has jobs skips that setup. Settings can run it again. Later launches check those tools and install a newer one, with a short message that says what changed and why.
+- The Library tab no longer asks to move videos into a library folder. The WebGL shelf is the library. Add videos or a folder from anywhere; the files stay put and only the index and thumbnails are stored.
+
 ## 0.6.35
 
 - Clear from queue removes that row and shows “Cleared N item — Undo” on the click. The database write happens afterward, so a download in progress cannot freeze the click. A second clear of the same row does nothing. Undo puts the row back. Clearing a queued row leaves the download running.

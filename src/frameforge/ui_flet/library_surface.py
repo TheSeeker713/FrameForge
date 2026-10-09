@@ -189,6 +189,34 @@ class RECT(ctypes.Structure):
     ]
 
 
+class POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def shelf_screen_box(
+    origin_x: int,
+    origin_y: int,
+    client_w: int,
+    client_h: int,
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int] | None:
+    """Screen rect for the shelf, anchored to the bottom of the FrameForge client."""
+    if client_w < 80 or client_h < 80:
+        return None
+    w = int(width) if width and width > 80 else int(client_w * 0.92)
+    h = int(height) if height and height > 80 else int(client_h * 0.62)
+    w = max(80, min(w, client_w - 8))
+    h = max(80, min(h, client_h - 8))
+    x = int(origin_x) + max(4, (client_w - w) // 2)
+    y = int(origin_y) + max(4, client_h - h - 8)
+    return (x, y, w, h)
+
+
+user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(POINT)]
+user32.ClientToScreen.restype = wintypes.BOOL
+
+
 class WNDCLASSW(ctypes.Structure):
     _fields_ = [
         ("style", wintypes.UINT),
@@ -523,6 +551,12 @@ class LibrarySurface:
         self._thread: threading.Thread | None = None
         self._child: int = 0
         self._parent: int = 0
+        self._overlay: int = 0
+        self._owner: int = 0
+        self._want_visible = False
+        self._overlay_url = ""
+        self._size = (0, 0)
+        self._env_started = False
         self._controller: int = 0
         self._webview: int = 0
         self._env: int = 0
@@ -534,10 +568,10 @@ class LibrarySurface:
         self._callbacks: list[_Callback] = []
         self._loader: Any = None
 
-    def sync(self, *, url: str, visible: bool) -> None:
+    def sync(self, *, url: str, visible: bool, width: int = 0, height: int = 0) -> None:
         self._start()
         with self._lock:
-            self._cmds.append(("sync", url, bool(visible)))
+            self._cmds.append(("sync", url, bool(visible), int(width or 0), int(height or 0)))
         self._wake.set()
 
     def probe_offscreen(self, url: str, timeout: float = 20.0) -> bool:
@@ -603,18 +637,26 @@ class LibrarySurface:
                 cmds = self._cmds
                 self._cmds = []
             if not cmds:
-                self._wake.wait(0.05)
+                self._wake.wait(0.2)
                 self._wake.clear()
-                continue
-            for cmd in cmds:
-                if cmd[0] == "close":
-                    return
-                if cmd[0] == "probe":
-                    self._probe(str(cmd[1]))
-                elif cmd[0] == "into":
-                    self._embed(int(cmd[1]), (8, 8, 640, 360), str(cmd[2]))
-                elif cmd[0] == "sync":
-                    self._sync(str(cmd[1]), bool(cmd[2]))
+            elif self._dispatch(cmds):
+                return
+            if self._want_visible:
+                self._place_overlay()
+
+    def _dispatch(self, cmds: list[tuple[Any, ...]]) -> bool:
+        for cmd in cmds:
+            if cmd[0] == "close":
+                return True
+            if cmd[0] == "probe":
+                self._probe(str(cmd[1]))
+            elif cmd[0] == "into":
+                self._embed(int(cmd[1]), (8, 8, 640, 360), str(cmd[2]))
+            elif cmd[0] == "sync":
+                width = int(cmd[3]) if len(cmd) > 3 else 0
+                height = int(cmd[4]) if len(cmd) > 4 else 0
+                self._sync(str(cmd[1]), bool(cmd[2]), width, height)
+        return False
 
     def _probe(self, url: str) -> None:
         parent = user32.CreateWindowExW(
@@ -639,28 +681,103 @@ class LibrarySurface:
         user32.ShowWindow(parent, SW_SHOW)
         self._embed(int(parent), (0, 0, 960, 540), url)
 
-    def _sync(self, url: str, visible: bool) -> None:
-        if not visible or not url:
-            self._hide()
+    def _sync(self, url: str, visible: bool, width: int = 0, height: int = 0) -> None:
+        self._want_visible = bool(visible and url)
+        self._overlay_url = url
+        self._size = (int(width or 0), int(height or 0))
+        if not self._want_visible:
+            self._hide_overlay()
             return
-        parent = find_frameforge_hwnd()
-        if parent is None:
-            self._hide()
+        self._place_overlay()
+
+    def _overlay_rect(self, owner: int) -> tuple[int, int, int, int] | None:
+        client = RECT()
+        if not user32.GetClientRect(owner, ctypes.byref(client)):
+            return None
+        origin = POINT(0, 0)
+        if not user32.ClientToScreen(owner, ctypes.byref(origin)):
+            return None
+        return shelf_screen_box(
+            int(origin.x),
+            int(origin.y),
+            int(client.right),
+            int(client.bottom),
+            self._size[0],
+            self._size[1],
+        )
+
+    def _hide_overlay(self) -> None:
+        self._hide()
+        if self._overlay and user32.IsWindow(self._overlay):
+            user32.ShowWindow(self._overlay, SW_HIDE)
+
+    def _place_overlay(self) -> None:
+        if not self._want_visible or not self._overlay_url:
+            self._hide_overlay()
             return
-        rect = None
-        for _attempt in range(8):
-            if self._child and user32.IsWindow(self._child):
-                user32.ShowWindow(self._child, SW_HIDE)
-            self._peek()
-            time.sleep(0.06)
-            self._peek()
-            rect = marker_rect(parent)
-            if rect is not None:
-                break
+        owner = find_frameforge_hwnd()
+        if owner is None or not user32.IsWindowVisible(owner):
+            self._hide_overlay()
+            return
+        rect = self._overlay_rect(owner)
         if rect is None:
-            self._hide()
+            self._hide_overlay()
             return
-        self._embed(parent, rect, url)
+        x, y, w, h = rect
+        if not (self._overlay and user32.IsWindow(self._overlay)):
+            overlay = user32.CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                "FrameForgeLibraryShelf",
+                "FrameForge Library",
+                WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+                x,
+                y,
+                w,
+                h,
+                owner,
+                None,
+                kernel32.GetModuleHandleW(None),
+                None,
+            )
+            if not overlay:
+                self.last_error = f"library shelf window failed ({ctypes.get_last_error()})"
+                log.warning(self.last_error)
+                return
+            self._overlay = int(overlay)
+            self._owner = int(owner)
+            _SURFACES[self._overlay] = self
+            self._env_started = False
+            self._destroy_webview()
+        else:
+            user32.SetWindowPos(self._overlay, HWND_TOP, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        user32.ShowWindow(self._overlay, SW_SHOW)
+        self._child = self._overlay
+        self._parent = self._overlay
+        self._pending_url = self._overlay_url
+        if self._webview:
+            self._fit_and_navigate()
+            return
+        if self._env:
+            if not self._controller:
+                self._create_controller()
+            return
+        if not self._env_started:
+            self._env_started = True
+            self._create_environment()
+
+    def _destroy_webview(self) -> None:
+        controller = self._controller
+        webview = self._webview
+        env = self._env
+        self._controller = 0
+        self._webview = 0
+        self._env = 0
+        if controller:
+            proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, ctypes.c_void_p)
+            _call(controller, 24, proto)
+            _release(webview)
+            _release(controller)
+        _release(env)
 
     def _hide(self) -> None:
         if self._child and user32.IsWindow(self._child):
@@ -804,10 +921,15 @@ class LibrarySurface:
             _release(controller)
         _release(env)
         child = self._child
+        overlay = self._overlay
         self._child = 0
-        if child and user32.IsWindow(child):
-            _SURFACES.pop(child, None)
-            user32.DestroyWindow(child)
+        self._overlay = 0
+        self._owner = 0
+        self._env_started = False
+        for hwnd in (child, overlay):
+            if hwnd and user32.IsWindow(hwnd):
+                _SURFACES.pop(hwnd, None)
+                user32.DestroyWindow(hwnd)
 
     def _teardown(self) -> None:
         self._destroy_child()

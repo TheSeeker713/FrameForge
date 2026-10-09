@@ -34,7 +34,6 @@ from frameforge.ui_flet.components.library import (
     duplicate_report_dialog,
     empty_library_state,
     junk_triage_dialog,
-    new_downloads_dialog,
     onboarding_dialog,
     private_disposition_dialog,
     private_password_dialog,
@@ -568,7 +567,9 @@ class FrameForgeUi:
             expand=True,
             bgcolor=SHELF_MARKER,
             border_radius=16,
+            alignment=ft.Alignment.CENTER,
             on_size_change=self._on_library_shelf_resized,
+            content=ft.Text("Library shelf", color="#F4F1EA", size=14),
             data={"kind": "library_studio", "embed": True, "look": dict(LOCKED_LOOK), "rows": [], "url": ""},
         )
         # The horizontal list painted a flat gray pane and never mounted the studio.
@@ -1749,6 +1750,8 @@ class FrameForgeUi:
                 on_new_collection=self.open_new_collection,
                 on_add_collection=self.open_add_to_collection,
                 on_move_new=self.open_library_new_files,
+                on_add_videos=self.add_library_videos,
+                on_add_folder=self.add_library_folder,
                 pending_new=pending,
                 has_selection=bool(self.library_selected_ids),
                 selected_count=len(self.library_selected_ids),
@@ -1814,7 +1817,15 @@ class FrameForgeUi:
                 log.exception("page.update failed after library refresh")
         self._sync_library_surface()
 
-    def _on_library_shelf_resized(self, _e: Any = None) -> None:
+    def _on_library_shelf_resized(self, e: Any = None) -> None:
+        ctrl = getattr(e, "control", None) if e is not None else None
+        width = getattr(ctrl, "width", None) if ctrl is not None else getattr(e, "width", None)
+        height = getattr(ctrl, "height", None) if ctrl is not None else getattr(e, "height", None)
+        try:
+            if width and height:
+                self._library_shelf_px = (int(width), int(height))
+        except (TypeError, ValueError):
+            pass
         self._sync_library_surface()
 
     def _library_tab_selected(self) -> bool:
@@ -1862,7 +1873,8 @@ class FrameForgeUi:
             from frameforge.ui_flet.library_surface import LibrarySurface
 
             self._library_surface = LibrarySurface()
-        self._library_surface.sync(url=url, visible=True)
+        width, height = getattr(self, "_library_shelf_px", (0, 0))
+        self._library_surface.sync(url=url, visible=True, width=width, height=height)
 
     def drain_library_studio_actions(self) -> int:
         shelf = self._library_shelf
@@ -1896,13 +1908,19 @@ class FrameForgeUi:
             self._sync_library_surface()
 
     def on_library_opened(self, _e: Any = None) -> ft.AlertDialog | None:
-        self.refresh_library(publish=True)
+        """Show the shelf. Files stay where they are; only the index and thumbnails change."""
         if not self.library.is_onboarded():
-            return self.open_library_onboarding()
-        pending_jobs = self._pending_library_jobs()
-        pending_disk = self._pending_disk_videos()
-        if (pending_jobs or pending_disk) and not self._library_prompt_deferred:
-            return self.open_library_new_files()
+            page = self.page
+            real_page = page is not None and page.__class__.__name__ != "FakePage"
+            if self.library.root() is None and real_page:
+                from frameforge.layout import LIBRARY_DIR_NAME, ensure_library_tree
+                from frameforge.paths import frameforge_root
+
+                home = ensure_library_tree(frameforge_root() / LIBRARY_DIR_NAME)
+                self.library.set_root(home)
+            self.library.mark_onboarded()
+        self.refresh_library(publish=True)
+        self._link_pending_in_place()
         return None
 
     def open_library_onboarding(self) -> ft.AlertDialog:
@@ -2125,17 +2143,76 @@ class FrameForgeUi:
         return None
 
     def open_library_new_files(self, _e: Any = None) -> ft.AlertDialog | None:
-        pending = self._pending_library_jobs()
-        disk = self._pending_disk_videos()
-        n = len(pending) + len(disk)
-        if not n:
-            return None
-        dlg = new_downloads_dialog(
-            n,
-            on_yes=self.confirm_library_move,
-            on_not_now=self.defer_library_new_files,
+        """Index finished downloads where they already are. Never moves the video."""
+        self._link_pending_in_place()
+        return None
+
+    def _link_pending_in_place(self) -> int:
+        from frameforge.library.ingest import link_files
+
+        paths = list(self._pending_disk_videos())
+        if not paths:
+            return 0
+        added = link_files(self.library, paths)
+        if added:
+            self.refresh_library(publish=False)
+        return len(added)
+
+    def add_library_videos(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_library_videos)
+
+    async def _pick_library_videos(self) -> None:
+        picker = self._ensure_file_picker()
+        files = await picker.pick_files(
+            dialog_title="Add videos",
+            allow_multiple=True,
+            file_type=ft.FilePickerFileType.CUSTOM,
+            allowed_extensions=["mp4", "mkv", "webm", "mov", "avi", "m4v"],
         )
-        return self.dialogs.open("library_new", dlg)
+        paths = [Path(item.path) for item in (files or []) if getattr(item, "path", None)]
+        if paths:
+            self._link_library_paths(paths)
+
+    def add_library_folder(self, _e: Any = None) -> None:
+        if self.page is None:
+            return
+        runner = getattr(self.page, "run_task", None)
+        if callable(runner):
+            runner(self._pick_library_folder)
+
+    async def _pick_library_folder(self) -> None:
+        picker = self._ensure_file_picker()
+        getter = getattr(picker, "get_directory_path", None)
+        if not callable(getter):
+            return
+        path = await getter(dialog_title="Add a folder of videos")
+        if path:
+            self._link_library_paths([Path(path)])
+
+    def _link_library_paths(self, paths: list[Path]) -> None:
+        from frameforge.library.ingest import link_files
+
+        self.show_timed_notice("Adding videos to the library. The files stay where they are.")
+
+        def work() -> None:
+            added = link_files(self.library, paths)
+            count = len(added)
+
+            def done() -> None:
+                self.refresh_library(publish=False)
+                self.show_timed_notice(
+                    f"Added {count} video{'s' if count != 1 else ''}. Files stayed in place. Thumbnails are stored with the library."
+                    if count
+                    else "Those videos are already in the library."
+                )
+
+            self._marshal_ui(done)
+
+        threading.Thread(target=work, name="library-link", daemon=True).start()
 
     def defer_library_new_files(self, _e: Any = None) -> None:
         self._library_prompt_deferred = True
@@ -2720,6 +2797,145 @@ class FrameForgeUi:
         if path:
             self.dispose_private_originals("move", path)
 
+    def show_timed_notice(self, message: str, seconds: float = 4.0) -> None:
+        self._notice_gen = getattr(self, "_notice_gen", 0) + 1
+        generation = self._notice_gen
+        self.set_resource_banner(message)
+        page = self.page
+        if page is not None:
+            try:
+                page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+        def hide() -> None:
+            time.sleep(seconds)
+            if getattr(self, "_notice_gen", 0) != generation:
+                return
+
+            def clear() -> None:
+                if getattr(self, "_notice_gen", 0) != generation:
+                    return
+                self.set_resource_banner(None)
+                if self.page is not None:
+                    try:
+                        self.page.update()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            self._marshal_ui(clear)
+
+        threading.Thread(target=hide, name="timed-notice", daemon=True).start()
+
+    def _start_toolchain(self) -> None:
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return
+        from frameforge.setup.toolchain import launch_mode
+
+        mode = launch_mode(self.repo)
+        if mode == "wizard":
+            if not self._download_location_chosen():
+                self._toolchain_after_location = True
+                self.open_download_onboarding()
+                return
+            self.open_toolchain_setup()
+            return
+        self._check_toolchain_updates()
+
+    def _continue_toolchain(self) -> None:
+        if not getattr(self, "_toolchain_after_location", False):
+            return
+        self._toolchain_after_location = False
+        self.open_toolchain_setup()
+
+    def _download_location_chosen(self) -> bool:
+        from frameforge.paths import download_location_chosen
+
+        return download_location_chosen()
+
+    def open_toolchain_setup(self, _e: Any = None) -> ft.AlertDialog | None:
+        status = ft.Text(
+            "Installing yt-dlp, aria2, FFmpeg, and Deno. Each tool is fetched from more than one source.",
+            size=13,
+            color=COLORS["text_secondary"],
+        )
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Download tools"),
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "First-time setup installs the programs that download video. "
+                        "It runs once. A library that already has history skips this. "
+                        "You can run it again from Settings.",
+                        size=13,
+                    ),
+                    status,
+                ],
+                width=460,
+                spacing=10,
+            ),
+            bgcolor=COLORS["surface"],
+        )
+        dlg.data = {"status": status, "kind": "toolchain"}
+        self.dialogs.open("toolchain", dlg, replace=True)
+        self._run_toolchain(show_dialog=True, status=status)
+        return dlg
+
+    def reset_toolchain_setup(self, _e: Any = None) -> None:
+        from frameforge.setup.toolchain import reset_onboarding
+
+        reset_onboarding(self.repo)
+        self.close_dialog()
+        self.open_toolchain_setup()
+
+    def _check_toolchain_updates(self) -> None:
+        self._run_toolchain(show_dialog=False, status=None)
+
+    def _run_toolchain(self, *, show_dialog: bool, status: Any) -> None:
+        def work() -> None:
+            from frameforge.setup.toolchain import (
+                WHY,
+                apply_updates,
+                installed_versions,
+                mark_onboarded,
+                notice_for,
+                remote_versions,
+                updates_needed,
+            )
+
+            try:
+                remote = remote_versions()
+                needed = updates_needed(installed_versions(), remote)
+                if needed and not show_dialog:
+                    preview = "Updating download tools. " + " ".join(
+                        f"{name}. {WHY.get(name, '')}" for name in needed
+                    )
+                    self._marshal_ui(lambda text=preview: self.show_timed_notice(text, seconds=5.0))
+                if needed:
+                    apply_updates(needed)
+                mark_onboarded(self.repo)
+                message = notice_for(needed, remote) if needed else ""
+            except Exception as exc:  # noqa: BLE001
+                log.exception("Download tool setup failed")
+                message = f"Download tools could not be updated. {exc}"
+                needed = []
+
+            def finish() -> None:
+                if show_dialog:
+                    if status is not None:
+                        status.value = message or "Download tools are ready."
+                    self.close_dialog()
+                if message:
+                    self.show_timed_notice(message, seconds=5.0)
+                elif show_dialog:
+                    self.show_timed_notice("Download tools are ready.", seconds=4.0)
+
+            self._marshal_ui(finish)
+
+        threading.Thread(target=work, name="toolchain", daemon=True).start()
+
     def set_resource_banner(self, text: str | None) -> None:
         if self.resource_banner is None:
             return
@@ -2909,6 +3125,7 @@ class FrameForgeUi:
         skip_download_location()
         self.close_dialog()
         self._show_toast("Downloads will use your Windows folder")
+        self._continue_toolchain()
 
     def pick_download_location(self, _e: Any = None) -> None:
         if self.page is None:
@@ -2932,6 +3149,7 @@ class FrameForgeUi:
             return
         dest = choose_download_location(path)
         self._show_toast(f"Downloads will go to {dest}")
+        self._continue_toolchain()
 
     def import_file(self, path: str | None = None) -> ft.AlertDialog | None:
         """Hero Import: picker (or explicit path) → confirm modal → pending only. Never arms."""
@@ -3131,6 +3349,7 @@ class FrameForgeUi:
             on_pick_watch_folder=self.pick_watch_folder,
             on_set_private_password=self.open_set_private_password,
             on_reset_library=self.open_reset_library,
+            on_rerun_setup=self.reset_toolchain_setup,
             on_repair_folders=self.repair_folders,
             on_open_downloads=self.open_downloads_folder,
             on_install_models=self.install_upscale_models,
@@ -3399,7 +3618,7 @@ class FrameForgeUi:
         page.add(self.build())
         self._schedule_tick()
         self._start_tree_repair(toast=False)
-        self._offer_download_location()
+        self._start_toolchain()
 
     def shutdown(self) -> None:
         surface = self._library_surface

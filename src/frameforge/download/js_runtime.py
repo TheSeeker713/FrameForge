@@ -30,6 +30,12 @@ def extra_tool_dirs() -> list[Path]:
     """Common install locations that a GUI-launched process may omit from PATH."""
     home = Path.home()
     local = Path(os.environ.get("LOCALAPPDATA") or "")
+    try:
+        from frameforge.setup.toolchain import tool_dirs
+
+        bundled = list(tool_dirs())
+    except Exception:  # noqa: BLE001
+        bundled = []
     pf = Path(os.environ.get("ProgramFiles") or r"C:\Program Files")
     pf86 = Path(os.environ.get("ProgramFiles(x86)") or r"C:\Program Files (x86)")
     user_local = Path(os.environ.get("USERPROFILE") or str(home)) / "AppData" / "Local"
@@ -45,7 +51,7 @@ def extra_tool_dirs() -> list[Path]:
         home / "scoop" / "shims",
         home / "AppData" / "Roaming" / "npm",
     ]
-    return [p for p in candidates if p.is_dir()]
+    return bundled + [p for p in candidates if p.is_dir()]
 
 
 def which_on_augmented_path(name: str) -> str | None:

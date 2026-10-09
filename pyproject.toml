@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frameforge"
-version = "0.6.35"
+version = "0.6.36"
 description = "Local Windows video downloader + AI upscaler (sequential queue, SQLite, ONNX)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "TheSeeker713" }]
 dependencies = [
-  "yt-dlp",
+  "yt-dlp>=2026.8.19",
   "cryptography",
   "curl_cffi==0.13.0",
   "onnxruntime-directml",

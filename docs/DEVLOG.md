@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-09 — v0.6.36
+
+The Library tab was still the old list plus a dialog that offered to move files. That dialog is gone. Opening Library indexes videos where they already are, and Add videos / Add folder can point at any folder. The WebGL shelf is an owned window over the Library pane, because the earlier color-match embed never found a rectangle Flutter actually paints. yt-dlp 2026.07.04 was past 90 days. First-run setup installs yt-dlp, aria2, FFmpeg, and Deno from a second source when the first one fails. History in the jobs table skips that wizard. Settings can run it again, and a later launch updates a tool that has fallen behind, with a short timed note.
+
 ## 2026-10-08 — Library shelf
 
 The Library tab's gray pane was the horizontal list. The WebGL studio was never mounted there. The Library tab now hosts that studio (Cover flow, optical glass, magnetic pull, card comes forward, anamorphic and floor mirror on, film grain off, vignette on) and passes the real library rows. Files stay at their source path. Remove-from-library unlinks. Delete-file is a separate Recycle Bin confirm.

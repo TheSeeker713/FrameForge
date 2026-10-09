@@ -36,6 +36,7 @@ def build_settings_dialog(
     on_pick_watch_folder: Any | None = None,
     on_set_private_password: Any | None = None,
     on_reset_library: Any | None = None,
+    on_rerun_setup: Any | None = None,
     on_repair_folders: Any | None = None,
     on_open_downloads: Any | None = None,
     on_install_models: Any | None = None,
@@ -456,6 +457,16 @@ def build_settings_dialog(
                 ft.OutlinedButton(
                     content="Reset Library onboarding…",
                     on_click=lambda _e: on_reset_library and on_reset_library(),
+                ),
+                ft.Text(
+                    "Run first-time download setup again. This installs or updates yt-dlp, aria2, "
+                    "FFmpeg, and Deno. It does not move videos. A library with history skips this on launch.",
+                    color=COLORS["text_secondary"],
+                    size=12,
+                ),
+                ft.OutlinedButton(
+                    content="Run download setup again…",
+                    on_click=lambda _e: on_rerun_setup and on_rerun_setup(),
                 ),
             ),
             _card(

@@ -443,6 +443,25 @@ def assign_to_collection(
     return updated
 
 
+def link_files(store: LibraryStore, paths: list[Path]) -> list[LibraryItem]:
+    """Index videos where they already are. Copies nothing except a later thumbnail."""
+    from frameforge.library.paths import is_video_file
+
+    added: list[LibraryItem] = []
+    for raw in paths:
+        path = Path(raw)
+        targets: list[Path] = []
+        if path.is_dir():
+            targets.extend(item for item in path.rglob("*") if is_video_file(item))
+        elif path.is_file() and is_video_file(path):
+            targets.append(path)
+        for src in targets:
+            if store.get_by_path(src) is not None:
+                continue
+            added.append(store.add_item(path=src, title=src.stem, source="Other"))
+    return added
+
+
 def index_folder(store: LibraryStore, folder: Path) -> list[LibraryItem]:
     """Index video files in place (no move). Skips Private/."""
     from frameforge.library.paths import is_video_file

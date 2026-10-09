@@ -42,9 +42,9 @@ def test_ui_reset_library_reopens_onboarding(tmp_path: Path):
     dlg = ui.open_reset_library()
     assert dlg.data["kind"] == "reset_library"
     ui.confirm_reset_library()
-    assert ui.library.is_onboarded() is False
-    assert ui.library.root() is None
-    assert ui.dialogs.kind == "library_onboard"
+    assert ui.library.list_items() == []
+    assert ui.library.is_onboarded() is True
+    assert ui.dialogs.kind != "library_onboard"
     ui.shutdown()
 
 
@@ -95,13 +95,13 @@ def test_library_new_replace_keeps_onboard_after_stale_dismiss(tmp_path: Path):
     ui.apply_library_root(tmp_path / "Lib")
     _completed_job(ui.repo, _clip(tmp_path / "dl" / "a.mp4"), title="a")
     ui._library_scan_roots = [tmp_path / "dl"]
-    new_dlg = ui.open_library_new_files()
-    assert ui.dialogs.kind == "library_new"
-    stale = getattr(new_dlg, "on_dismiss", None) if new_dlg is not None else None
+    src = tmp_path / "dl" / "a.mp4"
+    assert src.is_file()
+    opened = ui.open_library_new_files()
+    assert opened is None
+    assert ui.dialogs.kind != "library_new"
+    assert src.is_file()
     ui.open_library_onboarding()
-    assert ui.dialogs.kind == "library_onboard"
-    if callable(stale):
-        stale()
     assert ui.dialogs.kind == "library_onboard"
     ui.shutdown()
 

@@ -2,9 +2,11 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.35 (Immediate clear from queue)
+## Status: v0.6.36 (Download tools and the library shelf)
 
-Package version is **0.6.35**. Clear from queue drops the row and shows Undo before the database write, so a download in progress cannot freeze that click. v0.6.34 still saves adult hosts under `downloads/porn/<category>/` and YouTube, X, and Facebook under `downloads/social/<platform>/<category>/`.
+Package version is **0.6.36**. yt-dlp is 2026.8.19 or newer. First launch installs download tools only when the jobs table is empty. The Library tab is the WebGL shelf. Videos are indexed in place.
+
+Clear from queue in v0.6.35 still drops the row before the database write. v0.6.34 still saves adult hosts under `downloads/porn/<category>/` and YouTube, X, and Facebook under `downloads/social/<platform>/<category>/`.
 
 The Library tab hosts the WebGL studio bound to the current library rows. Files stay where they are. Remove-from-library unlinks. Delete-file is a separate Recycle Bin confirm.
 

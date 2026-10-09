@@ -249,10 +249,35 @@ def test_library_tab_label_and_onboarding_dialog(tmp_path: Path):
     assert items
     assert Path(items[0].path).resolve() == src.resolve()
     assert ui.library_visible_count == 1
-    assert dlg is not None
-    assert dlg.data["step"] == "pick"
-    assert ui.library.is_onboarded() is False
+    assert dlg is None
+    assert ui.library.is_onboarded() is True
     ui.shutdown()
+
+
+def test_link_files_keeps_the_video_where_it_is(tmp_path: Path):
+    from frameforge.library.ingest import link_files
+
+    repo = _repo(tmp_path)
+    store = LibraryStore(repo)
+    src = _clip(tmp_path / "elsewhere" / "clip.mp4")
+    added = link_files(store, [src])
+    assert len(added) == 1
+    assert src.is_file()
+    assert Path(added[0].path).resolve() == src.resolve()
+    assert link_files(store, [src]) == []
+    repo.close()
+
+
+def test_shelf_sits_on_the_bottom_of_the_window():
+    from frameforge.ui_flet.library_surface import shelf_screen_box
+
+    box = shelf_screen_box(10, 20, 1000, 800, 900, 500)
+    assert box is not None
+    x, y, w, h = box
+    assert w == 900
+    assert h == 500
+    assert y == 20 + 800 - 500 - 8
+    assert x == 10 + (1000 - 900) // 2
 
 
 def test_publish_indexes_site_download_in_place(tmp_path: Path, monkeypatch):
@@ -306,7 +331,7 @@ def test_onboarding_resumes_at_move_step(tmp_path: Path):
     ui.library.set_root(tmp_path / "Lib")
     assert ui.library.is_onboarded() is False
     dlg = ui.on_library_opened()
-    assert dlg is not None
-    assert dlg.data["step"] == "move"
-    assert dlg.data["pending"] >= 1
+    assert dlg is None
+    assert src.is_file()
+    assert Path(src).resolve() == Path(ui.library.list_items()[0].path).resolve()
     ui.shutdown()
