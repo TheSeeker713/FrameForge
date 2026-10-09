@@ -284,6 +284,7 @@ def test_queue_chrome_visibility_and_handlers(tmp_path: Path):
     assert "Download" in (ui._activity_note or "")
     ui.selected_ids = {done.id}
     ui.clear_selected()
+    assert ui.wait_queue_persist(5)
     assert ui.repo.get(done.id).options().get("queue_hidden") or done.id not in {
         j.id for j in ui.repo.list_jobs()
     }

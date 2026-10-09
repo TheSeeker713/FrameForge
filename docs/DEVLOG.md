@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.35
+
+Clear from queue sat on the window thread until SQLite accepted the hide. A download writing progress holds that write lock, and the click waited through the busy timeout more than once, so the row stayed for minutes. The row and the Undo banner now update from the queue already on screen. The hide is written on a background thread. Clearing a queued row does not stop the download.
+
 ## 2026-10-08 — v0.6.34
 
 Adult downloads were getting their own site folder, and YouTube, X, and Facebook were landing at the downloads root. The app now picks `downloads/porn/<category>/` for adult hosts and `downloads/social/<platform>/<category>/` for those three. A stored `eporner.com` path is remapped on retry. A heading or page category replaces `uncategorized` when one exists. On launch, leftover adult site folders and root-level social folders are folded into that layout. A file the open download is still writing is left alone.

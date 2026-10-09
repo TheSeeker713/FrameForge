@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.35
+
+- Clear from queue removes that row and shows “Cleared N item — Undo” on the click. The database write happens afterward, so a download in progress cannot freeze the click. A second clear of the same row does nothing. Undo puts the row back. Clearing a queued row leaves the download running.
+
 ## 0.6.34
 
 - Eporner, Pornhub, and other adult hosts save under `downloads/porn/<category>/`. A retry no longer recreates `downloads/eporner.com`.

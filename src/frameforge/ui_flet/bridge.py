@@ -147,6 +147,22 @@ class UiBridge:
         self._record_clear("queue", [s for s in snaps if s.job_id in kept])
         return cleared
 
+    def remember_clear(self, kind: str, snapshots: list[HideSnapshot]) -> list[int]:
+        """Record undo text without touching SQLite. The window paints this immediately."""
+        snaps = list(snapshots)
+        self._record_clear(kind, snaps)
+        return [s.job_id for s in snaps]
+
+    def remember_undo(self) -> ClearUndoEntry | None:
+        """Pop one undo entry without touching SQLite."""
+        entry = self.clear_undo.pop()
+        if entry is None:
+            self.last_clear_message = None
+            return None
+        peek = self.clear_undo.peek()
+        self.last_clear_message = peek.message if peek else None
+        return entry
+
     def clear_history_ids(self, job_ids: list[int]) -> int:
         ids = [int(i) for i in job_ids]
         flag_rows = self.repo.snapshot_hide_flags(ids)

@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.34 (Porn bucket and social folders)
+## Status: v0.6.35 (Immediate clear from queue)
 
-Package version is **0.6.34**. Adult hosts, including Eporner, download to `downloads/porn/<category>/`. YouTube, X, and Facebook download to `downloads/social/<platform>/<category>/`. A known heading or page category is used instead of `uncategorized`. v0.6.33 still shortens filenames longer than 77 characters to two words.
+Package version is **0.6.35**. Clear from queue drops the row and shows Undo before the database write, so a download in progress cannot freeze that click. v0.6.34 still saves adult hosts under `downloads/porn/<category>/` and YouTube, X, and Facebook under `downloads/social/<platform>/<category>/`.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

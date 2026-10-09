@@ -41,7 +41,7 @@ from frameforge.ui_flet.components.library import (
     send_private_dialog,
 )
 from frameforge.ui_flet.components.settings_dialog import build_settings_dialog
-from frameforge.ui_flet.components.status_pill import status_from_repo
+from frameforge.ui_flet.components.status_pill import status_from_repo, status_pill_text
 from frameforge.ui_flet.dialog_host import DialogHost
 from frameforge.ui_flet.job_view import floating_bar_view, structural_sig
 from frameforge.ui_flet.queue_chrome import queue_chrome_spec
@@ -285,6 +285,14 @@ class FrameForgeUi:
         self.last_destroy_status: str | None = None
         self.last_toast: str | None = None
         self._recovery_toasts_seen: set[tuple[int, str]] = set()
+        self._queue_cache: list[Any] = []
+        self._queue_optimistic_hidden: set[int] = set()
+        self._queue_forced_visible: set[int] = set()
+        self._cleared_job_objects: dict[int, Any] = {}
+        self._queue_overlay_lock = threading.Lock()
+        self._persist_lock = threading.Lock()
+        self._persist_queue: list[Any] = []
+        self._persist_thread: threading.Thread | None = None
         self.bridge.set_fail_pause_handler(self._on_fail_pause)
 
     def close_dialog(self, _e: Any = None) -> None:
@@ -648,7 +656,10 @@ class FrameForgeUi:
         return root
 
     def queue_jobs(self) -> list[Any]:
-        return list(self.repo.list_jobs())
+        shown = bool(self._queue_forced_visible)
+        raw = list(self.repo.list_jobs(include_queue_hidden=shown))
+        self._absorb_queue_rows(raw)
+        return self._display_jobs()
 
     def toggle_select(self, job_id: int) -> None:
         if job_id in self.selected_ids:
@@ -658,9 +669,10 @@ class FrameForgeUi:
         self._sync_floating()
         self.refresh_queue(force=True)
 
-    def _sync_queue_chrome(self) -> None:
+    def _sync_queue_chrome(self, jobs: list[Any] | None = None) -> None:
+        rows = jobs if jobs is not None else self.queue_jobs()
         spec = queue_chrome_spec(
-            self.queue_jobs(),
+            rows,
             self.selected_ids,
             undo_available=bool(self.bridge.clear_undo),
             armed=bool(getattr(self.worker, "is_armed", False)),
@@ -682,9 +694,10 @@ class FrameForgeUi:
         self.queue_chrome.content = built.content
         self.queue_chrome.data = spec
 
-    def _sync_floating(self) -> None:
+    def _sync_floating(self, jobs: list[Any] | None = None) -> None:
+        rows = jobs if jobs is not None else self.queue_jobs()
         spec = floating_bar_view(
-            self.queue_jobs(),
+            rows,
             self.selected_ids,
             upscale_engine_available=self._upscale_engine_available(),
             upscale_unavailable_reason=self._upscale_unavailable_reason(),
@@ -715,7 +728,10 @@ class FrameForgeUi:
             backfill_missing_thumbnails(self.repo, extract_still=False)
         except Exception:  # noqa: BLE001
             pass
-        jobs = self.queue_jobs()
+        shown = bool(self._queue_forced_visible)
+        raw = list(self.repo.list_jobs(include_queue_hidden=shown))
+        self._absorb_queue_rows(raw)
+        jobs = self._display_jobs()
         for job in jobs:
             self._maybe_recovery_toast(job)
         armed = bool(getattr(self.worker, "is_armed", False))
@@ -727,9 +743,32 @@ class FrameForgeUi:
         if not force and sig == self._queue_sig and self.queue_list is not None:
             if active is not None:
                 self.update_active_progress(active)
-            self._sync_header()
+            self._sync_header(jobs)
             return
         self._queue_sig = sig
+        self._fill_queue(jobs, active=active, waiting=waiting)
+
+    def _fill_queue(
+        self,
+        jobs: list[Any],
+        *,
+        active: Any | None = None,
+        waiting: Any | None = None,
+    ) -> None:
+        """Rebuild queue cards from an in-memory job list. Does not touch SQLite."""
+        if active is None and waiting is None:
+            armed = bool(getattr(self.worker, "is_armed", False))
+            active = next(
+                (j for j in jobs if j.status in {"downloading", "upscaling", "converting"}),
+                None,
+            )
+            if armed and active is None:
+                waiting = next((j for j in jobs if j.status == "pending"), None)
+        self._queue_sig = (
+            structural_sig(jobs),
+            bool(getattr(self.worker, "is_armed", False)),
+            self._activity_note,
+        )
         if self.queue_list is None:
             return
         if not jobs:
@@ -754,9 +793,9 @@ class FrameForgeUi:
                 )
                 for job in jobs
             ]
-        self._sync_queue_chrome()
-        self._sync_floating()
-        self._sync_header()
+        self._sync_queue_chrome(jobs)
+        self._sync_floating(jobs)
+        self._sync_header(jobs)
         if self.page is not None:
             self.page.update()
 
@@ -955,18 +994,23 @@ class FrameForgeUi:
         if self.page is not None:
             self.last_chrome = apply_page_chrome(self.page, set_size=False)
 
-    def _sync_header(self) -> None:
+    def _sync_header(self, jobs: list[Any] | None = None) -> None:
         if self.header is None:
             return
-        text = self._activity_note or status_from_repo(
-            self.repo, self.worker, idle_reason=self._idle_reason
-        )
+        if jobs is None:
+            text = self._activity_note or status_from_repo(
+                self.repo, self.worker, idle_reason=self._idle_reason
+            )
+            rows = self.queue_jobs()
+        else:
+            text = self._activity_note or self._status_text_from_jobs(jobs)
+            rows = jobs
         data = self.header.data or {}
         status_ctrl = data.get("status")
         if status_ctrl is not None and getattr(status_ctrl, "content", None) is not None:
             status_ctrl.content.value = text
         spec = queue_chrome_spec(
-            self.queue_jobs(),
+            rows,
             self.selected_ids,
             armed=bool(getattr(self.worker, "is_armed", False)),
         )
@@ -1134,25 +1178,200 @@ class FrameForgeUi:
             self._action_lock = False
 
     def clear_finished(self) -> None:
-        self.bridge.clear_finished()
+        from frameforge.db.repository import TERMINAL_STATUSES
+
+        ids = [
+            j.id
+            for j in self._display_jobs()
+            if getattr(j, "status", None) in TERMINAL_STATUSES
+        ]
         self.selected_ids.clear()
-        self._sync_undo_banner()
-        self.refresh_queue(force=True)
+        self._clear_visible_ids(ids)
 
     def clear_selected(self) -> None:
         if not self.selected_ids:
             return
-        self.bridge.clear_selected(sorted(self.selected_ids))
-        self.selected_ids.clear()
+        self._clear_visible_ids(sorted(self.selected_ids))
+
+    def _clear_visible_ids(self, ids: list[int]) -> None:
+        """Drop rows on screen, then persist the hide off this thread.
+
+        A download's progress writes hold the SQLite writer. Waiting here froze
+        the click for minutes (busy_timeout × retries) before the row moved.
+        """
+        from frameforge.gui.actions import can_clear_from_queue
+        from frameforge.queue.clear_undo import HideSnapshot
+
+        snaps: list[HideSnapshot] = []
+        with self._queue_overlay_lock:
+            known = {int(j.id): j for j in self._queue_cache}
+            for jid in ids:
+                if jid in self._queue_optimistic_hidden and jid not in self._queue_forced_visible:
+                    continue
+                job = known.get(int(jid))
+                if job is None or not can_clear_from_queue(job):
+                    continue
+                self._queue_forced_visible.discard(int(jid))
+                self._queue_optimistic_hidden.add(int(jid))
+                self._cleared_job_objects[int(jid)] = job
+                history_hidden = False
+                if hasattr(job, "options"):
+                    history_hidden = bool(job.options().get("history_hidden"))
+                snaps.append(
+                    HideSnapshot(
+                        int(job.id),
+                        bool(getattr(job, "queue_hidden", False)),
+                        history_hidden,
+                    )
+                )
+        self.selected_ids.difference_update(ids)
+        if not snaps:
+            self._fill_queue(self._display_jobs())
+            return
+        self.bridge.remember_clear("queue", snaps)
         self._sync_undo_banner()
-        self.refresh_queue(force=True)
+        self._fill_queue(self._display_jobs())
+        hide_ids = [s.job_id for s in snaps]
+        self._enqueue_db(lambda hide_ids=hide_ids: self._persist_queue_hide(hide_ids))
 
     def undo_clear(self) -> int:
-        n = self.bridge.undo_clear()
+        entry = self.bridge.remember_undo()
+        if entry is None:
+            self._sync_undo_banner()
+            return 0
+        rows = [(s.job_id, s.queue_hidden, s.history_hidden) for s in entry.snapshots]
+        if entry.kind == "queue":
+            with self._queue_overlay_lock:
+                for snap in entry.snapshots:
+                    self._queue_optimistic_hidden.discard(int(snap.job_id))
+                    self._queue_forced_visible.add(int(snap.job_id))
+            self._sync_undo_banner()
+            self._fill_queue(self._display_jobs())
+            self._enqueue_db(lambda rows=rows: self.repo.restore_hide_flags(rows))
+            return len(entry.snapshots)
+        n = self.repo.restore_hide_flags(rows)
         self._sync_undo_banner()
         self.refresh_queue(force=True)
         self.refresh_history()
         return n
+
+    def _persist_queue_hide(self, ids: list[int]) -> None:
+        try:
+            cleared = set(self.repo.clear_from_queue(list(ids)))
+        except Exception:  # noqa: BLE001
+            log.exception("Clear from queue did not persist")
+            return
+        missed = [jid for jid in ids if jid not in cleared]
+        if not missed:
+            return
+        with self._queue_overlay_lock:
+            for jid in missed:
+                self._queue_optimistic_hidden.discard(int(jid))
+                self._queue_forced_visible.add(int(jid))
+
+    def _enqueue_db(self, fn: Any) -> None:
+        with self._persist_lock:
+            self._persist_queue.append(fn)
+            if self._persist_thread is None or not self._persist_thread.is_alive():
+                self._persist_thread = threading.Thread(
+                    target=self._drain_queue_persist,
+                    name="frameforge-queue-clear",
+                    daemon=True,
+                )
+                self._persist_thread.start()
+
+    def _drain_queue_persist(self) -> None:
+        while True:
+            with self._persist_lock:
+                if not self._persist_queue:
+                    return
+                fn = self._persist_queue.pop(0)
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                log.exception("Queue persist failed")
+
+    def wait_queue_persist(self, timeout: float = 5.0) -> bool:
+        """Block until a background clear/undo write finishes. Tests and shutdown only."""
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while True:
+            with self._persist_lock:
+                pending = bool(self._persist_queue)
+                thread = self._persist_thread
+            alive = thread is not None and thread.is_alive()
+            if not pending and not alive:
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            if alive and thread is not None:
+                thread.join(remaining)
+                continue
+            time.sleep(0.01)
+
+    def _display_jobs(self) -> list[Any]:
+        with self._queue_overlay_lock:
+            hidden = set(self._queue_optimistic_hidden)
+            forced = set(self._queue_forced_visible)
+            cache = list(self._queue_cache)
+        hidden -= forced
+        visible: list[Any] = []
+        for job in cache:
+            if int(job.id) in hidden:
+                continue
+            if bool(getattr(job, "queue_hidden", False)) and int(job.id) not in forced:
+                continue
+            visible.append(job)
+        return visible
+
+    def _absorb_queue_rows(self, raw: list[Any]) -> None:
+        """Fold a SQLite read into the cache without dropping a hide the DB has not written yet."""
+        with self._queue_overlay_lock:
+            by_id = {int(job.id): job for job in raw}
+            hidden = set(self._queue_optimistic_hidden)
+            forced = set(self._queue_forced_visible)
+            for jid in list(hidden):
+                job = by_id.get(jid)
+                if job is None or bool(getattr(job, "queue_hidden", False)):
+                    hidden.discard(jid)
+                    self._cleared_job_objects.pop(jid, None)
+            for jid in list(forced):
+                job = by_id.get(jid)
+                if job is not None and not bool(getattr(job, "queue_hidden", False)):
+                    forced.discard(jid)
+            self._queue_optimistic_hidden = hidden
+            self._queue_forced_visible = forced
+            cache: list[Any] = []
+            for job in raw:
+                if bool(getattr(job, "queue_hidden", False)) and int(job.id) not in forced:
+                    continue
+                cache.append(job)
+            have = {int(job.id) for job in cache}
+            for jid, job in self._cleared_job_objects.items():
+                if jid in hidden and jid not in have:
+                    cache.append(job)
+            self._queue_cache = cache
+
+    def _status_text_from_jobs(self, jobs: list[Any]) -> str:
+        active = next(
+            (j for j in jobs if getattr(j, "status", None) in {"downloading", "upscaling", "converting"}),
+            None,
+        )
+        if active is not None:
+            opts = active.options() if hasattr(active, "options") else {}
+            return status_pill_text(
+                active_status=active.status,
+                speed_str=opts.get("speed_str") or opts.get("live_speed"),
+                idle_reason=self._idle_reason,
+            )
+        if any(getattr(j, "status", None) == "paused" for j in jobs):
+            return status_pill_text(active_status="paused", idle_reason=self._idle_reason)
+        pending = sum(1 for j in jobs if getattr(j, "status", None) == "pending")
+        return status_pill_text(
+            active_status=None,
+            pending_count=pending,
+            idle_reason=self._idle_reason,
+        )
 
     def _sync_undo_banner(self) -> None:
         if self.undo_banner is None:
@@ -3098,6 +3317,10 @@ class FrameForgeUi:
         self._offer_download_location()
 
     def shutdown(self) -> None:
+        try:
+            self.wait_queue_persist(5)
+        except Exception:  # noqa: BLE001
+            pass
         self._stop_tray()
         try:
             self.cancel_library_move()
