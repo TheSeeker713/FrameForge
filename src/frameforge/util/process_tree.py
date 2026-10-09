@@ -17,6 +17,11 @@ class DownloadPaused(RuntimeError):
     """Raised when a download/upscale subprocess was stopped by pause (partials kept)."""
 
 
+def text_output_kwargs() -> dict[str, bool | str]:
+    """Read child output as UTF-8. Windows cp1252 rejects bytes yt-dlp and FFmpeg emit."""
+    return {"text": True, "encoding": "utf-8", "errors": "replace"}
+
+
 def popen_creationflags() -> int:
     """Flags so the child is a killable process-group root on Windows."""
     if sys.platform != "win32":
@@ -33,8 +38,8 @@ def kill_process_tree(pid: int) -> None:
         subprocess.run(
             ["taskkill", "/F", "/T", "/PID", str(pid)],
             capture_output=True,
-            text=True,
             check=False,
+            **text_output_kwargs(),
         )
         return
     try:

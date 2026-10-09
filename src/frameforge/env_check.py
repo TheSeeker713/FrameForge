@@ -16,12 +16,14 @@ def _tool_version(cmd: list[str]) -> dict[str, Any]:
     if not exe:
         return {"ok": False, "path": None, "version": None, "error": f"{cmd[0]} not on PATH"}
     try:
+        from frameforge.util.process_tree import text_output_kwargs
+
         proc = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
             timeout=60,
             check=False,
+            **text_output_kwargs(),
         )
         text = (proc.stdout or "") + (proc.stderr or "")
         first = text.strip().splitlines()[0] if text.strip() else ""

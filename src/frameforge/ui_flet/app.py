@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 import os
 import threading
@@ -893,17 +895,38 @@ class FrameForgeUi:
             win.skip_task_bar = False
             win.visible = True
             win.minimized = False
-            to_front = getattr(win, "to_front", None)
-            if callable(to_front):
-                try:
-                    to_front()
-                except Exception:  # noqa: BLE001
-                    pass
+            self._bring_window_forward()
         if self.page is not None:
             try:
                 self.page.update()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _bring_window_forward(self) -> None:
+        """Flet's to_front is a coroutine. Calling it and dropping the result warns and does nothing."""
+        page = self.page
+        win = getattr(page, "window", None) if page is not None else None
+        if win is None:
+            return
+        to_front = getattr(win, "to_front", None)
+        if not callable(to_front):
+            return
+        runner = getattr(page, "run_task", None)
+
+        async def _go() -> None:
+            try:
+                result = to_front()
+                if inspect.iscoroutine(result):
+                    await result
+            except Exception:  # noqa: BLE001
+                log.exception("Could not bring the FrameForge window forward")
+
+        if callable(runner):
+            runner(_go)
+            return
+        result = to_front()
+        if inspect.iscoroutine(result):
+            result.close()
 
     def _ensure_tray(self) -> Any:
         if self.tray is not None:
@@ -3617,8 +3640,25 @@ class FrameForgeUi:
         self._ensure_file_picker()
         page.add(self.build())
         self._schedule_tick()
+        self._install_loop_exception_handler()
         self._start_tree_repair(toast=False)
         self._start_toolchain()
+
+    def _install_loop_exception_handler(self) -> None:
+        """Windows prints ConnectionResetError when a closed pipe is shut down again."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        def handler(running: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+            exc = context.get("exception")
+            message = str(context.get("message") or "")
+            if isinstance(exc, ConnectionResetError) and "connection_lost" in message:
+                return
+            running.default_exception_handler(context)
+
+        loop.set_exception_handler(handler)
 
     def shutdown(self) -> None:
         surface = self._library_surface

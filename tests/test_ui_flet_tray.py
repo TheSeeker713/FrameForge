@@ -84,6 +84,15 @@ def test_minimize_hides_to_tray_and_keeps_the_worker(tmp_path: Path):
         assert ui.page.window.visible is True
         assert ui.page.window.skip_task_bar is False
         assert ui.worker.is_armed is True
+
+        raised = {"ok": False}
+
+        async def _to_front() -> None:
+            raised["ok"] = True
+
+        ui.page.window.to_front = _to_front
+        ui.show_from_tray()
+        assert raised["ok"] is True
     finally:
         ui.shutdown()
 

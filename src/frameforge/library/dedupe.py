@@ -12,6 +12,7 @@ from pathlib import Path
 from frameforge.library.models import LibraryItem
 from frameforge.library.scan import list_playable_items
 from frameforge.library.store import LibraryStore
+from frameforge.util.process_tree import text_output_kwargs
 from frameforge.util.recycle import send_to_recycle_bin
 
 _BRACKETS = re.compile(r"\s*\[[^\[\]]*\]")
@@ -35,9 +36,9 @@ def probe_duration(path: Path) -> float | None:
         proc = subprocess.run(
             [exe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
             capture_output=True,
-            text=True,
             check=False,
             timeout=20,
+            **text_output_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

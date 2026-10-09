@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.36 (Download tools and the library shelf)
+## Status: v0.6.37 (Quiet console on launch)
 
-Package version is **0.6.36**. yt-dlp is 2026.8.19 or newer. First launch installs download tools only when the jobs table is empty. The Library tab is the WebGL shelf. Videos are indexed in place.
+Package version is **0.6.37**. Tray restore awaits `to_front`. Tool and download output is read as UTF-8. yt-dlp is 2026.8.19 or newer. First launch installs download tools only when the jobs table is empty. The Library tab is the WebGL shelf. Videos are indexed in place.
 
 Clear from queue in v0.6.35 still drops the row before the database write. v0.6.34 still saves adult hosts under `downloads/porn/<category>/` and YouTube, X, and Facebook under `downloads/social/<platform>/<category>/`.
 

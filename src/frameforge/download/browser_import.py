@@ -51,13 +51,14 @@ IMPORT_TIMEOUT_SEC = 120
 
 def _default_runner(cmd: list[str], timeout: float = IMPORT_TIMEOUT_SEC) -> tuple[int, str, str]:
     """Run yt-dlp cookies-from-browser; kill the process tree if *timeout* elapses."""
-    from frameforge.util.process_tree import kill_process_tree, popen_creationflags
+    from frameforge.util.process_tree import kill_process_tree, popen_creationflags, text_output_kwargs
 
     limit = max(0.05, float(timeout))
+
     kwargs: dict[str, object] = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        "text": True,
+        **text_output_kwargs(),
     }
     if sys.platform == "win32":
         kwargs["creationflags"] = popen_creationflags()

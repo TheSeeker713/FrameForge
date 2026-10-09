@@ -9,7 +9,12 @@ import sys
 from pathlib import Path
 
 from frameforge.queue.process_registry import ProcessRegistry
-from frameforge.util.process_tree import DownloadCancelled, DownloadPaused, popen_creationflags
+from frameforge.util.process_tree import (
+    DownloadCancelled,
+    DownloadPaused,
+    popen_creationflags,
+    text_output_kwargs,
+)
 
 
 def run_cmd(
@@ -20,7 +25,7 @@ def run_cmd(
 ) -> None:
     """Run a subprocess; when registry is provided, the PID is killable on cancel."""
     if process_registry is None or job_id is None:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(cmd, capture_output=True, check=False, **text_output_kwargs())
         if proc.returncode != 0:
             raise RuntimeError(
                 f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{proc.stderr}"
@@ -30,8 +35,8 @@ def run_cmd(
     kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        "text": True,
         "creationflags": popen_creationflags(),
+        **text_output_kwargs(),
     }
     if sys.platform != "win32":
         kwargs["start_new_session"] = True
@@ -73,8 +78,8 @@ def probe(path: Path) -> dict:
             str(path),
         ],
         capture_output=True,
-        text=True,
         check=False,
+        **text_output_kwargs(),
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr)

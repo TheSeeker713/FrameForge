@@ -84,11 +84,13 @@ def convert_to_mp3(
         "-nostats",
         str(dest),
     ]
+    from frameforge.util.process_tree import text_output_kwargs
+
     kwargs: dict = {
         "stdout": subprocess.PIPE,
         "stderr": subprocess.PIPE,
-        "text": True,
         "creationflags": popen_creationflags(),
+        **text_output_kwargs(),
     }
     if sys.platform != "win32":
         kwargs["start_new_session"] = True

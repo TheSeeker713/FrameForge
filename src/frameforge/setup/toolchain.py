@@ -187,7 +187,15 @@ def _program_version(cmd: list[str]) -> str | None:
     if not exe:
         return None
     try:
-        proc = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, timeout=20, check=False)
+        from frameforge.util.process_tree import text_output_kwargs
+
+        proc = subprocess.run(
+            [exe, *cmd[1:]],
+            capture_output=True,
+            timeout=20,
+            check=False,
+            **text_output_kwargs(),
+        )
     except Exception:
         return None
     text = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
@@ -226,7 +234,9 @@ def notice_for(names: list[str], remote: dict[str, str | None] | None = None) ->
 
 
 def _run(cmd: list[str]) -> int:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+    from frameforge.util.process_tree import text_output_kwargs
+
+    proc = subprocess.run(cmd, capture_output=True, timeout=600, check=False, **text_output_kwargs())
     return int(proc.returncode)
 
 

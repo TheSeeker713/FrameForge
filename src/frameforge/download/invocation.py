@@ -53,12 +53,14 @@ def path_yt_dlp_version() -> str | None:
         _PATH_YTDLP_CACHE = None
         return None
     try:
+        from frameforge.util.process_tree import text_output_kwargs
+
         proc = subprocess.run(
             [exe, "--version"],
             capture_output=True,
-            text=True,
             timeout=15,
             check=False,
+            **text_output_kwargs(),
         )
         _PATH_YTDLP_CACHE = (proc.stdout or proc.stderr or "").strip() or None
     except Exception:  # noqa: BLE001

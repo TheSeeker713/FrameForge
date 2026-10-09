@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.37
+
+- Restoring the window from the tray awaits Flet's `to_front`, so the console no longer warns that the coroutine was never awaited.
+- Subprocess output is read as UTF-8. A byte that Windows cp1252 cannot decode no longer crashes the reader thread.
+- The Windows `ConnectionResetError` printed when a closed pipe is shut down again is ignored.
+
 ## 0.6.36
 
 - yt-dlp is updated to 2026.8.19 or newer. First launch with an empty queue installs yt-dlp, aria2, FFmpeg, and Deno, each from more than one source. A database that already has jobs skips that setup. Settings can run it again. Later launches check those tools and install a newer one, with a short message that says what changed and why.
