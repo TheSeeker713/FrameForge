@@ -176,6 +176,92 @@ def metadata_json_failed(message: str | None) -> bool:
     return "cannot write" in text and "json file" in text
 
 
+NAME_LIMIT = 77
+_ILLEGAL_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_two_word_installed = False
+
+
+def two_words(title: str) -> str:
+    """First two words of a title, safe as a Windows filename."""
+    cleaned = _ILLEGAL_NAME.sub(" ", str(title or ""))
+    words = [word.strip(" .") for word in cleaned.split()]
+    words = [word for word in words if word]
+    if not words:
+        return ""
+    if len(words) == 1:
+        return words[0][:NAME_LIMIT].strip(" .")
+    stem = f"{words[0]} {words[1]}"
+    if len(stem) > NAME_LIMIT:
+        stem = stem[:NAME_LIMIT].rstrip(" .")
+    return stem
+
+
+def filename_too_long(name: str) -> bool:
+    return len(str(name or "")) > NAME_LIMIT
+
+
+def apply_two_word_name(path: Path) -> Path:
+    """Rename a saved file to its first two words when the name is longer than 77 characters."""
+    if path is None or not path.is_file():
+        return path
+    if not filename_too_long(path.name) and not filename_too_long(path.stem):
+        return path
+    stem = two_words(path.stem)
+    if not stem or stem == path.stem:
+        return path
+    dest = _unique_named(path.with_name(f"{stem}{path.suffix}"), keep=path)
+    if dest == path:
+        return path
+    path.rename(dest)
+    return dest
+
+
+def _unique_named(dest: Path, *, keep: Path | None = None) -> Path:
+    if not dest.exists() or (keep is not None and dest.resolve() == keep.resolve()):
+        return dest
+    n = 2
+    while True:
+        candidate = dest.with_name(f"{dest.stem} {n}{dest.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def install_two_word_filenames() -> None:
+    """Make yt-dlp write a two-word filename when the title is longer than 77 characters."""
+    global _two_word_installed
+    if _two_word_installed:
+        return
+    from yt_dlp import YoutubeDL
+
+    original = YoutubeDL.prepare_filename
+
+    def prepare_filename(self, info_dict, dir_type="", *, outtmpl=None, warn=False):
+        if dir_type not in ("", "default") or outtmpl:
+            return original(self, info_dict, dir_type, outtmpl=outtmpl, warn=warn)
+        title = str((info_dict or {}).get("title") or "")
+        ext = str((info_dict or {}).get("ext") or "mp4").lstrip(".")
+        video_id = str((info_dict or {}).get("id") or "")
+        prospective = f"{title} [{video_id}].{ext}" if video_id else f"{title}.{ext}"
+        if not filename_too_long(title) and not filename_too_long(prospective):
+            return original(self, info_dict, dir_type, outtmpl=outtmpl, warn=warn)
+        short = two_words(title) or video_id or "video"
+        info = dict(info_dict)
+        info["title"] = short
+        home = ""
+        paths = getattr(self, "params", {}).get("paths") or {}
+        if isinstance(paths, dict):
+            home = str(paths.get("home") or "")
+        if home:
+            folder = Path(home)
+            dest = _unique_named(folder / f"{short}.{ext}")
+            info["title"] = dest.stem
+        return original(self, info, outtmpl="%(title)s.%(ext)s", warn=warn)
+
+    YoutubeDL.prepare_filename = prepare_filename
+    _two_word_installed = True
+
+
 def glob_by_video_id(output_dir: Path, video_id: str | None) -> Path | None:
     if not video_id or not output_dir.is_dir():
         return None

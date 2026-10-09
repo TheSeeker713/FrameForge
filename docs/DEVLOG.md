@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-08 — v0.6.33
+
+Long titles were still being used as filenames. When a name would be longer than 77 characters, the file is now saved as the first two words of the title.
+
 ## 2026-10-08 — v0.6.32
 
 The clip downloaded, then yt-dlp tried to write a `.info.json` whose full path was 264 characters. Windows stops at 260, so the job was marked failed and the card called it unclassified. The filename template now leaves room for that JSON sibling, and the JSON itself is stored under metadata/ using the video id.

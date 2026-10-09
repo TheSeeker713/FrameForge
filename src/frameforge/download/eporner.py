@@ -59,3 +59,6 @@ def ensure_plugin_loaded() -> None:
         all_plugins_loaded.value = False
     if not all_plugins_loaded.value:
         load_all_plugins()
+    from frameforge.download.output_path import install_two_word_filenames
+
+    install_two_word_filenames()

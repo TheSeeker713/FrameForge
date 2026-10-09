@@ -5,6 +5,9 @@ from __future__ import annotations
 from yt_dlp.extractor.eporner import EpornerIE as _EpornerIE
 
 from frameforge.download.eporner import select_eporner_hash
+from frameforge.download.output_path import install_two_word_filenames
+
+install_two_word_filenames()
 
 __all__ = ["EpornerIE"]
 

@@ -2,9 +2,9 @@
 
 Execute in order. After every step: real tests → 100% → commit + push `main`.
 
-## Status: v0.6.32 (Long titles no longer fail the download)
+## Status: v0.6.33 (Long filenames become two words)
 
-Package version is **0.6.32**. Metadata JSON is written by video id so a long title cannot push the path past Windows’ 260-character limit. v0.6.31 still sends Eporner’s player hash.
+Package version is **0.6.33**. A filename longer than 77 characters is saved as the first two words of the title. v0.6.32 still keeps the metadata JSON path inside the Windows limit.
 
 v0.6.10 chunked upscale / GUI-without-ONNX remains. v0.6.9 multi-site recovery remains. PornHub impersonate + curl_cffi 0.13.0 pin from v0.6.8 remains. Library Move field gate from v0.6.7 remains open until a real-tree log shows `OK #2+`.
 

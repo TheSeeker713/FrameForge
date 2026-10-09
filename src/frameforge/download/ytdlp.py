@@ -701,6 +701,9 @@ class YtDlpDownloader:
                     path = resolved.path  # type: ignore[assignment]
                     self._record_path_recovery(resolved)
                 title = str(info.get("title") or path.stem)
+                from frameforge.download.output_path import apply_two_word_name
+
+                path = apply_two_word_name(path)
                 self._relocate_sidecars(path)
                 return DownloadResult(path=path, title=title, info=info)
         except Exception as exc:
@@ -1069,6 +1072,9 @@ class YtDlpDownloader:
             except Exception:  # noqa: BLE001
                 info = {}
         title = str(info.get("title") or title or path.stem)
+        from frameforge.download.output_path import apply_two_word_name
+
+        path = apply_two_word_name(path)
         if extractor:
             info.setdefault("extractor_key", extractor)
         if video_id:

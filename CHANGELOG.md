@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.33
+
+- A filename longer than 77 characters is renamed to the first two words of the title before it is written.
+
 ## 0.6.32
 
 - A finished Eporner download was failed because Windows rejected the metadata JSON path. The title made that path 264 characters, past the 260-character limit. The video filename is now kept inside that limit, and the JSON file is written by video id under metadata/.
