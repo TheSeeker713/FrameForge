@@ -2036,15 +2036,113 @@ class FrameForgeUi:
             self._library_paging = False
 
     def _select_library_item(self, item_id: int) -> None:
+        from frameforge.ui_flet.components.library_detail import build_library_detail
+
         self.library_selected_ids = {item_id}
+        try:
+            item = self.library.get(item_id)
+            files = self.library.list_files(item_id)
+        except KeyError:
+            return
         self.library_detail.visible = True
-        self.library_detail.content = ft.Text(f"Selected {item_id}", color=COLORS["text_primary"])
+        self.library_detail.content = build_library_detail(
+            item,
+            files,
+            on_play=self.play_library_item,
+            on_play_file=self._play_library_path,
+            on_reveal=self._reveal_library_path,
+            on_open_source=self._open_library_source,
+            on_copy=self._copy_library_text,
+            on_rename=lambda title, item_id=item_id: self._rename_library_item(item_id, title),
+        )
         self._fill_library_grid()
         if self.page is not None:
             try:
                 self.page.update()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _rename_library_item(self, item_id: int, title: str) -> None:
+        label = (title or "").strip()
+        if not label:
+            return
+        self.library.conn.execute(
+            "UPDATE library_items SET title = ?, date_modified = ? WHERE id = ?",
+            (label, __import__("frameforge.db.repository", fromlist=["utc_now"]).utc_now(), item_id),
+        )
+        self.library.conn.commit()
+        self._select_library_item(item_id)
+
+    def _play_library_path(self, path: str) -> None:
+        from pathlib import Path
+
+        target = Path(path)
+        if not target.is_file():
+            self._show_toast("File not found")
+            return
+        self.last_library_player = str(target.resolve())
+        self.play_library_item_path(target)
+
+    def play_library_item_path(self, path: Any) -> None:
+        from pathlib import Path
+
+        from frameforge.ui_flet.components.player import library_player_dialog
+
+        target = Path(path)
+        if self.page is None:
+            return
+        try:
+            dlg, video = library_player_dialog(
+                title=target.name,
+                media_path=target,
+                on_close=self.close_dialog,
+            )
+        except Exception:
+            log.exception("In-app player failed to open")
+            self._show_toast("In-app player could not open this file")
+            return
+        self._library_video = video
+        self.dialogs.open("library_player", dlg, replace=True)
+
+    def _reveal_library_path(self, path: str) -> None:
+        from pathlib import Path
+
+        from frameforge.util.reveal import RevealError, reveal_file
+
+        try:
+            reveal_file(Path(path), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found")
+
+    def _open_library_source(self, url: str) -> None:
+        from frameforge.library.versions import http_url
+
+        clean = http_url(url)
+        if not clean:
+            self._show_toast("That source link is not a web page")
+            return
+        self.last_library_source = clean
+        page = self.page
+        if page is None:
+            return
+
+        async def _go() -> None:
+            try:
+                await ft.UrlLauncher().launch_url(clean)
+            except Exception:
+                import webbrowser
+
+                webbrowser.open(clean)
+
+        runner = getattr(page, "run_task", None)
+        if callable(runner):
+            runner(_go)
+
+    def _copy_library_text(self, text: str) -> None:
+        page = self.page
+        if page is not None and hasattr(page, "set_clipboard"):
+            page.set_clipboard(text)
+        self._show_toast("Copied")
 
     def _paint_library_browser(self) -> None:
         host = self.library_sidebar or self.library_browser
