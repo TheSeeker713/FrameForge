@@ -1842,6 +1842,7 @@ class FrameForgeUi:
             self.library_empty.expand = show_empty
         self._publish_library_shelf(items, albums)
         self._paint_library_browser()
+        self._enqueue_library_thumbs(items)
         if self.library_empty is not None:
             self.library_empty.visible = False
         if self.page is not None:
@@ -1850,6 +1851,41 @@ class FrameForgeUi:
             except Exception:
                 log.exception("page.update failed after library refresh")
         self._sync_library_surface()
+
+    def _enqueue_library_thumbs(self, items: list[Any]) -> None:
+        """Queue stills for visible files. Returns immediately. Skips test pages."""
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return
+        ids = [int(item.primary_file_id) for item in items if getattr(item, "primary_file_id", None)]
+        if not ids:
+            return
+        worker = self._ensure_thumb_worker()
+        worker.enqueue(ids)
+
+    def _ensure_thumb_worker(self) -> Any:
+        worker = getattr(self, "_thumb_worker", None)
+        if worker is not None:
+            return worker
+        from frameforge.library.thumb_worker import ThumbWorker
+
+        worker = ThumbWorker(self.repo.db_path, on_batch=self._on_thumbs_ready)
+        self._thumb_worker = worker
+        return worker
+
+    def _on_thumbs_ready(self, batch: list[tuple[int, str]]) -> None:
+        def paint() -> None:
+            if self._exiting:
+                return
+            self._paint_library_browser()
+            host = self.library_browser
+            if host is not None:
+                try:
+                    host.update()
+                except Exception:  # noqa: BLE001
+                    log.exception("Library browser update failed after thumbnails")
+
+        self._marshal_ui(paint)
 
     def _on_library_shelf_resized(self, e: Any = None) -> None:
         ctrl = getattr(e, "control", None) if e is not None else None
@@ -3701,7 +3737,29 @@ class FrameForgeUi:
         self._schedule_tick()
         self._install_loop_exception_handler()
         self._start_tree_repair(toast=False)
+        self._prune_thumbs_later()
         self._start_toolchain()
+
+    def _prune_thumbs_later(self) -> None:
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return
+        db = self.repo.db_path
+
+        def work() -> None:
+            from frameforge.db.repository import JobRepository
+            from frameforge.library.store import LibraryStore
+            from frameforge.library.thumbs import prune_thumb_cache
+
+            repo = JobRepository(db)
+            try:
+                prune_thumb_cache(LibraryStore(repo))
+            except Exception:  # noqa: BLE001
+                log.exception("Thumbnail cache prune failed")
+            finally:
+                repo.close()
+
+        threading.Thread(target=work, name="library-thumb-prune", daemon=True).start()
 
     def _install_loop_exception_handler(self) -> None:
         """Windows prints ConnectionResetError when a closed pipe is shut down again."""
@@ -3720,6 +3778,13 @@ class FrameForgeUi:
         loop.set_exception_handler(handler)
 
     def shutdown(self) -> None:
+        thumb_worker = getattr(self, "_thumb_worker", None)
+        self._thumb_worker = None
+        if thumb_worker is not None:
+            try:
+                thumb_worker.close()
+            except Exception:  # noqa: BLE001
+                log.exception("Thumbnail worker did not close")
         surface = self._library_surface
         self._library_surface = None
         if surface is not None:

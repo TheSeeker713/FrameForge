@@ -28,16 +28,16 @@ def thumbnail_url_from_info(info: dict[str, Any] | None) -> str | None:
     if not info:
         return None
     url = info.get("thumbnail")
-    if isinstance(url, str) and url.startswith(("http://", "https://", "file:")):
+    if isinstance(url, str) and url.startswith(("http://", "https://")):
         return url
     thumbs = info.get("thumbnails") or []
     if isinstance(thumbs, list) and thumbs:
         best = thumbs[-1]
         if isinstance(best, dict):
             u = best.get("url")
-            if isinstance(u, str) and u:
+            if isinstance(u, str) and u.startswith(("http://", "https://")):
                 return u
-        elif isinstance(best, str):
+        elif isinstance(best, str) and best.startswith(("http://", "https://")):
             return best
     return None
 
@@ -172,6 +172,7 @@ def extract_video_still(media: Path | str | None, dest: Path) -> Path | None:
             capture_output=True,
             timeout=20,
             check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if proc.returncode == 0 and out.is_file() and out.stat().st_size > 32:
             return out
