@@ -1100,7 +1100,7 @@ class FrameForgeUi:
         completed = self.repo.count_by_status("completed", include_queue_hidden=True)
         if completed != getattr(self, "_library_seen_completed", None):
             self._library_seen_completed = completed
-            self.refresh_library(publish=True)
+            # Indexing and folder walks stay off this tick. They froze clicks and close.
         self._sync_header()
         if self.page is not None:
             self.last_chrome = apply_page_chrome(self.page, set_size=False)
@@ -1671,6 +1671,18 @@ class FrameForgeUi:
     def refresh_thumbs(self) -> None:
         self.refresh_library()
 
+    def _pending_library_count(self) -> int:
+        """Completed jobs not yet indexed. SQL only, so the window can still close."""
+        if not self.library.is_onboarded() or self.library.root() is None:
+            return 0
+        try:
+            from frameforge.library.ingest import completed_jobs_not_in_library
+
+            return len(completed_jobs_not_in_library(self.repo, self.library))
+        except Exception:
+            log.exception("Failed to count library pending jobs")
+            return 0
+
     def _pending_library_jobs(self):
         from frameforge.library.ingest import completed_jobs_not_in_library, heal_job_download_paths
 
@@ -1701,7 +1713,7 @@ class FrameForgeUi:
     def refresh_library(self, *, publish: bool = False) -> None:
         if self.library_grid is None:
             return
-        from frameforge.library.scan import list_playable_items, orphan_videos
+        from frameforge.library.scan import orphan_videos
 
         if publish:
             from frameforge.library.ingest import publish_completed_downloads
@@ -1717,39 +1729,24 @@ class FrameForgeUi:
         except Exception:
             log.exception("Failed to file library videos into books")
         try:
-            items = list_playable_items(
-                self.library,
+            items = self.library.list_items(
                 search=self.library_search or None,
                 source=self.library_filter_source,
                 collection_id=self.library_filter_collection_id,
                 flag=self.library_filter_flag,
                 sort=self.library_sort,
             )
+            items = [item for item in items if Path(item.path).is_file()]
         except Exception:
             log.exception("Failed to load library items")
             items = []
         try:
+            # Only the Library folder. Never the download tree. That walk froze the window.
             orphans = orphan_videos(self.library) if self.library.root() else []
         except Exception:
             log.exception("Failed to scan library folder for orphans")
             orphans = []
-        pending = len(self._pending_library_jobs()) + len(self._pending_disk_videos()) if self.library.is_onboarded() else 0
-        from frameforge.library.thumbs import ensure_library_thumbnail
-
-        prepared: list[Any] = []
-        for item in items:
-            if item.id in self._library_thumb_miss:
-                prepared.append(item)
-                continue
-            thumb = item.thumb_path
-            if thumb and Path(thumb).is_file():
-                prepared.append(item)
-                continue
-            updated = ensure_library_thumbnail(self.library, item)
-            if not (updated.thumb_path and Path(updated.thumb_path).is_file()):
-                self._library_thumb_miss.add(item.id)
-            prepared.append(updated)
-        items = prepared
+        pending = self._pending_library_count()
         from frameforge.library.taxonomy import KIND_ALBUM
 
         albums = [col for col in self.library.list_collections() if col.kind == KIND_ALBUM]
