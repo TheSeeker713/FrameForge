@@ -73,6 +73,74 @@ def best_file(files: list[LibraryFile]) -> LibraryFile | None:
     return min(pool, key=lambda row: (_ROLE_RANK.get(row.role, 9), row.id))
 
 
+def remember_source(store: Any, item_id: int, url: str | None) -> None:
+    """Store an http(s) source URL. Other schemes are ignored."""
+    clean = http_url(url)
+    if not clean:
+        return
+    store.conn.execute(
+        "UPDATE library_items SET source_url = ?, source_site = ?, date_modified = ? WHERE id = ?",
+        (clean, site_host(clean), utc_now(), item_id),
+    )
+    store.conn.commit()
+
+
+def attach_upscale_output(
+    store: Any,
+    job: Any,
+    output_path: str | Path,
+    scale: int | None = None,
+    model: str | None = None,
+) -> LibraryFile | None:
+    """Add an upscale file to the download's card. The file stays where it is."""
+    output = Path(output_path)
+    try:
+        if not output.is_file():
+            return None
+    except OSError:
+        return None
+    item = store.get_by_job_id(getattr(job, "id", None)) if getattr(job, "id", None) else None
+    download = getattr(job, "download_path", None)
+    if item is None and download:
+        item = store.get_by_path(download)
+    if item is None:
+        return None
+    existing = store.get_file_by_path(output)
+    if existing is not None:
+        return existing
+    options = job.options() if hasattr(job, "options") else None
+    if scale is None:
+        scale = parse_scale(output.name, options)
+    if model is None:
+        model = parse_model(options)
+    return store.add_file(
+        item.id,
+        role="upscaled",
+        path=output,
+        job_id=getattr(job, "id", None),
+        scale=scale,
+        model=model,
+    )
+
+
+def mark_missing_files(store: Any) -> int:
+    """Flag file rows whose path is gone. Does not delete the row or the card."""
+    changed = 0
+    rows = store.conn.execute("SELECT id, path, present FROM library_files").fetchall()
+    for row in rows:
+        try:
+            exists = Path(row["path"]).is_file()
+        except OSError:
+            exists = False
+        if exists and not row["present"]:
+            store.set_file_probe(int(row["id"]), present=1)
+            changed += 1
+        elif not exists and row["present"]:
+            store.mark_file_missing(int(row["id"]))
+            changed += 1
+    return changed
+
+
 def sync_primary(store: Any, item_id: int) -> None:
     """Point the item row at the best present file. Does not touch the file."""
     files = store.list_files(item_id)

@@ -335,6 +335,28 @@ def _path_under(path: Path, root: Path) -> bool:
     return True
 
 
+def _job_media_parents(repo: JobRepository) -> list[Path]:
+    """Folders that already hold a finished download. Not the whole app tree."""
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for job in repo.list_jobs("completed", include_queue_hidden=True):
+        for raw in (job.download_path, job.output_path):
+            if not raw:
+                continue
+            parent = Path(raw).parent
+            try:
+                if not parent.is_dir():
+                    continue
+                key = str(parent.resolve()).lower()
+            except OSError:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            roots.append(parent)
+    return roots
+
+
 def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int:
     """Show finished downloads in Library without moving the files.
 
@@ -344,7 +366,7 @@ def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int
     folder. It does not run folder repair or relocate site downloads.
     A library folder that is set but not onboarded is left for that wizard.
     """
-    remap_missing_download_paths(repo)
+    remap_missing_download_paths(repo, download_roots=_job_media_parents(repo))
     jobs = [
         job
         for job in repo.list_jobs("completed", include_queue_hidden=True)
@@ -369,26 +391,49 @@ def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int
         path = job_media_file(job)
         if path is None:
             continue
-        if store.get_by_job_id(job.id) is not None or store.get_by_path(path) is not None:
-            continue
-        item = store.add_item(
-            path=path,
-            title=job.title,
-            source=source_label_from_job(job),
-            job_id=job.id,
-            width=job.source_width,
-            height=job.source_height,
-            thumb_path=job.thumbnail_path,
-        )
-        _file_in_book(
-            store,
-            item,
-            path=path,
-            title=job.title,
-            source=source_label_from_job(job),
-            duration=getattr(job, "duration", None),
-        )
-        added += 1
+        item = store.get_by_job_id(job.id) or store.get_by_path(path)
+        if item is None:
+            item = store.add_item(
+                path=path,
+                title=job.title,
+                source=source_label_from_job(job),
+                job_id=job.id,
+                width=job.source_width,
+                height=job.source_height,
+                thumb_path=job.thumbnail_path,
+            )
+            item = _file_in_book(
+                store,
+                item,
+                path=path,
+                title=job.title,
+                source=source_label_from_job(job),
+                duration=getattr(job, "duration", None),
+            )
+            added += 1
+        elif store.get_file_by_path(path) is None:
+            store.add_file(
+                item.id,
+                role="original",
+                path=path,
+                job_id=job.id,
+                width=job.source_width,
+                height=job.source_height,
+            )
+        from frameforge.library.versions import attach_upscale_output, remember_source
+
+        remember_source(store, item.id, job.url)
+        output = job.output_path
+        download = job.download_path
+        if output and Path(output).is_file():
+            same = False
+            if download:
+                try:
+                    same = Path(output).resolve() == Path(download).resolve()
+                except OSError:
+                    same = str(output) == str(download)
+            if not same:
+                attach_upscale_output(store, job, output)
     return added
 
 

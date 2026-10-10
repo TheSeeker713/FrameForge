@@ -2616,7 +2616,7 @@ class FrameForgeUi:
             self._show_toast(upscale_blocked_reason(item) or "Upscale blocked")
             return
         if not item.job_id:
-            self._show_toast("No queue job for this file")
+            self._show_toast("Upscale needs a queue job for this file")
             return
         job = self.repo.get(item.job_id)
         if getattr(job, "upscale_blocked", False):
