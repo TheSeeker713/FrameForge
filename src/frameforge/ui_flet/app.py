@@ -1940,11 +1940,10 @@ class FrameForgeUi:
         return self._library_shelf
 
     def _publish_library_shelf(self, items: list[Any], albums: list[Any]) -> None:
+        """Keep the row document for tests. Do not start the shelf HTTP server."""
         from frameforge.ui_flet.library_studio import shelf_document
 
-        document, thumbs = shelf_document(items, albums)
-        shelf = self._ensure_library_shelf()
-        shelf.update(document, thumbs)
+        document, _thumbs = shelf_document(items, albums)
         if self.library_studio_host is None:
             return
         self.library_studio_host.data = {
@@ -1952,7 +1951,7 @@ class FrameForgeUi:
             "embed": True,
             "look": document["look"],
             "rows": document["clips"],
-            "url": shelf.page_url(),
+            "url": "",
         }
 
     def _sync_library_surface(self) -> None:

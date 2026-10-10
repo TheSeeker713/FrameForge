@@ -2,7 +2,7 @@
 
 The child window is created only for a FrameForge window whose process is this
 one (or a child of it). Unknown handle, Explorer, or any other title: no-op.
-This module does not call GetForegroundWindow and does not call DwmSetWindowAttribute.
+This module does not read the foreground window and does not change desktop window attributes.
 """
 
 from __future__ import annotations
