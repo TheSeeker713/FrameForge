@@ -232,6 +232,9 @@ class FrameForgeUi:
         self._library_visible_ids: list[int] = []
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
+        self.library_book: str = "Movies"
+        self.library_folder: str | None = None
+        self.library_browser: ft.Column | None = None
         self.library_sort: str = "date"
         self.library_focus: int = 0
         self.library_album_filter: int | None = None
@@ -584,8 +587,10 @@ class FrameForgeUi:
             bgcolor=COLORS["app_bg"],
             alignment=ft.Alignment.CENTER,
         )
+        self.library_browser = ft.Column(expand=True, spacing=12, scroll=ft.ScrollMode.AUTO)
+        self.library_studio_host.visible = False
         self.library_stack = ft.Column(
-            [self.library_albums, self.library_grid_host, self.library_empty],
+            [self.library_browser],
             expand=True,
             spacing=8,
         )
@@ -1706,6 +1711,12 @@ class FrameForgeUi:
             except Exception:
                 log.exception("Failed to publish completed downloads into Library")
         try:
+            from frameforge.library.books import sort_unfiled
+
+            sort_unfiled(self.library)
+        except Exception:
+            log.exception("Failed to file library videos into books")
+        try:
             items = list_playable_items(
                 self.library,
                 search=self.library_search or None,
@@ -1826,13 +1837,16 @@ class FrameForgeUi:
             self.library_empty.content = state.content
             self.library_empty.data = state.data
         if self.library_grid_host is not None:
-            self.library_grid_host.visible = not show_empty
-            self.library_grid_host.expand = not show_empty
+            self.library_grid_host.visible = False
+            self.library_grid_host.expand = False
         if self.library_grid is not None:
             self.library_grid.visible = not show_empty
         if self.library_empty is not None:
             self.library_empty.expand = show_empty
         self._publish_library_shelf(items, albums)
+        self._paint_library_browser()
+        if self.library_empty is not None:
+            self.library_empty.visible = False
         if self.page is not None:
             try:
                 self.page.update()
@@ -1881,23 +1895,71 @@ class FrameForgeUi:
         }
 
     def _sync_library_surface(self) -> None:
-        host = self.library_studio_host
+        """Keep the WebView overlay off. The Library tab is the book browser."""
+        if self._library_surface is not None:
+            self._library_surface.sync(url="", visible=False)
+
+    def select_library_book(self, name: str) -> None:
+        self.library_book = name
+        self.library_folder = None
+        self._paint_library_browser()
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:
+                log.exception("page.update failed after library book change")
+
+    def select_library_folder(self, name: str | None) -> None:
+        self.library_folder = name
+        self._paint_library_browser()
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:
+                log.exception("page.update failed after library folder change")
+
+    def _paint_library_browser(self) -> None:
+        host = self.library_browser
         if host is None:
             return
-        page = self.page
-        real_page = page is not None and page.__class__.__name__ != "FakePage"
-        show = bool(getattr(host, "visible", False)) and self._library_tab_selected() and real_page
-        url = str((host.data or {}).get("url") or "")
-        if not show:
-            if self._library_surface is not None:
-                self._library_surface.sync(url="", visible=False)
-            return
-        if self._library_surface is None:
-            from frameforge.ui_flet.library_surface import LibrarySurface
+        from frameforge.library.books import BOOKS, CATALOG, folder_kind
+        from frameforge.ui_flet.components.library_browser import fill_library_browser
 
-            self._library_surface = LibrarySurface()
-        width, height = getattr(self, "_library_shelf_px", (0, 0))
-        self._library_surface.sync(url=url, visible=True, width=width, height=height)
+        book = self.library_book if self.library_book in BOOKS else "Movies"
+        self.library_book = book
+        kind = folder_kind(book)
+        counts: dict[str, int] = {name: 0 for name in CATALOG[book]}
+        clips: list[tuple[Any, str]] = []
+        try:
+            columns = {col.id: col for col in self.library.list_collections(kind)}
+            needle = (self.library_search or "").strip().lower()
+            for item in self.library.list_items(include_private=False):
+                col = columns.get(item.primary_collection_id or -1)
+                if col is None:
+                    continue
+                counts[col.name] = counts.get(col.name, 0) + 1
+                if self.library_folder and col.name != self.library_folder:
+                    continue
+                title = (item.title or "").lower()
+                if needle and needle not in title:
+                    continue
+                clips.append((item, col.name))
+        except Exception:
+            log.exception("Failed to paint library books")
+        folders = [(name, counts.get(name, 0)) for name in CATALOG[book]]
+        for name, count in counts.items():
+            if name not in CATALOG[book] and count:
+                folders.append((name, count))
+        fill_library_browser(
+            host,
+            book=book,
+            folder=self.library_folder,
+            folders=folders,
+            clips=clips,
+            on_book=self.select_library_book,
+            on_folder=self.select_library_folder,
+            on_add=self.add_library_videos,
+        )
 
     def drain_library_studio_actions(self) -> int:
         shelf = self._library_shelf

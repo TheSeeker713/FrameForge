@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.38
+
+- The Library tab is a book browser. Movies, TV Shows, YouTube, Facebook, X, TikTok, Instagram, Porn, and Other Videos are on screen even when nothing has been downloaded.
+- Adding a video files it into a book and a folder (genre or category) from the path and title. The video file stays where it is.
+- A numbered title such as `300` is not treated as a TV season.
+
 ## 0.6.37
 
 - Restoring the window from the tray awaits Flet's `to_front`, so the console no longer warns that the coroutine was never awaited.

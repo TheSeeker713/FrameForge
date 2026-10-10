@@ -1,5 +1,9 @@
 # Devlog
 
+## 2026-10-09 — v0.6.38
+
+The Library tab was still the empty gray pane. That pane was a WebGL host Flutter never painted, so the shelf never appeared. Plex and Jellyfin keep movies and TV as separate libraries, and people lose the plot when genre folders get flattened into one list. Jellyfin has also read a numbered movie folder as a season. FrameForge now shows those separations as books and folders in the tab itself. The shelves exist with zero videos. Adding a file links it into a book from the path and title. The file is not moved.
+
 ## 2026-10-09 — v0.6.37
 
 Launching the GUI printed three errors. `Window.to_front` is a coroutine and was called and dropped, which only warned. Download and tool subprocesses were decoded as cp1252, so a non-ASCII byte from yt-dlp or FFmpeg killed the reader thread. Those reads are UTF-8 now. The `WinError 10054` line is the Windows event loop shutting down a pipe the other end already closed; that callback is ignored.

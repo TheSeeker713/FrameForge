@@ -371,7 +371,7 @@ def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int
             continue
         if store.get_by_job_id(job.id) is not None or store.get_by_path(path) is not None:
             continue
-        store.add_item(
+        item = store.add_item(
             path=path,
             title=job.title,
             source=source_label_from_job(job),
@@ -379,6 +379,14 @@ def publish_completed_downloads(repo: JobRepository, store: LibraryStore) -> int
             width=job.source_width,
             height=job.source_height,
             thumb_path=job.thumbnail_path,
+        )
+        _file_in_book(
+            store,
+            item,
+            path=path,
+            title=job.title,
+            source=source_label_from_job(job),
+            duration=getattr(job, "duration", None),
         )
         added += 1
     return added
@@ -443,6 +451,22 @@ def assign_to_collection(
     return updated
 
 
+def _file_in_book(
+    store: LibraryStore,
+    item: LibraryItem,
+    *,
+    path: Path,
+    title: str | None,
+    source: str | None,
+    duration: float | None = None,
+) -> LibraryItem:
+    """File a new row into a book folder. Does not move the video."""
+    from frameforge.library.books import file_item
+
+    file_item(store, item.id, path=str(path), title=title, source=source, duration=duration)
+    return store.get(item.id)
+
+
 def link_files(store: LibraryStore, paths: list[Path]) -> list[LibraryItem]:
     """Index videos where they already are. Copies nothing except a later thumbnail."""
     from frameforge.library.paths import is_video_file
@@ -458,7 +482,8 @@ def link_files(store: LibraryStore, paths: list[Path]) -> list[LibraryItem]:
         for src in targets:
             if store.get_by_path(src) is not None:
                 continue
-            added.append(store.add_item(path=src, title=src.stem, source="Other"))
+            item = store.add_item(path=src, title=src.stem, source="Other")
+            added.append(_file_in_book(store, item, path=src, title=src.stem, source="Other"))
     return added
 
 
@@ -478,13 +503,12 @@ def index_folder(store: LibraryStore, folder: Path) -> list[LibraryItem]:
             continue
         if store.get_by_path(path):
             continue
-        added.append(
-            store.add_item(
-                path=path,
-                title=path.stem,
-                source="Other",
-            )
+        item = store.add_item(
+            path=path,
+            title=path.stem,
+            source="Other",
         )
+        added.append(_file_in_book(store, item, path=path, title=path.stem, source="Other"))
     return added
 
 

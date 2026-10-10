@@ -1,6 +1,16 @@
 # Library
 
-The library is an index of videos that are already on disk. An album is a link in SQLite. Putting a clip in an album, taking it out, or removing it from the library does not move or delete the file.
+The library is an index of videos that are already on disk. Books and folders are links in SQLite. Putting a clip in a folder, taking it out, or removing it from the library does not move or delete the file.
+
+## Books and folders
+
+Plex and Jellyfin keep movies and TV in separate libraries. People who sorted movies into genre folders lost that split when an app flattened the folders into one list. Jellyfin has also treated a movie folder that starts with a number, such as `300`, as a TV season. FrameForge keeps the split in the database instead of on disk.
+
+- A book is a row with kind `book`: Movies, TV Shows, YouTube, Facebook, X, TikTok, Instagram, Porn, Other Videos.
+- A folder is a row with kind `book:<book name>`: Comedy, Informational, Esoteric, AI Fiction, and the other genres for that book.
+- The shelves are created when the library opens, including when no video has been added.
+- `classify` reads the path and title. Adult paths go to Porn. `S01E02` or `Season 1` goes to TV Shows. YouTube, Facebook, X, TikTok, and Instagram each have their own book. A year in the title, or a movie folder, goes to Movies. A bare number is not a season.
+- One folder at a time, via `primary_collection_id`. The `path` column does not change.
 
 Completed downloads are indexed at the path the download already used. The file stays in that folder.
 

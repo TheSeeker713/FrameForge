@@ -102,11 +102,13 @@ def test_library_tab_hosts_studio_and_binds_rows(tmp_path: Path):
     ui.library_sort = "title"
     ui.refresh_library()
     host = ui.library_studio_host
-    assert host in ui.library_stack.controls
+    assert ui.library_browser in ui.library_stack.controls
+    assert host not in ui.library_stack.controls
     assert ui.library_grid not in ui.library_stack.controls
-    assert host is ui.library_grid_host
-    assert host.visible is True
+    assert host.visible is False
     assert ui.library_empty.visible is False
+    assert ui.library_browser.data["kind"] == "library_books"
+    assert "Movies" in ui.library_browser.data["books"]
     assert host.data["kind"] == "library_studio"
     assert host.data["embed"] is True
     assert host.data["look"] == LOCKED_LOOK
@@ -146,7 +148,11 @@ def test_empty_library_hides_the_shelf(tmp_path: Path):
     ui.refresh_library()
     assert ui.library_visible_count == 0
     assert ui.library_studio_host.visible is False
-    assert ui.library_empty.visible is True
+    assert ui.library_browser in ui.library_stack.controls
+    assert ui.library_browser.data["books"][0] == "Movies"
+    assert "Comedy" in ui.library_browser.data["folders"]
+    assert ui.library_browser.data["clips"] == []
+    assert ui.library_empty.visible is False
     assert ui.library_studio_host.data["rows"] == []
     assert ui.library_studio_host.data["look"] == LOCKED_LOOK
     document = json.loads(_get(_origin(ui) + "/api/shelf"))
