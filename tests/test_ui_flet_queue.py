@@ -140,7 +140,7 @@ def test_thumbs_grid_and_resource_banner(tmp_path: Path):
     ui.repo.update_status(job.id, "completed")
     ui.build()
     assert ui.library_grid is not None
-    assert isinstance(ui.library_grid, ft.ListView)
+    assert isinstance(ui.library_grid, ft.GridView)
     ui.set_resource_banner("High RAM 91%")
     assert ui.resource_banner.visible is True
     assert "91%" in ui.resource_banner.data["text"]
