@@ -184,7 +184,8 @@ def test_shelf_actions_keep_the_file_until_delete_is_confirmed(tmp_path: Path):
             assert response.status == 200
     assert ui.drain_library_studio_actions() == 3
     assert src.is_file()
-    assert ui.dialogs.kind == "library_player"
+    assert ui.library_player_host.visible is True
+    assert ui.library_player_host.data["kind"] == "library_player"
     assert ui.last_library_player == str(src.resolve())
     ui.shutdown()
 

@@ -227,6 +227,9 @@ class FrameForgeUi:
         self._library_thumb_miss: set[int] = set()
         self._library_video: Any | None = None
         self.last_library_player: str | None = None
+        self._library_positions: dict[str, int] = {}
+        self._player_watchdog: Any | None = None
+        self._player_ready = False
         self._cookie_auto_resume_ids: set[int] = set()
         self.library_visible_count: int = 0
         self._library_visible_ids: list[int] = []
@@ -603,11 +606,16 @@ class FrameForgeUi:
         self.library_sidebar = ft.Column(width=240, spacing=2, scroll=ft.ScrollMode.AUTO)
         self.library_browser = self.library_sidebar
         self.library_detail = ft.Container(width=360, visible=False)
+        self.library_player_host = ft.Container(
+            expand=True,
+            visible=False,
+            data={"kind": "library_player", "path": ""},
+        )
         self.library_studio_host.visible = False
         self.library_stack = ft.Row(
             [
                 self.library_sidebar,
-                ft.Column([self.library_grid], expand=True, spacing=8),
+                ft.Column([self.library_grid, self.library_player_host], expand=True, spacing=8),
                 self.library_detail,
             ],
             expand=True,
@@ -2086,23 +2094,7 @@ class FrameForgeUi:
     def play_library_item_path(self, path: Any) -> None:
         from pathlib import Path
 
-        from frameforge.ui_flet.components.player import library_player_dialog
-
-        target = Path(path)
-        if self.page is None:
-            return
-        try:
-            dlg, video = library_player_dialog(
-                title=target.name,
-                media_path=target,
-                on_close=self.close_dialog,
-            )
-        except Exception:
-            log.exception("In-app player failed to open")
-            self._show_toast("In-app player could not open this file")
-            return
-        self._library_video = video
-        self.dialogs.open("library_player", dlg, replace=True)
+        self._show_library_player(title=Path(path).name, paths=[Path(path)])
 
     def _reveal_library_path(self, path: str) -> None:
         from pathlib import Path
@@ -2799,22 +2791,148 @@ class FrameForgeUi:
             self._show_toast("File not found — cannot play")
             return
         self.last_library_player = str(path.resolve())
-        if self.page is None:
-            return
+        paths = [path]
         try:
-            from frameforge.ui_flet.components.player import library_player_dialog
+            for row in self.library.list_files(item.id):
+                candidate = Path(row.path)
+                if candidate.is_file() and candidate.resolve() not in {p.resolve() for p in paths}:
+                    paths.append(candidate)
+        except Exception:  # noqa: BLE001
+            log.exception("Could not list versions for the player")
+        self._show_library_player(title=item.title or path.name, paths=paths)
 
-            dlg, video = library_player_dialog(
-                title=item.title or path.name,
-                media_path=path,
-                on_close=self.close_dialog,
+    def _show_library_player(self, *, title: str, paths: list[Path]) -> None:
+        from frameforge.ui_flet.components.player import library_player_view
+
+        present = [Path(path) for path in paths if Path(path).is_file()]
+        if not present:
+            self._show_toast("File not found — cannot play")
+            return
+        self.last_library_player = str(present[0].resolve())
+        host = getattr(self, "library_player_host", None)
+        if host is None or self.page is None:
+            return
+        resume = self._library_positions.get(str(present[0].resolve()), 0)
+
+        async def _close() -> None:
+            await self._close_library_player()
+
+        try:
+            view, video = library_player_view(
+                title=title,
+                media_paths=present,
+                on_close=_close,
+                on_open_external=self._open_player_external,
+                on_loaded=self._mark_player_ready,
+                on_failed=self._show_player_fallback,
+                on_position=self._remember_player_position,
+                resume_ms=resume,
             )
         except Exception:
             log.exception("In-app player failed to open")
             self._show_toast("In-app player could not open this file")
             return
+        view.pending = self._run_player_task
         self._library_video = video
-        self.dialogs.open("library_player", dlg, replace=True)
+        host.content = view
+        host.data = dict(view.data)
+        host.visible = True
+        self.library_grid.visible = False
+        self._arm_player_watchdog()
+        try:
+            self.page.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _run_player_task(self, coro: Any) -> None:
+        page = self.page
+        runner = getattr(page, "run_task", None) if page is not None else None
+        if callable(runner):
+            runner(lambda: coro)
+            return
+        import asyncio
+
+        asyncio.run(coro)
+
+    def _remember_player_position(self, millis: int) -> None:
+        path = self.last_library_player
+        if path:
+            self._library_positions[path] = int(millis)
+
+    def _mark_player_ready(self) -> None:
+        self._player_ready = True
+        self._cancel_player_watchdog()
+
+    def _show_player_fallback(self) -> None:
+        host = getattr(self, "library_player_host", None)
+        if host is None or host.content is None:
+            return
+        column = getattr(host.content, "content", None)
+        controls = getattr(column, "controls", None) or []
+        for control in controls:
+            if getattr(control, "visible", None) is False and hasattr(control, "controls"):
+                control.visible = True
+        self._marshal_ui(lambda: host.update() if hasattr(host, "update") else None)
+
+    def _arm_player_watchdog(self) -> None:
+        import threading
+
+        self._cancel_player_watchdog()
+        self._player_ready = False
+
+        def _fire() -> None:
+            if self._player_ready:
+                return
+            self._marshal_ui(self._show_player_fallback)
+
+        timer = threading.Timer(6.0, _fire)
+        timer.daemon = True
+        self._player_watchdog = timer
+        timer.start()
+
+    def _cancel_player_watchdog(self) -> None:
+        timer = getattr(self, "_player_watchdog", None)
+        self._player_watchdog = None
+        if timer is not None:
+            timer.cancel()
+
+    async def _close_library_player(self) -> None:
+        from frameforge.ui_flet.components.player import stop_player
+
+        self._cancel_player_watchdog()
+        video = getattr(self, "_library_video", None)
+        self._library_video = None
+        if video is not None:
+            try:
+                await stop_player(video)
+            except Exception:  # noqa: BLE001
+                log.exception("Player stop failed")
+        host = getattr(self, "library_player_host", None)
+        if host is not None:
+            host.visible = False
+            host.content = None
+        if self.library_grid is not None:
+            self.library_grid.visible = True
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def request_close_library_player(self) -> None:
+        self._run_player_task(self._close_library_player())
+
+    def _open_player_external(self, path: str) -> None:
+        from pathlib import Path
+
+        from frameforge.util.reveal import RevealError, open_in_default_player
+
+        try:
+            open_in_default_player(Path(path), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found")
+        except OSError:
+            self._show_toast("Could not open that file")
 
     def reveal_library_item(self, item_id: int) -> None:
         from frameforge.library.actions import reveal_library_item
@@ -3774,8 +3892,57 @@ class FrameForgeUi:
                 repair_summary_dialog(stats, error=error, on_close=self.close_dialog),
             )
 
+    def _player_shortcut(self, key: str) -> None:
+        from frameforge.ui_flet.components.player import frame_delta_ms, neighbor_rate
+
+        video = getattr(self, "_library_video", None)
+        if video is None:
+            return
+        label = key.replace(" ", "").lower()
+        path = self.last_library_player or ""
+        position = self._library_positions.get(path, 0)
+
+        async def _act() -> None:
+            if label in {"space"}:
+                paused = getattr(self, "_player_paused", False)
+                if paused:
+                    await video.play()
+                    self._player_paused = False
+                else:
+                    await video.pause()
+                    self._player_paused = True
+                return
+            step = 5000
+            if label in {"comma", "period", ",", "."}:
+                step = frame_delta_ms(None)
+                await video.pause()
+                self._player_paused = True
+            if label in {"arrowright", "right", "period", "."}:
+                nxt = position + step
+            elif label in {"arrowleft", "left", "comma", ","}:
+                nxt = max(0, position - step)
+            elif label in {"arrowup", "up"}:
+                video.playback_rate = neighbor_rate(float(getattr(video, "playback_rate", 1) or 1), faster=True)
+                return
+            elif label in {"arrowdown", "down"}:
+                video.playback_rate = neighbor_rate(float(getattr(video, "playback_rate", 1) or 1), faster=False)
+                return
+            else:
+                return
+            self._library_positions[path] = nxt
+            await video.seek(nxt)
+
+        self._run_player_task(_act())
+
     def _on_keyboard(self, e: Any) -> None:
         key = getattr(e, "key", None)
+        host = getattr(self, "library_player_host", None)
+        if host is not None and getattr(host, "visible", False):
+            if key in {"Escape", "Esc", "Backspace"}:
+                self.request_close_library_player()
+                return
+            self._player_shortcut(str(key or ""))
+            return
         if key in {"Escape", "Esc"}:
             self.close_dialog()
             return
@@ -3959,6 +4126,7 @@ class FrameForgeUi:
         loop.set_exception_handler(handler)
 
     def shutdown(self) -> None:
+        self._cancel_player_watchdog()
         thumb_worker = getattr(self, "_thumb_worker", None)
         self._thumb_worker = None
         if thumb_worker is not None:

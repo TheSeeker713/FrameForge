@@ -133,8 +133,10 @@ def test_play_opens_in_app_player(tmp_path: Path):
     assert isinstance(ui.library_grid, __import__("flet").GridView)
     ui.play_library_item(item.id)
     assert ui.last_library_player == str(src.resolve())
-    assert ui.dialogs.kind == "library_player"
-    assert ui.page.dialog.data["path"] == str(src.resolve())
+    assert ui.library_player_host.visible is True
+    assert ui.library_player_host.data["path"] == str(src.resolve())
+    assert ui.library_player_host.data["fit"] == "contain"
+    assert ui.library_grid.visible is False
     ui.shutdown()
 
 
