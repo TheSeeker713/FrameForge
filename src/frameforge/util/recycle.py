@@ -18,17 +18,25 @@ def recycle_flags() -> int:
 
 
 def send_to_recycle_bin(path: str | Path, *, recycle: bool = True) -> None:
-    """Remove *path*. On Windows with recycle=True, send to Recycle Bin."""
+    """Move *path* to the Recycle Bin or Trash.
+
+    ``recycle=False`` removes the file directly. Tests use that so a temp clip
+    never lands in the real Recycle Bin. A failed recycle does not then delete
+    the file.
+    """
     target = Path(path)
     if not target.exists():
         raise FileNotFoundError(str(target))
-    if not recycle or sys.platform != "win32":
+    if not recycle:
         if target.is_dir():
             import shutil
 
             shutil.rmtree(target)
         else:
             target.unlink()
+        return
+    if sys.platform != "win32":
+        _trash_posix(target)
         return
     import ctypes
     from ctypes import wintypes
@@ -60,3 +68,17 @@ def send_to_recycle_bin(path: str | Path, *, recycle: bool = True) -> None:
         raise OSError(f"SHFileOperationW failed ({rc}) for {target}")
     if target.exists():
         raise OSError(f"Recycle did not remove {target}")
+
+
+def _trash_posix(target: Path) -> None:
+    """macOS and Linux. A missing send2trash install is an error, not a delete."""
+    try:
+        from send2trash import send2trash
+    except ImportError as exc:
+        raise OSError("send2trash is not installed") from exc
+    try:
+        send2trash(str(target))
+    except Exception as exc:
+        raise OSError(f"Trash did not remove {target}") from exc
+    if target.exists():
+        raise OSError(f"Trash did not remove {target}")

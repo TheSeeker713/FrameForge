@@ -3071,9 +3071,14 @@ class FrameForgeUi:
         for item_id in ids:
             item = self.library.get(item_id)
             path = Path(item.path)
-            self.library.remove_item(item_id)
             if delete_files and path.is_file():
-                send_to_recycle_bin(path, recycle=self.reveal_launch)
+                try:
+                    send_to_recycle_bin(path)
+                except OSError:
+                    self._show_toast("Could not move that file to the Recycle Bin")
+                    continue
+            self.library.remove_item(item_id)
+            self.library_selected_ids.discard(item_id)
         self.library_selected_ids.clear()
         self.close_dialog()
         self.refresh_library()
