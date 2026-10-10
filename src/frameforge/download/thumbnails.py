@@ -205,6 +205,7 @@ def cache_job_thumbnail(
     thumbnail_url: str | None = None,
     info: dict[str, Any] | None = None,
     media_path: str | Path | None = None,
+    sidecar_near: str | Path | None = None,
     extract_still: bool = True,
 ) -> Path | None:
     """Store a thumbnail for *job_id*. Never raises; missing thumbs are skipped."""
@@ -214,7 +215,7 @@ def cache_job_thumbnail(
         if existing and Path(existing).is_file():
             return Path(existing)
         media = media_path or getattr(job, "download_path", None) or getattr(job, "output_path", None)
-        sidecar = sidecar_thumbnail_near(media)
+        sidecar = sidecar_thumbnail_near(media) or sidecar_thumbnail_near(sidecar_near)
         if sidecar is not None:
             path = _copy_into_cache(job_id, sidecar)
             if path is not None:

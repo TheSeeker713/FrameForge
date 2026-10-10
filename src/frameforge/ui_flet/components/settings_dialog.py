@@ -81,8 +81,8 @@ def build_settings_dialog(
     model_path_txt = str(st.get("path") or st.get("reason") or "")
     if kind == "smoke":
         model_note = (
-            "Installed model is smoke Identity ONNX — 2× uses interpolation, not Real-ESRGAN. "
-            "Download Real-ESRGAN weights: python .\\scripts\\download_models.py"
+            "Installed model is smoke Identity ONNX. 2x uses interpolation, not Real-ESRGAN. "
+            "FrameForge downloads the Real-ESRGAN weights into the models folder."
         )
     elif kind == "realesrgan":
         model_note = "Real-ESRGAN ONNX is installed."
@@ -92,8 +92,7 @@ def build_settings_dialog(
         model_note = "ONNX model found."
     else:
         model_note = (
-            "No ONNX model — upscale is disabled. Create a smoke Identity model for GUI tests "
-            "(not Real-ESRGAN) or run python .\\scripts\\download_models.py"
+            "No upscale model yet. FrameForge downloads Real-ESRGAN into the models folder."
         )
     model_path_ctrl = ft.Text(
         f"Models folder file: {model_path_txt}",
@@ -366,7 +365,7 @@ def build_settings_dialog(
                 model_path_ctrl,
                 model_note_ctrl,
                 ft.OutlinedButton(
-                    content="Create smoke ONNX (not Real-ESRGAN)",
+                    content="Download upscale model",
                     on_click=_install_models,
                 ),
                 ft.Text(

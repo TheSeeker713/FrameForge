@@ -9,7 +9,7 @@ from typing import Any
 
 from frameforge.db.repository import Job, JobRepository
 from frameforge.download.ytdlp import YtDlpDownloader, apply_gentle_rate
-from frameforge.paths import download_dir_for_site, downloads_dir, ensure_output_tree
+from frameforge.paths import download_dir_for_site, downloads_dir, ensure_dir, ensure_output_tree
 from frameforge.paths_site import site_key_from_job
 from frameforge.queue.process_registry import ProcessRegistry
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused
@@ -53,17 +53,22 @@ def resolve_download_output_dir(job: Job, *, fallback: Path | None = None) -> Pa
         wrong = _stored_dir_is_misplaced(dest, expected)
         if wrong and status in {None, "pending", "failed", "cancelled"}:
             dest = expected
-        dest.mkdir(parents=True, exist_ok=True)
-        return dest
+        return ensure_dir(dest)
+    if fallback is not None:
+        try:
+            fallback.resolve().relative_to(downloads_dir().resolve())
+            inside_downloads = True
+        except (OSError, ValueError):
+            inside_downloads = False
+        if not inside_downloads:
+            return ensure_dir(fallback)
     if fallback is not None and same_download_bucket(fallback, expected):
         try:
             if fallback.resolve() != downloads_dir().resolve() and not is_legacy_root_media_dir(fallback):
-                fallback.mkdir(parents=True, exist_ok=True)
-                return fallback
+                return ensure_dir(fallback)
         except OSError:
             pass
-    expected.mkdir(parents=True, exist_ok=True)
-    return expected
+    return ensure_dir(expected)
 
 
 def _cookiefile_for_url(url: str) -> Path | None:
@@ -446,8 +451,9 @@ def make_download_handler(
             site = info_site
         locked = user_category(job)
         category = locked or category_from_metadata(result.info, title=result.title)
+        origin = Path(result.path)
         result = type(result)(
-            path=place_finished_download(result.path, site_key=site, category=category),
+            path=place_finished_download(origin, site_key=site, category=category),
             title=result.title,
             info=result.info,
         )
@@ -472,6 +478,12 @@ def make_download_handler(
         repo.probe_and_store_resolution(job.id, result.path)
         from frameforge.download.thumbnails import cache_job_thumbnail
 
-        cache_job_thumbnail(repo, job.id, info=result.info, media_path=result.path)
+        cache_job_thumbnail(
+            repo,
+            job.id,
+            info=result.info,
+            media_path=result.path,
+            sidecar_near=origin,
+        )
 
     return handler

@@ -509,8 +509,9 @@ def suggested_actions(category: str) -> list[str]:
         ]
     if category == UPSCALE_CONFIG:
         return [
-            "Install an ONNX model (Settings → Create smoke ONNX, or python .\\scripts\\download_models.py)",
-            "Smoke Identity is not Real-ESRGAN — download Real-ESRGAN weights for AI quality",
+            "FrameForge downloads the Real-ESRGAN upscale model when it is missing.",
+            "Open Settings and choose Download upscale model if that download did not finish.",
+            "Smoke Identity is not Real-ESRGAN.",
             "Retry this job",
         ]
     if category == DB_ERROR:

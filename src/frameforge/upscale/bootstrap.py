@@ -66,8 +66,8 @@ def bootstrap_models(root: Path | None = None) -> Path:
     if not list_onnx(folder):
         if not _LOGGED_EMPTY:
             log.warning(
-                "No ONNX model under %s — attempting smoke Identity (not Real-ESRGAN). "
-                "For Real-ESRGAN weights: python .\\scripts\\download_models.py",
+                "No ONNX model under %s. Attempting smoke Identity (not Real-ESRGAN). "
+                "The app downloads Real-ESRGAN weights into this folder when they are missing.",
                 folder,
             )
             _LOGGED_EMPTY = True

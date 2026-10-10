@@ -317,16 +317,7 @@ class FrameForgeUi:
         later failure still opens the dialog.
         """
         from frameforge.download.cookie_validate import cookies_validated_in_session
-        from frameforge.errors import (
-            AUTH_REQUIRED,
-            BOT_CHECK,
-            IMPERSONATION_MISSING,
-            RATE_LIMITED,
-        )
 
-        cat = str(payload.get("category") or "")
-        if cat not in {AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, RATE_LIMITED}:
-            return False
         url = str(payload.get("url") or "")
         if not url or not cookies_validated_in_session(url):
             return False
@@ -1484,24 +1475,44 @@ class FrameForgeUi:
         return missing_model_reason()
 
     def install_upscale_models(self, _e: Any = None) -> None:
-        from frameforge.upscale.bootstrap import bootstrap_models, maybe_create_smoke_onnx
-        from frameforge.upscale.onnx_upscaler import model_kind, model_status
+        from frameforge.upscale.weights import realesrgan_installed, start_realesrgan_install
 
-        bootstrap_models()
-        maybe_create_smoke_onnx()
+        if realesrgan_installed():
+            self._reload_upscale_model()
+            self._show_toast("Upscale model is already installed.")
+            return
+        if start_realesrgan_install(on_status=self._on_model_status, on_ready=self._reload_upscale_model):
+            self._show_toast("Downloading the upscale model…")
+            return
+        self._show_toast("Upscale model download is already running.")
+
+    def _start_model_install(self) -> None:
+        """Fetch Real-ESRGAN when the chosen models folder does not have it yet."""
+        page = self.page
+        if page is None or not type(page).__module__.startswith("flet"):
+            return
+        from frameforge.paths import download_location_chosen
+
+        if not download_location_chosen():
+            return
+        from frameforge.upscale.weights import start_realesrgan_install
+
+        start_realesrgan_install(on_status=self._on_model_status, on_ready=self._reload_upscale_model)
+
+    def _on_model_status(self, message: str, *, done: bool = False) -> None:
+        def apply() -> None:
+            if done:
+                self._activity_note = None
+            else:
+                self._activity_note = message
+            self._show_toast(message)
+
+        self._marshal_ui(apply)
+
+    def _reload_upscale_model(self) -> None:
         pipe = getattr(self.worker, "upscale_pipeline", None)
         if pipe is not None and hasattr(pipe, "reload_model"):
             pipe.reload_model()
-        st = model_status()
-        if st.get("available"):
-            kind = model_kind(Path(str(st["path"]))) if st.get("path") else "onnx"
-            extra = " Smoke Identity is not Real-ESRGAN." if kind == "smoke" else ""
-            self._show_toast(f"ONNX model ready: {st.get('path')}{extra}")
-        else:
-            self._show_toast(
-                "No ONNX model. Run python .\\scripts\\download_models.py or "
-                "python .\\scripts\\create_smoke_onnx.py"
-            )
 
     def upscale_selected(self) -> None:
         from frameforge.gui.actions import can_upscale
@@ -3547,6 +3558,7 @@ class FrameForgeUi:
         self.close_dialog()
         self._show_toast("Downloads will use your Windows folder")
         self._continue_toolchain()
+        self._start_model_install()
 
     def pick_download_location(self, _e: Any = None) -> None:
         if self.page is None:
@@ -3571,6 +3583,7 @@ class FrameForgeUi:
         dest = choose_download_location(path)
         self._show_toast(f"Downloads will go to {dest}")
         self._continue_toolchain()
+        self._start_model_install()
 
     def import_file(self, path: str | None = None) -> ft.AlertDialog | None:
         """Hero Import: picker (or explicit path) → confirm modal → pending only. Never arms."""
@@ -4091,6 +4104,7 @@ class FrameForgeUi:
         self._start_tree_repair(toast=False)
         self._prune_thumbs_later()
         self._start_toolchain()
+        self._start_model_install()
 
     def _prune_thumbs_later(self) -> None:
         page = self.page

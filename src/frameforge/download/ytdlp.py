@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 log = logging.getLogger("frameforge.download.ytdlp")
 
-from frameforge.paths import archive_dir, downloads_dir, ensure_output_tree
+from frameforge.paths import archive_dir, downloads_dir, ensure_dir, ensure_output_tree
 from frameforge.util.process_tree import DownloadCancelled, DownloadPaused, popen_creationflags
 
 if TYPE_CHECKING:
@@ -250,10 +250,9 @@ class YtDlpDownloader:
         cookiefile: Path | None = None,
     ) -> None:
         ensure_output_tree()
-        self.output_dir = output_dir or downloads_dir()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = ensure_dir(output_dir or downloads_dir())
         self.archive_file = archive_file or (archive_dir() / "ytdlp-archive.txt")
-        self.archive_file.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(self.archive_file.parent)
         self.format_preference = format_preference
         self.use_aria2c = use_aria2c
         self.cookiefile = cookiefile
@@ -282,9 +281,8 @@ class YtDlpDownloader:
     def _yt_paths(self) -> dict[str, str]:
         from frameforge.paths import metadata_dir
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        meta = metadata_dir()
-        meta.mkdir(parents=True, exist_ok=True)
+        ensure_dir(self.output_dir)
+        meta = ensure_dir(metadata_dir())
         return {
             "home": str(self.output_dir),
             "temp": str(self._staging_dir()),
@@ -306,8 +304,9 @@ class YtDlpDownloader:
         if media is None or not Path(media).exists():
             return
         media = Path(media)
-        dest_dir = metadata_dir()
-        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir = ensure_dir(metadata_dir())
+        if not dest_dir.is_dir():
+            return
         for cand in (
             media.with_suffix(media.suffix + ".info.json"),
             media.with_name(media.stem + ".info.json"),

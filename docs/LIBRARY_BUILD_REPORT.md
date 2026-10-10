@@ -20,18 +20,7 @@ Package version is still `0.6.38`. It was not bumped.
 
 ## Checks
 
-Full suite on this branch, before the two grid assertion updates: **8 failed, 709 passed, 2 skipped** in 447 seconds.
-
-The v0.6.38 baseline was **7 failed, 689 passed, 1 skipped**. Two of those baseline failures are gone: the shell-safety scan, and the WebView embed test. The shelf server is no longer started, and the surface module no longer names the forbidden window calls.
-
-Still failing, and left as they were:
-
-- `tests/test_completed_thumbnails.py::test_handler_stores_thumb_from_sidecar`
-- `tests/test_cookie_auto_resume.py::test_validated_cookies_retry_without_a_dialog`
-- `tests/test_transport_fail_pause.py` (two tests)
-- `tests/test_ytdlp_parity.py::test_handler_stores_invocation_snapshot` (temp download folder compared with the onboarded downloads folder)
-
-One more failure is not in that baseline list: `tests/test_auto_cookie_recovery.py::test_silent_success_halt_cleared_second_pending_runs`. A second run failed with `pending` instead of `downloading`. This branch does not change the queue worker or the cookie recovery modules. Only `download/thumbnails.py` changed under `download/`.
+Full suite after the queue, thumbnail, and model-install fixes: **721 passed, 1 skipped**.
 
 Phase 1 tests still cover the migration timing: 3,000 items migrate in under 3 seconds, and a 10,000-row page query stays under 50 ms. A 3,000-file first paint in the real window was not measured.
 
