@@ -75,7 +75,7 @@ def test_pause_and_stop_handlers_disarm_and_leave_pending(tmp_path: Path):
     ui.shutdown()
 
 
-def test_unknown_fail_on_first_does_not_claim_second(tmp_path: Path):
+def test_unknown_fail_does_not_halt_the_queue(tmp_path: Path):
     repo = JobRepository(tmp_path / "bulk.db")
     claimed: list[int] = []
 
@@ -88,23 +88,17 @@ def test_unknown_fail_on_first_does_not_claim_second(tmp_path: Path):
     second = repo.enqueue("https://example.com/two")
     worker.request_download_all()
     deadline = time.time() + 8
-    while time.time() < deadline and repo.get(first.id).status in ("pending", "downloading"):
+    while time.time() < deadline and repo.get(second.id).status in ("pending", "downloading"):
         time.sleep(0.03)
     assert repo.get(first.id).status == "failed"
-    time.sleep(0.25)
-    assert repo.get(second.id).status == "pending"
-    assert claimed == [first.id]
-    assert worker.is_armed is False
-    assert worker.is_fail_paused is True
-    assert worker._process_one() is False
-    worker._armed.set()
-    assert worker._process_one() is False
-    assert repo.get(second.id).status == "pending"
+    assert repo.get(second.id).status == "failed"
+    assert claimed == [first.id, second.id]
+    assert worker.is_fail_paused is False
     worker.stop(timeout=2)
     repo.close()
 
 
-def test_handler_failed_without_raise_still_halt_bulk(tmp_path: Path):
+def test_handler_failed_without_raise_does_not_halt_bulk(tmp_path: Path):
     repo = JobRepository(tmp_path / "silent.db")
 
     def mark_failed(job: Job, r: JobRepository) -> None:
@@ -115,12 +109,11 @@ def test_handler_failed_without_raise_still_halt_bulk(tmp_path: Path):
     second = repo.enqueue("https://example.com/two")
     worker.request_download_all()
     deadline = time.time() + 8
-    while time.time() < deadline and repo.get(first.id).status in ("pending", "downloading"):
+    while time.time() < deadline and repo.get(second.id).status in ("pending", "downloading"):
         time.sleep(0.03)
     assert repo.get(first.id).status == "failed"
-    time.sleep(0.25)
-    assert repo.get(second.id).status == "pending"
-    assert worker.is_fail_paused is True
+    assert repo.get(second.id).status == "failed"
+    assert worker.is_fail_paused is False
     worker.stop(timeout=2)
     repo.close()
 

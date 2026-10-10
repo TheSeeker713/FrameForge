@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from onnx import TensorProto, helper, numpy_helper
@@ -10,8 +9,12 @@ import numpy as np
 
 
 def main() -> Path:
-    root = Path(os.environ["USERPROFILE"]) / "Downloads" / "FrameForge" / "models"
-    root.mkdir(parents=True, exist_ok=True)
+    from frameforge.paths import ensure_dir, may_create, models_dir
+
+    root = models_dir()
+    if not may_create(root):
+        raise SystemExit(f"Refusing to create {root}")
+    ensure_dir(root)
     dest = root / "frameforge_x2_resize.onnx"
 
     # input: NCHW float

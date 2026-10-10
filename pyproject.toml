@@ -18,6 +18,7 @@ dependencies = [
   "customtkinter",
   "flet==0.86.5",
   "flet-video==0.86.5",
+  "Send2Trash==2.1.0",
   "Pillow",
   "pystray",
   "psutil",

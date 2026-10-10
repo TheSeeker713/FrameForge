@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def _utc_now() -> str:
@@ -110,7 +113,48 @@ MIGRATIONS: dict[int, str] = {
         import_mode TEXT NOT NULL DEFAULT 'index'
     );
     """,
+    5: """
+    CREATE TABLE IF NOT EXISTS library_files (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id       INTEGER NOT NULL REFERENCES library_items(id) ON DELETE CASCADE,
+        role          TEXT    NOT NULL CHECK (role IN ('original','upscaled','linked')),
+        path          TEXT    NOT NULL,
+        job_id        INTEGER,
+        scale         INTEGER,
+        model         TEXT,
+        width         INTEGER,
+        height        INTEGER,
+        rotation      INTEGER,
+        duration_ms   INTEGER,
+        fps           REAL,
+        vcodec        TEXT,
+        acodec        TEXT,
+        pix_fmt       TEXT,
+        size_bytes    INTEGER,
+        mtime_ns      INTEGER,
+        present       INTEGER NOT NULL DEFAULT 1,
+        probed_at     TEXT,
+        created_at    TEXT    NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_library_files_path ON library_files(path);
+    CREATE INDEX IF NOT EXISTS idx_library_files_item ON library_files(item_id);
+    CREATE TABLE IF NOT EXISTS library_thumbs (
+        file_id     INTEGER PRIMARY KEY REFERENCES library_files(id) ON DELETE CASCADE,
+        cache_key   TEXT    NOT NULL,
+        thumb_path  TEXT,
+        status      TEXT    NOT NULL CHECK (status IN ('ok','miss','pending')),
+        error       TEXT,
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        last_used   TEXT,
+        created_at  TEXT    NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_library_thumbs_key ON library_thumbs(cache_key);
+    CREATE INDEX IF NOT EXISTS idx_library_items_title ON library_items(title COLLATE NOCASE);
+    """,
 }
+
+# Python steps that must stay safe to run again. ALTER is here, not in executescript.
+POST_MIGRATE: dict[int, Callable[[sqlite3.Connection], None]] = {}
 
 
 def current_version(conn: sqlite3.Connection) -> int:
@@ -123,12 +167,72 @@ def current_version(conn: sqlite3.Connection) -> int:
     return int(ver["v"] if ver else 0)
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _add_column(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    if column in _table_columns(conn, table):
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
+def _database_file(conn: sqlite3.Connection) -> Path | None:
+    row = conn.execute("PRAGMA database_list").fetchone()
+    if row is None:
+        return None
+    raw = row["file"] if isinstance(row, sqlite3.Row) else row[2]
+    if not raw:
+        return None
+    return Path(str(raw))
+
+
+def _backup_before_v5(conn: sqlite3.Connection) -> None:
+    """Copy the live database once, before version 5 changes it."""
+    path = _database_file(conn)
+    if path is None or not path.is_file():
+        return
+    dest = Path(str(path) + ".bak-v4")
+    if dest.exists():
+        return
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error:
+        pass
+    shutil.copy2(path, dest)
+
+
+def _post_migrate_5(conn: sqlite3.Connection) -> None:
+    for column, decl in (
+        ("source_url", "TEXT"),
+        ("source_site", "TEXT"),
+        ("primary_file_id", "INTEGER"),
+        ("duration_ms", "INTEGER"),
+        ("file_size", "INTEGER"),
+    ):
+        _add_column(conn, "library_items", column, decl)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_library_items_site ON library_items(source_site)"
+    )
+    from frameforge.library.versions import backfill_version_rows
+
+    backfill_version_rows(conn)
+
+
+POST_MIGRATE[5] = _post_migrate_5
+
+
 def migrate(conn: sqlite3.Connection) -> int:
     applied = current_version(conn)
     for version in sorted(MIGRATIONS):
         if version <= applied:
             continue
+        if version == 5:
+            _backup_before_v5(conn)
         conn.executescript(MIGRATIONS[version])
+        hook = POST_MIGRATE.get(version)
+        if hook is not None:
+            hook(conn)
         conn.execute(
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (version, _utc_now()),

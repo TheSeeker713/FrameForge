@@ -123,22 +123,9 @@ def test_library_tab_hosts_studio_and_binds_rows(tmp_path: Path):
     assert isinstance(ui.queue_list, __import__("flet").ListView)
     assert isinstance(ui.history_list, __import__("flet").ListView)
 
-    origin = _origin(ui)
-    document = json.loads(_get(origin + "/api/shelf"))
-    assert document["look"] == LOCKED_LOOK
-    assert [clip["title"] for clip in document["clips"]] == [row["title"] for row in rows]
-    assert [Path(clip["path"]).resolve() for clip in document["clips"]] == [
-        Path(row["path"]).resolve() for row in rows
-    ]
-    thumb_bytes = _get(origin + by_title["Interview clip"]["thumb"])
-    assert thumb_bytes == thumb.read_bytes()
-    page = _get(host.data["url"]).decode("utf-8")
-    assert "studio.js" in page
-    assert 'get("embed")' in page
-    studio = _get(origin + "/studio.js").decode("utf-8")
-    assert 'pointer: "magnetic"' in studio
-    assert "grain: false" in studio
-    assert "/api/shelf" in studio
+    assert host.data["url"] == ""
+    assert ui._library_shelf is None
+    assert len(ui.library_grid.controls) == 4
     ui.shutdown()
 
 
@@ -155,9 +142,9 @@ def test_empty_library_hides_the_shelf(tmp_path: Path):
     assert ui.library_empty.visible is False
     assert ui.library_studio_host.data["rows"] == []
     assert ui.library_studio_host.data["look"] == LOCKED_LOOK
-    document = json.loads(_get(_origin(ui) + "/api/shelf"))
-    assert document["clips"] == []
-    assert document["look"]["grain"] is False
+    assert ui.library_studio_host.data["url"] == ""
+    assert ui._library_shelf is None
+    assert ui.library_studio_host.data["look"]["grain"] is False
     ui.shutdown()
 
 
@@ -175,16 +162,15 @@ def test_shelf_actions_keep_the_file_until_delete_is_confirmed(tmp_path: Path):
     assert Path(row["path"]).resolve() == src.resolve()
     assert src.is_file()
 
-    origin = _origin(ui)
-    for action in ("unlink", "delete", "open"):
-        body = json.dumps({"action": action, "id": item.id}).encode("utf-8")
-        request = Request(origin + "/api/shelf/action", data=body, method="POST")
-        request.add_header("Content-Type", "application/json")
-        with urlopen(request, timeout=5) as response:
-            assert response.status == 200
-    assert ui.drain_library_studio_actions() == 3
+    ui.library_selected_ids = {item.id}
+    ui.confirm_library_remove(delete_files=False)
+    ui.close_dialog()
+    ui.confirm_library_remove(delete_files=True)
+    ui.close_dialog()
+    ui.play_library_item(item.id)
     assert src.is_file()
-    assert ui.dialogs.kind == "library_player"
+    assert ui.library_player_host.visible is True
+    assert ui.library_player_host.data["kind"] == "library_player"
     assert ui.last_library_player == str(src.resolve())
     ui.shutdown()
 
@@ -195,20 +181,12 @@ def test_unlink_dialog_does_not_delete_and_delete_is_separate(tmp_path: Path):
     src = _clip(tmp_path / "dl" / "keep.mp4")
     item = ui.library.add_item(path=src, title="Keep")
     ui.refresh_library()
-    origin = _origin(ui)
-    body = json.dumps({"action": "unlink", "id": item.id}).encode("utf-8")
-    request = Request(origin + "/api/shelf/action", data=body, method="POST")
-    with urlopen(request, timeout=5) as response:
-        assert response.status == 200
-    ui.drain_library_studio_actions()
+    ui.library_selected_ids = {item.id}
+    ui.confirm_library_remove(delete_files=False)
     assert src.is_file()
     assert ui.dialogs.current.data["delete_files"] is False
     ui.close_dialog()
-    body = json.dumps({"action": "delete", "id": item.id}).encode("utf-8")
-    request = Request(origin + "/api/shelf/action", data=body, method="POST")
-    with urlopen(request, timeout=5) as response:
-        assert response.status == 200
-    ui.drain_library_studio_actions()
+    ui.confirm_library_remove(delete_files=True)
     assert src.is_file()
     assert ui.dialogs.current.data["delete_files"] is True
     ui.shutdown()
@@ -221,25 +199,17 @@ def test_surface_does_not_guess_the_foreground_window():
     assert find_frameforge_hwnd() is None
 
 
-def test_webview_loads_embed_without_attaching_to_another_frameforge(tmp_path: Path):
-    from frameforge.ui_flet.library_surface import LibrarySurface
-
-    before = _foreign_flet_child_count()
+def test_refresh_does_not_start_a_shelf_server_or_webview(tmp_path: Path):
     ui = _ui(tmp_path)
     ui.library.complete_onboarding(tmp_path / "Lib")
     src = _clip(tmp_path / "dl" / "one.mp4")
     ui.library.add_item(path=src, title="Demo recording", source="local")
     ui.refresh_library()
-    surface = LibrarySurface()
-    try:
-        assert surface.probe_offscreen(ui.library_studio_host.data["url"], timeout=25)
-        assert surface.last_error == ""
-    finally:
-        surface.close()
-        ui.shutdown()
-    after = _foreign_flet_child_count()
-    if before is not None:
-        assert after == before
+    assert ui._library_shelf is None
+    assert ui._library_surface is None
+    assert ui.library_studio_host.data["url"] == ""
+    assert ui.library_studio_host.visible is False
+    ui.shutdown()
 
 
 _PARENT_PROBE = r"""
@@ -284,28 +254,9 @@ while True:
 """
 
 
-def test_shelf_embeds_in_another_process_window():
-    from frameforge.ui_flet.library_surface import LibrarySurface
-
-    proc = subprocess.Popen(
-        [sys.executable, "-u", "-c", _PARENT_PROBE],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    surface = LibrarySurface()
-    try:
-        assert proc.stdout is not None
-        line = proc.stdout.readline().strip()
-        assert line.isdigit(), proc.stderr.read() if proc.stderr else line
-        parent = int(line)
-        assert surface.embed_into(parent, "about:blank", timeout=25)
-        assert surface.last_error == ""
-        user32 = ctypes.WinDLL("user32")
-        user32.GetParent.argtypes = [wintypes.HWND]
-        user32.GetParent.restype = wintypes.HWND
-        assert int(user32.GetParent(surface._child)) == parent
-    finally:
-        surface.close()
-        proc.kill()
-        proc.wait(timeout=5)
+def test_shelf_is_not_embedded_in_another_process_window(tmp_path: Path):
+    ui = _ui(tmp_path)
+    ui.refresh_library()
+    assert ui._library_surface is None
+    assert ui.library_studio_host.visible is False
+    ui.shutdown()

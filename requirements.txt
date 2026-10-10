@@ -3,6 +3,9 @@ curl_cffi==0.13.0
 onnxruntime-directml
 customtkinter
 flet==0.86.5
+flet-video==0.86.5
+cryptography
+Send2Trash==2.1.0
 Pillow
 pystray
 psutil

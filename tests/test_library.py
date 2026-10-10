@@ -240,7 +240,7 @@ def test_library_tab_label_and_onboarding_dialog(tmp_path: Path):
     ui = FrameForgeUi(repo=repo, worker=worker, start_worker=False, recover_on_launch=False)
     ui.reveal_launch = False
     ui.build()
-    assert isinstance(ui.library_grid, ft.ListView)
+    assert isinstance(ui.library_grid, ft.GridView)
     src = _clip(tmp_path / "dl" / "ui.mp4")
     _completed_job(repo, src, title="UI clip")
     dlg = ui.on_library_opened()

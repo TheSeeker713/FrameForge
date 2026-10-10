@@ -30,9 +30,18 @@ def _existing_media(item: LibraryItem) -> Path:
     raise RevealError(f"Path does not exist: {path}")
 
 
-def play_library_item(item: LibraryItem, *, launch: bool = True) -> Path:
-    """Open the media file with the OS default player (`os.startfile` on Windows)."""
+def open_library_item_externally(item: LibraryItem, *, launch: bool = True) -> Path:
+    """Open the file in the operating system's player.
+
+    The in-app player is ``FrameForgeUi.play_library_item``. This function is the
+    external one.
+    """
     return open_in_default_player(_existing_media(item), launch=launch)
+
+
+def play_library_item(item: LibraryItem, *, launch: bool = True) -> Path:
+    """Old name for :func:`open_library_item_externally`."""
+    return open_library_item_externally(item, launch=launch)
 
 
 def reveal_library_item(item: LibraryItem, *, launch: bool = True) -> Path:

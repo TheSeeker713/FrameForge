@@ -7,7 +7,7 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import urlparse
 
-from frameforge.paths import cookies_dir, ensure_output_tree
+from frameforge.paths import cookies_dir, ensure_dir, ensure_output_tree
 
 NETSCAPE_HEADER = (
     "# Netscape HTTP Cookie File\n"
@@ -185,5 +185,5 @@ def open_cookies_folder(*, launch: bool = True) -> Path:
     folder = cookies_dir().resolve()
     if folder.name.lower() != "cookies":
         raise ValueError("refusing to open a path that is not the cookies directory")
-    folder.mkdir(parents=True, exist_ok=True)
+    ensure_dir(folder)
     return open_folder(folder, launch=launch)

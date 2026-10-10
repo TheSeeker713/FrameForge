@@ -139,6 +139,18 @@ def may_create(path: Path) -> bool:
     return _profile_tree_allowed()
 
 
+def ensure_dir(path: Path) -> Path:
+    """Create ``path`` when that is allowed.
+
+    Paths under ``%USERPROFILE%\\Downloads\\FrameForge`` are created only after
+    onboarding Skip. Every other folder is created as usual.
+    """
+    dest = Path(path)
+    if may_create(dest):
+        dest.mkdir(parents=True, exist_ok=True)
+    return dest
+
+
 def frameforge_root() -> Path:
     """App home: database, cookies, models, and temp.
 
@@ -518,11 +530,24 @@ def db_path() -> Path:
     return database_dir() / "frameforge.db"
 
 
+_RESTRICTED_DIRS: set[str] = set()
+
+
 def restrict_dir_to_current_user(folder: Path) -> None:
-    """On Windows, leave only the current user with access. No shell theme changes."""
+    """On Windows, leave only the current user with access. No shell theme changes.
+
+    The same folder is only updated once per process. Repeating icacls on every
+    cookie lookup made each download wait on the same ACL command.
+    """
     if sys.platform != "win32" or _userprofile_redirected():
         return
     if not folder.is_dir():
+        return
+    try:
+        key = str(folder.resolve()).lower()
+    except OSError:
+        return
+    if key in _RESTRICTED_DIRS:
         return
     user = os.environ.get("USERNAME", "").strip()
     if not user:
@@ -534,6 +559,7 @@ def restrict_dir_to_current_user(folder: Path) -> None:
         capture_output=True,
         creationflags=flags,
     )
+    _RESTRICTED_DIRS.add(key)
 
 
 def _file_is_live(path: Path) -> bool:
@@ -585,7 +611,15 @@ def _move_file_unique(src: Path, dest_dir: Path, *, respect_live: bool = True) -
 
 
 def place_finished_download(path: Path, *, site_key: str, category: str | None) -> Path:
-    """Move a finished file into the bucket/category the app chose."""
+    """Move a finished file into the bucket/category the app chose.
+
+    A file saved outside the FrameForge downloads tree stays where the caller
+    put it. Tests and an explicit output folder are not pulled into the library.
+    """
+    try:
+        path.resolve().relative_to(downloads_dir().resolve())
+    except (OSError, ValueError):
+        return path
     dest_dir = download_dir_for_site(site_key, category)
     try:
         if path.parent.resolve() == dest_dir.resolve():

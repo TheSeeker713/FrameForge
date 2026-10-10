@@ -227,12 +227,15 @@ class FrameForgeUi:
         self._library_thumb_miss: set[int] = set()
         self._library_video: Any | None = None
         self.last_library_player: str | None = None
+        self._library_positions: dict[str, int] = {}
+        self._player_watchdog: Any | None = None
+        self._player_ready = False
         self._cookie_auto_resume_ids: set[int] = set()
         self.library_visible_count: int = 0
         self._library_visible_ids: list[int] = []
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
-        self.library_book: str = "Movies"
+        self.library_book: str | None = None
         self.library_folder: str | None = None
         self.library_browser: ft.Column | None = None
         self.library_sort: str = "date"
@@ -314,16 +317,7 @@ class FrameForgeUi:
         later failure still opens the dialog.
         """
         from frameforge.download.cookie_validate import cookies_validated_in_session
-        from frameforge.errors import (
-            AUTH_REQUIRED,
-            BOT_CHECK,
-            IMPERSONATION_MISSING,
-            RATE_LIMITED,
-        )
 
-        cat = str(payload.get("category") or "")
-        if cat not in {AUTH_REQUIRED, BOT_CHECK, IMPERSONATION_MISSING, RATE_LIMITED}:
-            return False
         url = str(payload.get("url") or "")
         if not url or not cookies_validated_in_session(url):
             return False
@@ -563,8 +557,21 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.library_grid = ft.ListView(expand=True, spacing=18, padding=28, horizontal=True)
+        self.library_grid = ft.GridView(
+            expand=True,
+            max_extent=300,
+            child_aspect_ratio=0.82,
+            spacing=16,
+            run_spacing=16,
+            padding=20,
+            build_controls_on_demand=True,
+            cache_extent=600,
+            on_scroll=self._on_library_scroll,
+        )
         self.thumbs_grid = self.library_grid
+        self._library_offset = 0
+        self._library_total = 0
+        self._library_paging = False
         self.library_albums = ft.Row(wrap=True, spacing=8, run_spacing=6)
         from frameforge.ui_flet.library_studio import LOCKED_LOOK, SHELF_MARKER
 
@@ -587,12 +594,23 @@ class FrameForgeUi:
             bgcolor=COLORS["app_bg"],
             alignment=ft.Alignment.CENTER,
         )
-        self.library_browser = ft.Column(expand=True, spacing=12, scroll=ft.ScrollMode.AUTO)
-        self.library_studio_host.visible = False
-        self.library_stack = ft.Column(
-            [self.library_browser],
+        self.library_sidebar = ft.Column(width=240, spacing=2, scroll=ft.ScrollMode.AUTO)
+        self.library_browser = self.library_sidebar
+        self.library_detail = ft.Container(width=360, visible=False)
+        self.library_player_host = ft.Container(
             expand=True,
-            spacing=8,
+            visible=False,
+            data={"kind": "library_player", "path": ""},
+        )
+        self.library_studio_host.visible = False
+        self.library_stack = ft.Row(
+            [
+                self.library_sidebar,
+                ft.Column([self.library_grid, self.library_player_host], expand=True, spacing=8),
+                self.library_detail,
+            ],
+            expand=True,
+            spacing=12,
         )
         self.library_toolbar = ft.Container()
         self.library_body = ft.Column(
@@ -1100,7 +1118,7 @@ class FrameForgeUi:
         completed = self.repo.count_by_status("completed", include_queue_hidden=True)
         if completed != getattr(self, "_library_seen_completed", None):
             self._library_seen_completed = completed
-            self.refresh_library(publish=True)
+            # Indexing and folder walks stay off this tick. They froze clicks and close.
         self._sync_header()
         if self.page is not None:
             self.last_chrome = apply_page_chrome(self.page, set_size=False)
@@ -1457,24 +1475,44 @@ class FrameForgeUi:
         return missing_model_reason()
 
     def install_upscale_models(self, _e: Any = None) -> None:
-        from frameforge.upscale.bootstrap import bootstrap_models, maybe_create_smoke_onnx
-        from frameforge.upscale.onnx_upscaler import model_kind, model_status
+        from frameforge.upscale.weights import realesrgan_installed, start_realesrgan_install
 
-        bootstrap_models()
-        maybe_create_smoke_onnx()
+        if realesrgan_installed():
+            self._reload_upscale_model()
+            self._show_toast("Upscale model is already installed.")
+            return
+        if start_realesrgan_install(on_status=self._on_model_status, on_ready=self._reload_upscale_model):
+            self._show_toast("Downloading the upscale model…")
+            return
+        self._show_toast("Upscale model download is already running.")
+
+    def _start_model_install(self) -> None:
+        """Fetch Real-ESRGAN when the chosen models folder does not have it yet."""
+        page = self.page
+        if page is None or not type(page).__module__.startswith("flet"):
+            return
+        from frameforge.paths import download_location_chosen
+
+        if not download_location_chosen():
+            return
+        from frameforge.upscale.weights import start_realesrgan_install
+
+        start_realesrgan_install(on_status=self._on_model_status, on_ready=self._reload_upscale_model)
+
+    def _on_model_status(self, message: str, *, done: bool = False) -> None:
+        def apply() -> None:
+            if done:
+                self._activity_note = None
+            else:
+                self._activity_note = message
+            self._show_toast(message)
+
+        self._marshal_ui(apply)
+
+    def _reload_upscale_model(self) -> None:
         pipe = getattr(self.worker, "upscale_pipeline", None)
         if pipe is not None and hasattr(pipe, "reload_model"):
             pipe.reload_model()
-        st = model_status()
-        if st.get("available"):
-            kind = model_kind(Path(str(st["path"]))) if st.get("path") else "onnx"
-            extra = " Smoke Identity is not Real-ESRGAN." if kind == "smoke" else ""
-            self._show_toast(f"ONNX model ready: {st.get('path')}{extra}")
-        else:
-            self._show_toast(
-                "No ONNX model. Run python .\\scripts\\download_models.py or "
-                "python .\\scripts\\create_smoke_onnx.py"
-            )
 
     def upscale_selected(self) -> None:
         from frameforge.gui.actions import can_upscale
@@ -1671,6 +1709,18 @@ class FrameForgeUi:
     def refresh_thumbs(self) -> None:
         self.refresh_library()
 
+    def _pending_library_count(self) -> int:
+        """Completed jobs not yet indexed. SQL only, so the window can still close."""
+        if not self.library.is_onboarded() or self.library.root() is None:
+            return 0
+        try:
+            from frameforge.library.ingest import completed_jobs_not_in_library
+
+            return len(completed_jobs_not_in_library(self.repo, self.library))
+        except Exception:
+            log.exception("Failed to count library pending jobs")
+            return 0
+
     def _pending_library_jobs(self):
         from frameforge.library.ingest import completed_jobs_not_in_library, heal_job_download_paths
 
@@ -1701,7 +1751,7 @@ class FrameForgeUi:
     def refresh_library(self, *, publish: bool = False) -> None:
         if self.library_grid is None:
             return
-        from frameforge.library.scan import list_playable_items, orphan_videos
+        from frameforge.library.scan import orphan_videos
 
         if publish:
             from frameforge.library.ingest import publish_completed_downloads
@@ -1717,39 +1767,24 @@ class FrameForgeUi:
         except Exception:
             log.exception("Failed to file library videos into books")
         try:
-            items = list_playable_items(
-                self.library,
+            items = self.library.list_items(
                 search=self.library_search or None,
                 source=self.library_filter_source,
                 collection_id=self.library_filter_collection_id,
                 flag=self.library_filter_flag,
                 sort=self.library_sort,
             )
+            items = [item for item in items if Path(item.path).is_file()]
         except Exception:
             log.exception("Failed to load library items")
             items = []
         try:
+            # Only the Library folder. Never the download tree. That walk froze the window.
             orphans = orphan_videos(self.library) if self.library.root() else []
         except Exception:
             log.exception("Failed to scan library folder for orphans")
             orphans = []
-        pending = len(self._pending_library_jobs()) + len(self._pending_disk_videos()) if self.library.is_onboarded() else 0
-        from frameforge.library.thumbs import ensure_library_thumbnail
-
-        prepared: list[Any] = []
-        for item in items:
-            if item.id in self._library_thumb_miss:
-                prepared.append(item)
-                continue
-            thumb = item.thumb_path
-            if thumb and Path(thumb).is_file():
-                prepared.append(item)
-                continue
-            updated = ensure_library_thumbnail(self.library, item)
-            if not (updated.thumb_path and Path(updated.thumb_path).is_file()):
-                self._library_thumb_miss.add(item.id)
-            prepared.append(updated)
-        items = prepared
+        pending = self._pending_library_count()
         from frameforge.library.taxonomy import KIND_ALBUM
 
         albums = [col for col in self.library.list_collections() if col.kind == KIND_ALBUM]
@@ -1844,7 +1879,9 @@ class FrameForgeUi:
         if self.library_empty is not None:
             self.library_empty.expand = show_empty
         self._publish_library_shelf(items, albums)
+        self._fill_library_grid()
         self._paint_library_browser()
+        self._enqueue_library_thumbs(items)
         if self.library_empty is not None:
             self.library_empty.visible = False
         if self.page is not None:
@@ -1853,6 +1890,41 @@ class FrameForgeUi:
             except Exception:
                 log.exception("page.update failed after library refresh")
         self._sync_library_surface()
+
+    def _enqueue_library_thumbs(self, items: list[Any]) -> None:
+        """Queue stills for visible files. Returns immediately. Skips test pages."""
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return
+        ids = [int(item.primary_file_id) for item in items if getattr(item, "primary_file_id", None)]
+        if not ids:
+            return
+        worker = self._ensure_thumb_worker()
+        worker.enqueue(ids)
+
+    def _ensure_thumb_worker(self) -> Any:
+        worker = getattr(self, "_thumb_worker", None)
+        if worker is not None:
+            return worker
+        from frameforge.library.thumb_worker import ThumbWorker
+
+        worker = ThumbWorker(self.repo.db_path, on_batch=self._on_thumbs_ready)
+        self._thumb_worker = worker
+        return worker
+
+    def _on_thumbs_ready(self, batch: list[tuple[int, str]]) -> None:
+        def paint() -> None:
+            if self._exiting:
+                return
+            self._paint_library_browser()
+            host = self.library_browser
+            if host is not None:
+                try:
+                    host.update()
+                except Exception:  # noqa: BLE001
+                    log.exception("Library browser update failed after thumbnails")
+
+        self._marshal_ui(paint)
 
     def _on_library_shelf_resized(self, e: Any = None) -> None:
         ctrl = getattr(e, "control", None) if e is not None else None
@@ -1879,11 +1951,10 @@ class FrameForgeUi:
         return self._library_shelf
 
     def _publish_library_shelf(self, items: list[Any], albums: list[Any]) -> None:
+        """Keep the row document for tests. Do not start the shelf HTTP server."""
         from frameforge.ui_flet.library_studio import shelf_document
 
-        document, thumbs = shelf_document(items, albums)
-        shelf = self._ensure_library_shelf()
-        shelf.update(document, thumbs)
+        document, _thumbs = shelf_document(items, albums)
         if self.library_studio_host is None:
             return
         self.library_studio_host.data = {
@@ -1891,7 +1962,7 @@ class FrameForgeUi:
             "embed": True,
             "look": document["look"],
             "rows": document["clips"],
-            "url": shelf.page_url(),
+            "url": "",
         }
 
     def _sync_library_surface(self) -> None:
@@ -1899,67 +1970,212 @@ class FrameForgeUi:
         if self._library_surface is not None:
             self._library_surface.sync(url="", visible=False)
 
+    def select_library_all(self) -> None:
+        self.library_book = None
+        self.library_folder = None
+        self.library_filter_flag = None
+        self._library_offset = 0
+        self._fill_library_grid()
+        self._paint_library_browser()
+
     def select_library_book(self, name: str) -> None:
         self.library_book = name
         self.library_folder = None
+        self.library_filter_flag = None
+        self._library_offset = 0
+        self._fill_library_grid()
         self._paint_library_browser()
-        if self.page is not None:
-            try:
-                self.page.update()
-            except Exception:
-                log.exception("page.update failed after library book change")
 
     def select_library_folder(self, name: str | None) -> None:
         self.library_folder = name
+        self._library_offset = 0
+        self._fill_library_grid()
         self._paint_library_browser()
+
+    def _library_filters(self) -> dict[str, Any]:
+        filt: dict[str, Any] = {}
+        if self.library_book:
+            filt["book"] = self.library_book
+        if self.library_folder:
+            filt["folder"] = self.library_folder
+        if self.library_filter_flag:
+            filt["flag"] = self.library_filter_flag
+        return filt
+
+    def _fill_library_grid(self, *, append: bool = False) -> None:
+        grid = self.library_grid
+        if grid is None:
+            return
+        from frameforge.ui_flet.components.library_grid import library_card
+
+        offset = self._library_offset if append else 0
+        try:
+            page, total = self.library.query_items(
+                self._library_filters(),
+                sort="date" if self.library_sort == "date" else self.library_sort,
+                search=self.library_search or None,
+                offset=offset,
+                limit=300,
+            )
+        except Exception:
+            log.exception("Failed to query library page")
+            page, total = [], 0
+        self._library_total = total
+        cards = [
+            library_card(item, selected=item.id in self.library_selected_ids, on_open=self._select_library_item, on_play=self.play_library_item)
+            for item in page
+        ]
+        if append:
+            grid.controls.extend(cards)
+            self._library_offset = offset + len(page)
+        else:
+            grid.controls = cards
+            self._library_offset = len(page)
+        self.library_visible_count = len(grid.controls)
+        if append:
+            try:
+                grid.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _on_library_scroll(self, e: Any) -> None:
+        if self._library_paging:
+            return
+        pixels = float(getattr(e, "pixels", 0) or 0)
+        extent = float(getattr(e, "max_scroll_extent", 0) or 0)
+        if extent <= 0 or pixels < extent - 480:
+            return
+        if self._library_offset >= self._library_total:
+            return
+        self._library_paging = True
+        try:
+            self._fill_library_grid(append=True)
+        finally:
+            self._library_paging = False
+
+    def _select_library_item(self, item_id: int) -> None:
+        from frameforge.ui_flet.components.library_detail import build_library_detail
+
+        self.library_selected_ids = {item_id}
+        try:
+            item = self.library.get(item_id)
+            files = self.library.list_files(item_id)
+        except KeyError:
+            return
+        self.library_detail.visible = True
+        self.library_detail.content = build_library_detail(
+            item,
+            files,
+            on_play=self.play_library_item,
+            on_play_file=self._play_library_path,
+            on_reveal=self._reveal_library_path,
+            on_open_source=self._open_library_source,
+            on_copy=self._copy_library_text,
+            on_rename=lambda title, item_id=item_id: self._rename_library_item(item_id, title),
+        )
+        self._fill_library_grid()
         if self.page is not None:
             try:
                 self.page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _rename_library_item(self, item_id: int, title: str) -> None:
+        label = (title or "").strip()
+        if not label:
+            return
+        self.library.conn.execute(
+            "UPDATE library_items SET title = ?, date_modified = ? WHERE id = ?",
+            (label, __import__("frameforge.db.repository", fromlist=["utc_now"]).utc_now(), item_id),
+        )
+        self.library.conn.commit()
+        self._select_library_item(item_id)
+
+    def _play_library_path(self, path: str) -> None:
+        from pathlib import Path
+
+        target = Path(path)
+        if not target.is_file():
+            self._show_toast("File not found")
+            return
+        self.last_library_player = str(target.resolve())
+        self.play_library_item_path(target)
+
+    def play_library_item_path(self, path: Any) -> None:
+        from pathlib import Path
+
+        self._show_library_player(title=Path(path).name, paths=[Path(path)])
+
+    def _reveal_library_path(self, path: str) -> None:
+        from pathlib import Path
+
+        from frameforge.util.reveal import RevealError, reveal_file
+
+        try:
+            reveal_file(Path(path), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found")
+
+    def _open_library_source(self, url: str) -> None:
+        from frameforge.library.versions import http_url
+
+        clean = http_url(url)
+        if not clean:
+            self._show_toast("That source link is not a web page")
+            return
+        self.last_library_source = clean
+        page = self.page
+        if page is None:
+            return
+
+        async def _go() -> None:
+            try:
+                await ft.UrlLauncher().launch_url(clean)
             except Exception:
-                log.exception("page.update failed after library folder change")
+                import webbrowser
+
+                webbrowser.open(clean)
+
+        runner = getattr(page, "run_task", None)
+        if callable(runner):
+            runner(_go)
+
+    def _copy_library_text(self, text: str) -> None:
+        page = self.page
+        if page is not None and hasattr(page, "set_clipboard"):
+            page.set_clipboard(text)
+        self._show_toast("Copied")
 
     def _paint_library_browser(self) -> None:
-        host = self.library_browser
+        host = self.library_sidebar or self.library_browser
         if host is None:
             return
-        from frameforge.library.books import BOOKS, CATALOG, folder_kind
-        from frameforge.ui_flet.components.library_browser import fill_library_browser
+        from frameforge.ui_flet.components.library_sidebar import fill_library_sidebar
 
-        book = self.library_book if self.library_book in BOOKS else "Movies"
-        self.library_book = book
-        kind = folder_kind(book)
-        counts: dict[str, int] = {name: 0 for name in CATALOG[book]}
-        clips: list[tuple[Any, str]] = []
         try:
-            columns = {col.id: col for col in self.library.list_collections(kind)}
-            needle = (self.library_search or "").strip().lower()
-            for item in self.library.list_items(include_private=False):
-                col = columns.get(item.primary_collection_id or -1)
-                if col is None:
-                    continue
-                counts[col.name] = counts.get(col.name, 0) + 1
-                if self.library_folder and col.name != self.library_folder:
-                    continue
-                title = (item.title or "").lower()
-                if needle and needle not in title:
-                    continue
-                clips.append((item, col.name))
+            counts = self.library.sidebar_counts()
         except Exception:
-            log.exception("Failed to paint library books")
-        folders = [(name, counts.get(name, 0)) for name in CATALOG[book]]
-        for name, count in counts.items():
-            if name not in CATALOG[book] and count:
-                folders.append((name, count))
-        fill_library_browser(
+            log.exception("Failed to count library sidebar")
+            counts = {"all": 0, "favorites": 0, "watch_later": 0, "books": [], "sites": []}
+        fill_library_sidebar(
             host,
-            book=book,
+            counts=counts,
+            book=self.library_book,
             folder=self.library_folder,
-            folders=folders,
-            clips=clips,
+            flag=self.library_filter_flag,
+            on_all=self.select_library_all,
+            on_flag=self.set_library_flag,
             on_book=self.select_library_book,
             on_folder=self.select_library_folder,
-            on_add=self.add_library_videos,
         )
+        if self.library_browser is not None and self.library_browser is not host:
+            self.library_browser.data = host.data
+        titles = []
+        grid = self.library_grid
+        if grid is not None:
+            titles = [str((ctrl.content.content.data or {}).get("title") or "") for ctrl in grid.controls if getattr(ctrl, "content", None) is not None]
+        if host.data is not None:
+            host.data["clips"] = [title for title in titles if title]
 
     def drain_library_studio_actions(self) -> int:
         shelf = self._library_shelf
@@ -2585,22 +2801,148 @@ class FrameForgeUi:
             self._show_toast("File not found — cannot play")
             return
         self.last_library_player = str(path.resolve())
-        if self.page is None:
-            return
+        paths = [path]
         try:
-            from frameforge.ui_flet.components.player import library_player_dialog
+            for row in self.library.list_files(item.id):
+                candidate = Path(row.path)
+                if candidate.is_file() and candidate.resolve() not in {p.resolve() for p in paths}:
+                    paths.append(candidate)
+        except Exception:  # noqa: BLE001
+            log.exception("Could not list versions for the player")
+        self._show_library_player(title=item.title or path.name, paths=paths)
 
-            dlg, video = library_player_dialog(
-                title=item.title or path.name,
-                media_path=path,
-                on_close=self.close_dialog,
+    def _show_library_player(self, *, title: str, paths: list[Path]) -> None:
+        from frameforge.ui_flet.components.player import library_player_view
+
+        present = [Path(path) for path in paths if Path(path).is_file()]
+        if not present:
+            self._show_toast("File not found — cannot play")
+            return
+        self.last_library_player = str(present[0].resolve())
+        host = getattr(self, "library_player_host", None)
+        if host is None or self.page is None:
+            return
+        resume = self._library_positions.get(str(present[0].resolve()), 0)
+
+        async def _close() -> None:
+            await self._close_library_player()
+
+        try:
+            view, video = library_player_view(
+                title=title,
+                media_paths=present,
+                on_close=_close,
+                on_open_external=self._open_player_external,
+                on_loaded=self._mark_player_ready,
+                on_failed=self._show_player_fallback,
+                on_position=self._remember_player_position,
+                resume_ms=resume,
             )
         except Exception:
             log.exception("In-app player failed to open")
             self._show_toast("In-app player could not open this file")
             return
+        view.pending = self._run_player_task
         self._library_video = video
-        self.dialogs.open("library_player", dlg, replace=True)
+        host.content = view
+        host.data = dict(view.data)
+        host.visible = True
+        self.library_grid.visible = False
+        self._arm_player_watchdog()
+        try:
+            self.page.update()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _run_player_task(self, coro: Any) -> None:
+        page = self.page
+        runner = getattr(page, "run_task", None) if page is not None else None
+        if callable(runner):
+            runner(lambda: coro)
+            return
+        import asyncio
+
+        asyncio.run(coro)
+
+    def _remember_player_position(self, millis: int) -> None:
+        path = self.last_library_player
+        if path:
+            self._library_positions[path] = int(millis)
+
+    def _mark_player_ready(self) -> None:
+        self._player_ready = True
+        self._cancel_player_watchdog()
+
+    def _show_player_fallback(self) -> None:
+        host = getattr(self, "library_player_host", None)
+        if host is None or host.content is None:
+            return
+        column = getattr(host.content, "content", None)
+        controls = getattr(column, "controls", None) or []
+        for control in controls:
+            if getattr(control, "visible", None) is False and hasattr(control, "controls"):
+                control.visible = True
+        self._marshal_ui(lambda: host.update() if hasattr(host, "update") else None)
+
+    def _arm_player_watchdog(self) -> None:
+        import threading
+
+        self._cancel_player_watchdog()
+        self._player_ready = False
+
+        def _fire() -> None:
+            if self._player_ready:
+                return
+            self._marshal_ui(self._show_player_fallback)
+
+        timer = threading.Timer(6.0, _fire)
+        timer.daemon = True
+        self._player_watchdog = timer
+        timer.start()
+
+    def _cancel_player_watchdog(self) -> None:
+        timer = getattr(self, "_player_watchdog", None)
+        self._player_watchdog = None
+        if timer is not None:
+            timer.cancel()
+
+    async def _close_library_player(self) -> None:
+        from frameforge.ui_flet.components.player import stop_player
+
+        self._cancel_player_watchdog()
+        video = getattr(self, "_library_video", None)
+        self._library_video = None
+        if video is not None:
+            try:
+                await stop_player(video)
+            except Exception:  # noqa: BLE001
+                log.exception("Player stop failed")
+        host = getattr(self, "library_player_host", None)
+        if host is not None:
+            host.visible = False
+            host.content = None
+        if self.library_grid is not None:
+            self.library_grid.visible = True
+        if self.page is not None:
+            try:
+                self.page.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def request_close_library_player(self) -> None:
+        self._run_player_task(self._close_library_player())
+
+    def _open_player_external(self, path: str) -> None:
+        from pathlib import Path
+
+        from frameforge.util.reveal import RevealError, open_in_default_player
+
+        try:
+            open_in_default_player(Path(path), launch=self.reveal_launch)
+        except RevealError:
+            self._show_toast("File not found")
+        except OSError:
+            self._show_toast("Could not open that file")
 
     def reveal_library_item(self, item_id: int) -> None:
         from frameforge.library.actions import reveal_library_item
@@ -2619,7 +2961,7 @@ class FrameForgeUi:
             self._show_toast(upscale_blocked_reason(item) or "Upscale blocked")
             return
         if not item.job_id:
-            self._show_toast("No queue job for this file")
+            self._show_toast("Upscale needs a queue job for this file")
             return
         job = self.repo.get(item.job_id)
         if getattr(job, "upscale_blocked", False):
@@ -2739,9 +3081,14 @@ class FrameForgeUi:
         for item_id in ids:
             item = self.library.get(item_id)
             path = Path(item.path)
-            self.library.remove_item(item_id)
             if delete_files and path.is_file():
-                send_to_recycle_bin(path, recycle=self.reveal_launch)
+                try:
+                    send_to_recycle_bin(path)
+                except OSError:
+                    self._show_toast("Could not move that file to the Recycle Bin")
+                    continue
+            self.library.remove_item(item_id)
+            self.library_selected_ids.discard(item_id)
         self.library_selected_ids.clear()
         self.close_dialog()
         self.refresh_library()
@@ -3211,6 +3558,7 @@ class FrameForgeUi:
         self.close_dialog()
         self._show_toast("Downloads will use your Windows folder")
         self._continue_toolchain()
+        self._start_model_install()
 
     def pick_download_location(self, _e: Any = None) -> None:
         if self.page is None:
@@ -3235,6 +3583,7 @@ class FrameForgeUi:
         dest = choose_download_location(path)
         self._show_toast(f"Downloads will go to {dest}")
         self._continue_toolchain()
+        self._start_model_install()
 
     def import_file(self, path: str | None = None) -> ft.AlertDialog | None:
         """Hero Import: picker (or explicit path) → confirm modal → pending only. Never arms."""
@@ -3560,8 +3909,57 @@ class FrameForgeUi:
                 repair_summary_dialog(stats, error=error, on_close=self.close_dialog),
             )
 
+    def _player_shortcut(self, key: str) -> None:
+        from frameforge.ui_flet.components.player import frame_delta_ms, neighbor_rate
+
+        video = getattr(self, "_library_video", None)
+        if video is None:
+            return
+        label = key.replace(" ", "").lower()
+        path = self.last_library_player or ""
+        position = self._library_positions.get(path, 0)
+
+        async def _act() -> None:
+            if label in {"space"}:
+                paused = getattr(self, "_player_paused", False)
+                if paused:
+                    await video.play()
+                    self._player_paused = False
+                else:
+                    await video.pause()
+                    self._player_paused = True
+                return
+            step = 5000
+            if label in {"comma", "period", ",", "."}:
+                step = frame_delta_ms(None)
+                await video.pause()
+                self._player_paused = True
+            if label in {"arrowright", "right", "period", "."}:
+                nxt = position + step
+            elif label in {"arrowleft", "left", "comma", ","}:
+                nxt = max(0, position - step)
+            elif label in {"arrowup", "up"}:
+                video.playback_rate = neighbor_rate(float(getattr(video, "playback_rate", 1) or 1), faster=True)
+                return
+            elif label in {"arrowdown", "down"}:
+                video.playback_rate = neighbor_rate(float(getattr(video, "playback_rate", 1) or 1), faster=False)
+                return
+            else:
+                return
+            self._library_positions[path] = nxt
+            await video.seek(nxt)
+
+        self._run_player_task(_act())
+
     def _on_keyboard(self, e: Any) -> None:
         key = getattr(e, "key", None)
+        host = getattr(self, "library_player_host", None)
+        if host is not None and getattr(host, "visible", False):
+            if key in {"Escape", "Esc", "Backspace"}:
+                self.request_close_library_player()
+                return
+            self._player_shortcut(str(key or ""))
+            return
         if key in {"Escape", "Esc"}:
             self.close_dialog()
             return
@@ -3704,7 +4102,30 @@ class FrameForgeUi:
         self._schedule_tick()
         self._install_loop_exception_handler()
         self._start_tree_repair(toast=False)
+        self._prune_thumbs_later()
         self._start_toolchain()
+        self._start_model_install()
+
+    def _prune_thumbs_later(self) -> None:
+        page = self.page
+        if page is None or page.__class__.__name__ == "FakePage":
+            return
+        db = self.repo.db_path
+
+        def work() -> None:
+            from frameforge.db.repository import JobRepository
+            from frameforge.library.store import LibraryStore
+            from frameforge.library.thumbs import prune_thumb_cache
+
+            repo = JobRepository(db)
+            try:
+                prune_thumb_cache(LibraryStore(repo))
+            except Exception:  # noqa: BLE001
+                log.exception("Thumbnail cache prune failed")
+            finally:
+                repo.close()
+
+        threading.Thread(target=work, name="library-thumb-prune", daemon=True).start()
 
     def _install_loop_exception_handler(self) -> None:
         """Windows prints ConnectionResetError when a closed pipe is shut down again."""
@@ -3723,6 +4144,14 @@ class FrameForgeUi:
         loop.set_exception_handler(handler)
 
     def shutdown(self) -> None:
+        self._cancel_player_watchdog()
+        thumb_worker = getattr(self, "_thumb_worker", None)
+        self._thumb_worker = None
+        if thumb_worker is not None:
+            try:
+                thumb_worker.close()
+            except Exception:  # noqa: BLE001
+                log.exception("Thumbnail worker did not close")
         surface = self._library_surface
         self._library_surface = None
         if surface is not None:

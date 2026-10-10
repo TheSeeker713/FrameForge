@@ -35,7 +35,8 @@ def test_resolve_directory_for_sample_file(tmp_path: Path):
     assert reveal_job_file(job, launch=False) == tmp_path.resolve()
     cmd = explorer_select_command(media)
     assert cmd[0] == "explorer"
-    assert str(media.resolve()) in cmd[1]
+    assert cmd[1] == "/select,"
+    assert str(media.resolve()) == cmd[2]
     repo.close()
 
 

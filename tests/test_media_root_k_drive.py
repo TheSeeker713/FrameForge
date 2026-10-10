@@ -123,6 +123,10 @@ def test_custom_download_location_does_not_create_windows_downloads(monkeypatch,
     assert (home / "database").is_dir()
     assert (home / "models").is_dir()
     assert (home / "cookies").is_dir()
+    from frameforge.upscale.bootstrap import bootstrap_models
+
+    bootstrap_models()
+    YtDlpDownloader()
     assert not profile_frameforge_root().exists()
     assert download_scan_roots() == [home]
 

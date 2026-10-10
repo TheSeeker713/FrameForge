@@ -1,6 +1,11 @@
 """Local Library: filesystem + SQLite metadata. No cloud."""
 
-from frameforge.library.actions import can_upscale_library_item, play_library_item, reveal_library_item
+from frameforge.library.actions import (
+    can_upscale_library_item,
+    open_library_item_externally,
+    play_library_item,
+    reveal_library_item,
+)
 from frameforge.library.ingest import (
     completed_jobs_not_in_library,
     heal_job_download_paths,
@@ -20,6 +25,7 @@ __all__ = [
     "job_media_file",
     "list_playable_items",
     "orphan_videos",
+    "open_library_item_externally",
     "play_library_item",
     "reveal_library_item",
     "scan_library_folder",

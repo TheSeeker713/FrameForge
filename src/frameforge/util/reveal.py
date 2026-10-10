@@ -35,9 +35,40 @@ def containing_folder(path: Path) -> Path:
 
 
 def explorer_select_command(path: Path) -> list[str]:
-    """Build the Windows Explorer /select command for a file."""
+    """Windows Explorer select. ``/select,`` is its own argument.
+
+    Explorer often exits 1 after opening a window. Callers must not treat that as failure.
+    """
     path = Path(path).resolve()
-    return ["explorer", f"/select,{path}"]
+    return ["explorer", "/select,", str(path)]
+
+
+def reveal_command(path: Path, *, platform: str | None = None) -> list[str]:
+    """Argv that reveals a file. Tests pass ``platform`` and do not launch."""
+    plat = platform or sys.platform
+    target = Path(path)
+    if plat == "win32":
+        if target.is_dir():
+            return ["explorer", str(target.resolve())]
+        return explorer_select_command(target)
+    resolved = str(target.resolve()) if target.exists() else str(target)
+    if plat == "darwin":
+        return ["open", "-R", resolved]
+    folder = target if target.is_dir() else target.parent
+    shown = str(folder.resolve()) if folder.exists() else str(folder)
+    return ["xdg-open", shown]
+
+
+def open_command(path: Path, *, platform: str | None = None) -> list[str]:
+    """Argv that opens a file in the default app. Windows uses ``os.startfile``."""
+    plat = platform or sys.platform
+    target = Path(path)
+    shown = str(target.resolve()) if target.exists() else str(target)
+    if plat == "win32":
+        return ["os.startfile", shown]
+    if plat == "darwin":
+        return ["open", shown]
+    return ["xdg-open", shown]
 
 
 def explorer_open_folder_command(folder: Path) -> list[str]:
@@ -51,24 +82,22 @@ def reveal_file(path: Path, *, launch: bool = True) -> Path:
     if not path.exists():
         raise RevealError(f"Path does not exist: {path}")
     folder = containing_folder(path)
-    if launch and sys.platform == "win32":
-        if path.is_file():
-            subprocess.Popen(explorer_select_command(path))  # noqa: S603
-        else:
-            subprocess.Popen(explorer_open_folder_command(folder))  # noqa: S603
-    elif launch:
-        # Non-Windows fallback: open the folder
-        subprocess.Popen(["xdg-open", str(folder)])  # noqa: S603
+    if launch:
+        # Do not wait. Explorer's exit code is not a failure.
+        subprocess.Popen(reveal_command(path))  # noqa: S603
     return folder
 
 
 def open_folder(path: Path, *, launch: bool = True) -> Path:
     """Open the containing folder for *path*. Returns the folder path."""
     folder = containing_folder(path)
-    if launch and sys.platform == "win32":
-        subprocess.Popen(explorer_open_folder_command(folder))  # noqa: S603
-    elif launch:
-        subprocess.Popen(["xdg-open", str(folder)])  # noqa: S603
+    if launch:
+        if sys.platform == "win32":
+            subprocess.Popen(explorer_open_folder_command(folder))  # noqa: S603
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(folder)])  # noqa: S603
+        else:
+            subprocess.Popen(["xdg-open", str(folder)])  # noqa: S603
     return folder
 
 
@@ -86,7 +115,10 @@ def open_in_default_player(path: Path, *, launch: bool = True) -> Path:
     if not path.is_file():
         raise RevealError(f"Path does not exist: {path}")
     if launch and sys.platform == "win32":
-        os.startfile(path)  # noqa: S606
+        try:
+            os.startfile(path)  # noqa: S606
+        except OSError as exc:
+            raise RevealError(f"Could not open {path}") from exc
     elif launch:
-        subprocess.Popen(["xdg-open", str(path)])  # noqa: S603
+        subprocess.Popen(open_command(path))  # noqa: S603
     return path.resolve()

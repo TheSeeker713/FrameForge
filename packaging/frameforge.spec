@@ -33,6 +33,7 @@ hiddenimports = [
     "frameforge.pipeline",
     "flet",
     "flet_desktop",
+    "flet_video",
     "customtkinter",
     "onnxruntime",
     "rich",
@@ -40,7 +41,7 @@ hiddenimports = [
     "curl_cffi.requests",
 ]
 
-for pkg in ("flet", "flet_desktop", "customtkinter", "curl_cffi"):
+for pkg in ("flet", "flet_desktop", "flet_video", "customtkinter", "curl_cffi"):
     tmp_ret = collect_all(pkg)
     datas += tmp_ret[0]
     binaries += tmp_ret[1]
@@ -49,8 +50,9 @@ for pkg in ("flet", "flet_desktop", "customtkinter", "curl_cffi"):
 # Bundle the already-cached Flet Windows client next to the exe so --gui
 # does not depend on a first-run GitHub download when the cache exists.
 _flet_client = Path.home() / ".flet" / "client" / "flet-desktop-full-0.86.5" / "flet"
-if _flet_client.is_dir() and (_flet_client / "flet.exe").is_file():
-    datas.append((str(_flet_client), "flet-client"))
+if not (_flet_client.is_dir() and (_flet_client / "flet.exe").is_file()):
+    raise SystemExit(f"Flet desktop client cache is missing: {_flet_client}")
+datas.append((str(_flet_client), "flet-client"))
 
 a = Analysis(
     [str(ENTRY)],

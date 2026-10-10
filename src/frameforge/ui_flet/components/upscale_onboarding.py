@@ -109,8 +109,8 @@ def upscale_onboarding_dialog(
     if ctx.model_kind == "smoke":
         model_rows.append(
             ft.Text(
-                "Only a smoke/identity ONNX is present — output will use 2× interpolation, "
-                "not Real-ESRGAN quality.  Run: python .\\scripts\\download_models.py",
+                "Only a smoke/identity ONNX is present. Output will use 2x interpolation, "
+                "not Real-ESRGAN quality. FrameForge downloads the upscale model when it is missing.",
                 color=COLORS["warn"],
                 size=12,
             )
@@ -118,8 +118,7 @@ def upscale_onboarding_dialog(
     elif not ctx.model_available:
         model_rows.append(
             ft.Text(
-                "No ONNX model found.  Create a smoke model (not Real-ESRGAN) or run "
-                "python .\\scripts\\download_models.py",
+                "No upscale model yet. FrameForge downloads Real-ESRGAN when it is missing.",
                 color=COLORS["danger"],
                 size=12,
             )

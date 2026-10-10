@@ -26,8 +26,7 @@ class UpscaleConfigError(RuntimeError):
         self.reason = reason or f"No ONNX model under {folder}"
         super().__init__(
             f"Upscale unavailable: {self.reason}. "
-            f"Install an ONNX model under {self.models_dir} "
-            "(Settings → Create smoke ONNX, or python .\\scripts\\download_models.py). "
+            f"FrameForge downloads the Real-ESRGAN model into {self.models_dir} when it is missing. "
             "Smoke Identity is not Real-ESRGAN."
         )
 

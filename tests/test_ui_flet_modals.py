@@ -67,5 +67,5 @@ def test_queue_history_use_scrollable_lists(tmp_path: Path):
     ui.build()
     assert isinstance(ui.queue_list, ft.ListView)
     assert isinstance(ui.history_list, ft.ListView)
-    assert isinstance(ui.thumbs_grid, ft.ListView)
+    assert isinstance(ui.thumbs_grid, ft.GridView)
     ui.shutdown()

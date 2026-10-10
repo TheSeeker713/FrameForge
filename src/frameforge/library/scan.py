@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -119,12 +120,45 @@ DOWNLOAD_SCAN_SKIP = frozenset(
         "archive",
         "thumbnails",
         "database",
-        "upscaled",
         "converted",
         "metadata",
         PRIVATE_FOLDER.lower(),
     }
 )
+
+
+_JOB_FILE_RE = re.compile(r"job(\d+)_", re.I)
+_UPSCALE_SUFFIX_RE = re.compile(r"(?:\.upscaled|_x[24])$", re.I)
+
+
+def attach_scanned_file(store: LibraryStore, path: Path) -> bool:
+    """Attach an upscaled file to an existing card. Return False when it is a new clip."""
+    from frameforge.library.versions import parse_scale
+
+    if store.get_file_by_path(path) is not None:
+        return True
+    item = None
+    match = _JOB_FILE_RE.search(path.name)
+    if match:
+        item = store.get_by_job_id(int(match.group(1)))
+    if item is None:
+        stem = path.stem
+        for _ in range(2):
+            stem = _UPSCALE_SUFFIX_RE.sub("", stem)
+        for candidate in store.list_items(include_private=True):
+            if Path(candidate.path).stem.lower() == stem.lower():
+                item = candidate
+                break
+    if item is None:
+        return False
+    store.add_file(
+        item.id,
+        role="upscaled",
+        path=path,
+        job_id=item.job_id,
+        scale=parse_scale(path.name),
+    )
+    return True
 
 
 def download_videos_not_in_library(
@@ -158,6 +192,8 @@ def download_videos_not_in_library(
                 continue
             parts = {part.lower() for part in rel.parts[:-1]}
             if parts & DOWNLOAD_SCAN_SKIP:
+                continue
+            if "upscaled" in parts and attach_scanned_file(store, path):
                 continue
             resolved = path.resolve()
             if lib_res is not None:

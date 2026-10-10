@@ -181,6 +181,23 @@ def make_upscale_handler(
         if repo.get(job.id).status == "paused":
             raise DownloadPaused("paused")
         repo.set_paths(job.id, output_path=str(result.output_path))
+        try:
+            from frameforge.library.store import LibraryStore
+            from frameforge.library.versions import attach_upscale_output
+
+            fresh = repo.get(job.id)
+            scale = getattr(pipe.upscaler, "scale", None)
+            model_path = getattr(pipe.upscaler, "model_path", None)
+            model = Path(model_path).name if model_path else None
+            attach_upscale_output(
+                LibraryStore(repo),
+                fresh,
+                result.output_path,
+                scale=int(scale) if scale else None,
+                model=model,
+            )
+        except Exception:
+            log.exception("Library did not record the upscale for job %s", job.id)
         repo.update_progress(job.id, 100.0)
 
     return handler

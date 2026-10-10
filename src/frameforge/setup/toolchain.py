@@ -91,11 +91,9 @@ def mark_onboarded(repo: Any) -> None:
 
 
 def tool_root() -> Path:
-    from frameforge.paths import frameforge_root
+    from frameforge.paths import ensure_dir, frameforge_root
 
-    path = frameforge_root() / "tools"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return ensure_dir(frameforge_root() / "tools")
 
 
 def tool_dirs() -> list[Path]:

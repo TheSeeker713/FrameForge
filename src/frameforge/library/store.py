@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from frameforge.db.repository import JobRepository, utc_now
-from frameforge.library.models import LibraryCollection, LibraryItem
+from frameforge.library.models import LibraryCollection, LibraryFile, LibraryItem, LibraryThumb
 from frameforge.library.paths import safe_folder_name
 from frameforge.library.taxonomy import (
     INGEST_FOLDER,
@@ -348,6 +348,15 @@ class LibraryStore:
                     (item_id, src_col.id),
                 )
         self.conn.commit()
+        self.add_file(
+            item_id,
+            role="original" if job_id is not None else "linked",
+            path=dest,
+            job_id=job_id,
+            width=width,
+            height=height,
+            size_bytes=None,
+        )
         return self.get(item_id)
 
     def set_thumb_path(self, item_id: int, thumb_path: str | Path) -> LibraryItem:
@@ -535,3 +544,271 @@ class LibraryStore:
     def remove_watch_folder(self, folder_id: int) -> None:
         self.conn.execute("DELETE FROM library_watch_folders WHERE id = ?", (folder_id,))
         self.conn.commit()
+
+    def list_files(self, item_id: int) -> list[LibraryFile]:
+        rows = self.conn.execute(
+            "SELECT * FROM library_files WHERE item_id = ? ORDER BY id",
+            (item_id,),
+        ).fetchall()
+        return [LibraryFile.from_row(row) for row in rows]
+
+    def get_file_by_path(self, path: str | Path) -> LibraryFile | None:
+        target = str(Path(path))
+        row = self.conn.execute(
+            "SELECT * FROM library_files WHERE path = ?", (target,)
+        ).fetchone()
+        if row is None and Path(path).exists():
+            row = self.conn.execute(
+                "SELECT * FROM library_files WHERE path = ?",
+                (str(Path(path).resolve()),),
+            ).fetchone()
+        return LibraryFile.from_row(row) if row else None
+
+    def add_file(
+        self,
+        item_id: int,
+        *,
+        role: str,
+        path: str | Path,
+        job_id: int | None = None,
+        scale: int | None = None,
+        model: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        size_bytes: int | None = None,
+    ) -> LibraryFile:
+        if role not in {"original", "upscaled", "linked"}:
+            raise ValueError(f"Unknown file role: {role}")
+        dest = str(Path(path).resolve()) if Path(path).exists() else str(Path(path))
+        existing = self.get_file_by_path(dest)
+        if existing is not None:
+            return existing
+        present = 0
+        mtime = None
+        target = Path(dest)
+        if target.is_file():
+            present = 1
+            try:
+                stat = target.stat()
+                if size_bytes is None:
+                    size_bytes = int(stat.st_size)
+                mtime = int(stat.st_mtime_ns)
+            except OSError:
+                present = 0
+        cur = self.conn.execute(
+            """
+            INSERT INTO library_files(
+                item_id, role, path, job_id, scale, model, width, height,
+                size_bytes, mtime_ns, present, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item_id,
+                role,
+                dest,
+                job_id,
+                scale,
+                model,
+                width,
+                height,
+                size_bytes,
+                mtime,
+                present,
+                utc_now(),
+            ),
+        )
+        self.conn.commit()
+        from frameforge.library.versions import sync_primary
+
+        sync_primary(self, item_id)
+        file_id = int(cur.lastrowid)
+        row = self.conn.execute("SELECT * FROM library_files WHERE id = ?", (file_id,)).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to store library file")
+        return LibraryFile.from_row(row)
+
+    def set_file_probe(self, file_id: int, **fields: Any) -> LibraryFile:
+        allowed = {
+            "width",
+            "height",
+            "rotation",
+            "duration_ms",
+            "fps",
+            "vcodec",
+            "acodec",
+            "pix_fmt",
+            "size_bytes",
+            "mtime_ns",
+            "present",
+            "probed_at",
+            "scale",
+            "model",
+        }
+        sets: list[str] = []
+        params: list[Any] = []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            sets.append(f"{key} = ?")
+            params.append(value)
+        if not sets:
+            row = self.conn.execute("SELECT * FROM library_files WHERE id = ?", (file_id,)).fetchone()
+            if row is None:
+                raise KeyError(file_id)
+            return LibraryFile.from_row(row)
+        params.append(file_id)
+        self.conn.execute(f"UPDATE library_files SET {', '.join(sets)} WHERE id = ?", params)
+        self.conn.commit()
+        row = self.conn.execute("SELECT * FROM library_files WHERE id = ?", (file_id,)).fetchone()
+        if row is None:
+            raise KeyError(file_id)
+        file_row = LibraryFile.from_row(row)
+        from frameforge.library.versions import sync_primary
+
+        sync_primary(self, file_row.item_id)
+        return file_row
+
+    def mark_file_missing(self, file_id: int) -> LibraryFile:
+        return self.set_file_probe(file_id, present=0)
+
+    def primary_file(self, item_id: int) -> LibraryFile | None:
+        item = self.get(item_id)
+        if item.primary_file_id is not None:
+            row = self.conn.execute(
+                "SELECT * FROM library_files WHERE id = ?", (item.primary_file_id,)
+            ).fetchone()
+            if row is not None:
+                return LibraryFile.from_row(row)
+        from frameforge.library.versions import best_file
+
+        return best_file(self.list_files(item_id))
+
+    def sidebar_counts(self) -> dict[str, Any]:
+        """One grouped read for the sidebar. Not one query per row."""
+        totals = self.conn.execute(
+            """
+            SELECT COUNT(*) AS all_n,
+                   SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END) AS fav,
+                   SUM(CASE WHEN watch_later = 1 THEN 1 ELSE 0 END) AS later
+            FROM library_items WHERE is_private = 0
+            """
+        ).fetchone()
+        books = self.conn.execute(
+            """
+            SELECT c.kind, c.name, COUNT(i.id) AS n
+            FROM library_collections c
+            LEFT JOIN library_items i
+              ON i.primary_collection_id = c.id AND i.is_private = 0
+            WHERE c.kind = 'book' OR c.kind LIKE 'book:%'
+            GROUP BY c.kind, c.name
+            """
+        ).fetchall()
+        sites = self.conn.execute(
+            """
+            SELECT source_site AS name, COUNT(*) AS n
+            FROM library_items
+            WHERE is_private = 0 AND source_site IS NOT NULL AND source_site != ''
+            GROUP BY source_site
+            ORDER BY n DESC, source_site
+            """
+        ).fetchall()
+        return {
+            "all": int(totals["all_n"] or 0),
+            "favorites": int(totals["fav"] or 0),
+            "watch_later": int(totals["later"] or 0),
+            "books": [(row["kind"], row["name"], int(row["n"])) for row in books],
+            "sites": [(row["name"], int(row["n"])) for row in sites],
+        }
+
+    def get_thumb(self, file_id: int) -> LibraryThumb | None:
+        row = self.conn.execute(
+            "SELECT * FROM library_thumbs WHERE file_id = ?", (file_id,)
+        ).fetchone()
+        return LibraryThumb.from_row(row) if row else None
+
+    def query_items(
+        self,
+        filters: dict[str, Any] | None = None,
+        sort: str = "date",
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+        *,
+        descending: bool = True,
+    ) -> tuple[list[LibraryItem], int]:
+        """Return one page and the total count. Filtering stays in SQL."""
+        filt = filters or {}
+        where = ["1=1"]
+        params: list[Any] = []
+        if not filt.get("include_private"):
+            where.append("is_private = 0")
+        needle = (search or "").strip()
+        if needle:
+            where.append(
+                """(
+                    IFNULL(title,'') LIKE ?
+                    OR IFNULL(source_site,'') LIKE ?
+                    OR IFNULL(source_url,'') LIKE ?
+                    OR IFNULL(path,'') LIKE ?
+                )"""
+            )
+            like = f"%{needle}%"
+            params.extend((like, like, like, like))
+        book = filt.get("book")
+        folder = filt.get("folder")
+        if book and folder:
+            where.append(
+                """primary_collection_id IN (
+                    SELECT id FROM library_collections WHERE kind = ? AND name = ?
+                )"""
+            )
+            params.extend((f"book:{book}", folder))
+        elif book:
+            where.append(
+                """primary_collection_id IN (
+                    SELECT id FROM library_collections WHERE kind = ?
+                )"""
+            )
+            params.append(f"book:{book}")
+        site = filt.get("site")
+        if site:
+            where.append("source_site = ?")
+            params.append(site)
+        album_id = filt.get("album_id")
+        if album_id is not None:
+            where.append("primary_collection_id = ?")
+            params.append(int(album_id))
+        flag = (filt.get("flag") or "").strip().lower()
+        if flag in {"favorites", "favorite"}:
+            where.append("is_favorite = 1")
+        elif flag in {"watch later", "watch_later"}:
+            where.append("watch_later = 1")
+        elif flag in {"recently added", "recent"}:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENTLY_ADDED_DAYS)).isoformat()
+            where.append("date_added >= ?")
+            params.append(cutoff)
+        orders = {
+            "date": "date_added",
+            "title": "IFNULL(title,'') COLLATE NOCASE",
+            "duration": "IFNULL(duration_ms, IFNULL(duration, 0) * 1000)",
+            "size": "IFNULL(file_size, 0)",
+            "resolution": "IFNULL(height, 0)",
+        }
+        column = orders.get(sort, orders["date"])
+        direction = "DESC" if descending else "ASC"
+        sql_where = " AND ".join(where)
+        total = int(
+            self.conn.execute(
+                f"SELECT COUNT(*) AS c FROM library_items WHERE {sql_where}", params
+            ).fetchone()["c"]
+        )
+        page = self.conn.execute(
+            f"""
+            SELECT * FROM library_items
+            WHERE {sql_where}
+            ORDER BY {column} {direction}, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [*params, int(limit), int(offset)],
+        ).fetchall()
+        return [LibraryItem.from_row(row) for row in page], total

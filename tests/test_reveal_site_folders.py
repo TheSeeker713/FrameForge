@@ -33,7 +33,8 @@ def test_reveal_resolves_file_under_youtube_site_folder(tmp_path: Path):
     assert reveal_job_file(loaded, launch=False) == site_dir.resolve()
     cmd = explorer_select_command(media)
     assert cmd[0] == "explorer"
-    assert "youtube" in cmd[1]
+    assert cmd[1] == "/select,"
+    assert "youtube" in cmd[2]
     repo.close()
 
 
