@@ -39,7 +39,7 @@ def test_grid_binds_one_card_per_playable_item(tmp_path: Path):
     assert ui.library_grid.visible is True
     assert ui.library_empty.visible is False
     assert ui.library_toolbar.data["count"] == 3
-    titles = {str(c.data.get("path")) for c in ui.library_grid.controls}
+    titles = {str(c.content.content.data.get("path")) for c in ui.library_grid.controls}
     assert len(titles) == 3
     ui.shutdown()
 
@@ -130,7 +130,7 @@ def test_play_opens_in_app_player(tmp_path: Path):
     ui.build()
     ui.refresh_library()
     assert ui.library_visible_count == 1
-    assert isinstance(ui.library_grid, __import__("flet").ListView)
+    assert isinstance(ui.library_grid, __import__("flet").GridView)
     ui.play_library_item(item.id)
     assert ui.last_library_player == str(src.resolve())
     assert ui.dialogs.kind == "library_player"
@@ -183,7 +183,7 @@ def test_cover_flow_shelf_and_album_keeps_the_file(tmp_path: Path):
     back = ui.library.place_in_album(item.id, None)
     assert Path(back.path) == src
     ui.refresh_library()
-    assert ui.library_grid.controls[0].data["shelf"] == "coverflow"
-    assert ui.library_grid.controls[0].data["path"] == str(src)
-    assert ui.library_grid.controls[0].data["focused"] is True
+    card = ui.library_grid.controls[0].content.content
+    assert card.data["path"] == str(src)
+    assert card.data["item_id"] == item.id
     ui.shutdown()

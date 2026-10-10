@@ -683,6 +683,43 @@ class LibraryStore:
 
         return best_file(self.list_files(item_id))
 
+    def sidebar_counts(self) -> dict[str, Any]:
+        """One grouped read for the sidebar. Not one query per row."""
+        totals = self.conn.execute(
+            """
+            SELECT COUNT(*) AS all_n,
+                   SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END) AS fav,
+                   SUM(CASE WHEN watch_later = 1 THEN 1 ELSE 0 END) AS later
+            FROM library_items WHERE is_private = 0
+            """
+        ).fetchone()
+        books = self.conn.execute(
+            """
+            SELECT c.kind, c.name, COUNT(i.id) AS n
+            FROM library_collections c
+            LEFT JOIN library_items i
+              ON i.primary_collection_id = c.id AND i.is_private = 0
+            WHERE c.kind = 'book' OR c.kind LIKE 'book:%'
+            GROUP BY c.kind, c.name
+            """
+        ).fetchall()
+        sites = self.conn.execute(
+            """
+            SELECT source_site AS name, COUNT(*) AS n
+            FROM library_items
+            WHERE is_private = 0 AND source_site IS NOT NULL AND source_site != ''
+            GROUP BY source_site
+            ORDER BY n DESC, source_site
+            """
+        ).fetchall()
+        return {
+            "all": int(totals["all_n"] or 0),
+            "favorites": int(totals["fav"] or 0),
+            "watch_later": int(totals["later"] or 0),
+            "books": [(row["kind"], row["name"], int(row["n"])) for row in books],
+            "sites": [(row["name"], int(row["n"])) for row in sites],
+        }
+
     def get_thumb(self, file_id: int) -> LibraryThumb | None:
         row = self.conn.execute(
             "SELECT * FROM library_thumbs WHERE file_id = ?", (file_id,)

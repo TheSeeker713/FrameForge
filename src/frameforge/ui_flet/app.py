@@ -232,7 +232,7 @@ class FrameForgeUi:
         self._library_visible_ids: list[int] = []
         self.library_selected_ids: set[int] = set()
         self.library_search: str = ""
-        self.library_book: str = "Movies"
+        self.library_book: str | None = None
         self.library_folder: str | None = None
         self.library_browser: ft.Column | None = None
         self.library_sort: str = "date"
@@ -563,8 +563,21 @@ class FrameForgeUi:
         self.queue_chrome = ft.Container(visible=False)
         self.queue_list = ft.ListView(expand=True, spacing=8, padding=4)
         self.history_list = ft.ListView(expand=True, spacing=8, padding=4)
-        self.library_grid = ft.ListView(expand=True, spacing=18, padding=28, horizontal=True)
+        self.library_grid = ft.GridView(
+            expand=True,
+            max_extent=300,
+            child_aspect_ratio=0.82,
+            spacing=16,
+            run_spacing=16,
+            padding=20,
+            build_controls_on_demand=True,
+            cache_extent=600,
+            on_scroll=self._on_library_scroll,
+        )
         self.thumbs_grid = self.library_grid
+        self._library_offset = 0
+        self._library_total = 0
+        self._library_paging = False
         self.library_albums = ft.Row(wrap=True, spacing=8, run_spacing=6)
         from frameforge.ui_flet.library_studio import LOCKED_LOOK, SHELF_MARKER
 
@@ -587,12 +600,18 @@ class FrameForgeUi:
             bgcolor=COLORS["app_bg"],
             alignment=ft.Alignment.CENTER,
         )
-        self.library_browser = ft.Column(expand=True, spacing=12, scroll=ft.ScrollMode.AUTO)
+        self.library_sidebar = ft.Column(width=240, spacing=2, scroll=ft.ScrollMode.AUTO)
+        self.library_browser = self.library_sidebar
+        self.library_detail = ft.Container(width=360, visible=False)
         self.library_studio_host.visible = False
-        self.library_stack = ft.Column(
-            [self.library_browser],
+        self.library_stack = ft.Row(
+            [
+                self.library_sidebar,
+                ft.Column([self.library_grid], expand=True, spacing=8),
+                self.library_detail,
+            ],
             expand=True,
-            spacing=8,
+            spacing=12,
         )
         self.library_toolbar = ft.Container()
         self.library_body = ft.Column(
@@ -1841,6 +1860,7 @@ class FrameForgeUi:
         if self.library_empty is not None:
             self.library_empty.expand = show_empty
         self._publish_library_shelf(items, albums)
+        self._fill_library_grid()
         self._paint_library_browser()
         self._enqueue_library_thumbs(items)
         if self.library_empty is not None:
@@ -1932,67 +1952,130 @@ class FrameForgeUi:
         if self._library_surface is not None:
             self._library_surface.sync(url="", visible=False)
 
+    def select_library_all(self) -> None:
+        self.library_book = None
+        self.library_folder = None
+        self.library_filter_flag = None
+        self._library_offset = 0
+        self._fill_library_grid()
+        self._paint_library_browser()
+
     def select_library_book(self, name: str) -> None:
         self.library_book = name
         self.library_folder = None
+        self.library_filter_flag = None
+        self._library_offset = 0
+        self._fill_library_grid()
         self._paint_library_browser()
-        if self.page is not None:
-            try:
-                self.page.update()
-            except Exception:
-                log.exception("page.update failed after library book change")
 
     def select_library_folder(self, name: str | None) -> None:
         self.library_folder = name
+        self._library_offset = 0
+        self._fill_library_grid()
         self._paint_library_browser()
+
+    def _library_filters(self) -> dict[str, Any]:
+        filt: dict[str, Any] = {}
+        if self.library_book:
+            filt["book"] = self.library_book
+        if self.library_folder:
+            filt["folder"] = self.library_folder
+        if self.library_filter_flag:
+            filt["flag"] = self.library_filter_flag
+        return filt
+
+    def _fill_library_grid(self, *, append: bool = False) -> None:
+        grid = self.library_grid
+        if grid is None:
+            return
+        from frameforge.ui_flet.components.library_grid import library_card
+
+        offset = self._library_offset if append else 0
+        try:
+            page, total = self.library.query_items(
+                self._library_filters(),
+                sort="date" if self.library_sort == "date" else self.library_sort,
+                search=self.library_search or None,
+                offset=offset,
+                limit=300,
+            )
+        except Exception:
+            log.exception("Failed to query library page")
+            page, total = [], 0
+        self._library_total = total
+        cards = [
+            library_card(item, selected=item.id in self.library_selected_ids, on_open=self._select_library_item, on_play=self.play_library_item)
+            for item in page
+        ]
+        if append:
+            grid.controls.extend(cards)
+            self._library_offset = offset + len(page)
+        else:
+            grid.controls = cards
+            self._library_offset = len(page)
+        self.library_visible_count = len(grid.controls)
+        if append:
+            try:
+                grid.update()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _on_library_scroll(self, e: Any) -> None:
+        if self._library_paging:
+            return
+        pixels = float(getattr(e, "pixels", 0) or 0)
+        extent = float(getattr(e, "max_scroll_extent", 0) or 0)
+        if extent <= 0 or pixels < extent - 480:
+            return
+        if self._library_offset >= self._library_total:
+            return
+        self._library_paging = True
+        try:
+            self._fill_library_grid(append=True)
+        finally:
+            self._library_paging = False
+
+    def _select_library_item(self, item_id: int) -> None:
+        self.library_selected_ids = {item_id}
+        self.library_detail.visible = True
+        self.library_detail.content = ft.Text(f"Selected {item_id}", color=COLORS["text_primary"])
+        self._fill_library_grid()
         if self.page is not None:
             try:
                 self.page.update()
-            except Exception:
-                log.exception("page.update failed after library folder change")
+            except Exception:  # noqa: BLE001
+                pass
 
     def _paint_library_browser(self) -> None:
-        host = self.library_browser
+        host = self.library_sidebar or self.library_browser
         if host is None:
             return
-        from frameforge.library.books import BOOKS, CATALOG, folder_kind
-        from frameforge.ui_flet.components.library_browser import fill_library_browser
+        from frameforge.ui_flet.components.library_sidebar import fill_library_sidebar
 
-        book = self.library_book if self.library_book in BOOKS else "Movies"
-        self.library_book = book
-        kind = folder_kind(book)
-        counts: dict[str, int] = {name: 0 for name in CATALOG[book]}
-        clips: list[tuple[Any, str]] = []
         try:
-            columns = {col.id: col for col in self.library.list_collections(kind)}
-            needle = (self.library_search or "").strip().lower()
-            for item in self.library.list_items(include_private=False):
-                col = columns.get(item.primary_collection_id or -1)
-                if col is None:
-                    continue
-                counts[col.name] = counts.get(col.name, 0) + 1
-                if self.library_folder and col.name != self.library_folder:
-                    continue
-                title = (item.title or "").lower()
-                if needle and needle not in title:
-                    continue
-                clips.append((item, col.name))
+            counts = self.library.sidebar_counts()
         except Exception:
-            log.exception("Failed to paint library books")
-        folders = [(name, counts.get(name, 0)) for name in CATALOG[book]]
-        for name, count in counts.items():
-            if name not in CATALOG[book] and count:
-                folders.append((name, count))
-        fill_library_browser(
+            log.exception("Failed to count library sidebar")
+            counts = {"all": 0, "favorites": 0, "watch_later": 0, "books": [], "sites": []}
+        fill_library_sidebar(
             host,
-            book=book,
+            counts=counts,
+            book=self.library_book,
             folder=self.library_folder,
-            folders=folders,
-            clips=clips,
+            flag=self.library_filter_flag,
+            on_all=self.select_library_all,
+            on_flag=self.set_library_flag,
             on_book=self.select_library_book,
             on_folder=self.select_library_folder,
-            on_add=self.add_library_videos,
         )
+        if self.library_browser is not None and self.library_browser is not host:
+            self.library_browser.data = host.data
+        titles = []
+        grid = self.library_grid
+        if grid is not None:
+            titles = [str((ctrl.content.content.data or {}).get("title") or "") for ctrl in grid.controls if getattr(ctrl, "content", None) is not None]
+        if host.data is not None:
+            host.data["clips"] = [title for title in titles if title]
 
     def drain_library_studio_actions(self) -> int:
         shelf = self._library_shelf
